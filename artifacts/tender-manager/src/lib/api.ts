@@ -1,13 +1,22 @@
 // Simple typed fetch utilities for entities not yet covered by generated hooks.
 // All paths are root-relative so the Replit proxy routes them to the API server at /api.
 
+// Auth-related paths that should NOT trigger session-expired events
+const AUTH_PATHS = ["/api/auth/login", "/api/auth/me", "/api/auth/logout"];
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     credentials: "include",
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
   });
+
   if (!res.ok) {
+    // If 401 on a non-auth route → session has expired; broadcast event so the
+    // app can show a notification and redirect to login automatically.
+    if (res.status === 401 && !AUTH_PATHS.some(p => path.startsWith(p))) {
+      window.dispatchEvent(new CustomEvent("session-expired"));
+    }
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? res.statusText);
   }

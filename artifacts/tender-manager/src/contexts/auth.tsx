@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
+import { toast } from "@/hooks/use-toast";
 
 export interface AuthUser {
   id: number;
@@ -57,10 +58,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(me);
   };
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     setUser(null);
-  };
+  }, []);
+
+  // ── Session expiry watcher ────────────────────────────────────────────────
+  // Listens for the 'session-expired' event dispatched by apiFetch on 401.
+  // Only fires when the user was actually logged in (prevents false positives
+  // on the initial /auth/me check before login).
+  useEffect(() => {
+    let alreadyHandled = false;
+
+    const handler = () => {
+      // Ignore if we're not currently logged in (e.g. page load before auth)
+      if (!user) return;
+      // Debounce: multiple simultaneous 401s should only show one toast
+      if (alreadyHandled) return;
+      alreadyHandled = true;
+
+      toast({
+        title: "انتهت الجلسة",
+        description: "انتهت مدة جلستك. يرجى تسجيل الدخول مجدداً.",
+        variant: "destructive",
+        duration: 5000,
+      } as any);
+
+      // Clear user state — the app will redirect to login automatically
+      setUser(null);
+
+      // Reset debounce after a short delay
+      setTimeout(() => { alreadyHandled = false; }, 3000);
+    };
+
+    window.addEventListener("session-expired", handler);
+    return () => window.removeEventListener("session-expired", handler);
+  }, [user]);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>

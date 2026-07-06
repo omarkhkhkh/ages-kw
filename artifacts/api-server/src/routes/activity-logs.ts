@@ -23,7 +23,7 @@ function parseSafeDate(val: string | undefined): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-const VALID_ACTIONS = new Set(["login", "logout", "create", "update", "delete", "export"]);
+const VALID_ACTIONS = new Set(["login", "logout", "create", "update", "delete", "export", "access_denied"]);
 const VALID_MODULES = new Set(["tenders", "entities", "suppliers", "projects", "guarantees", "contracts", "rfq", "po", "users", "auth"]);
 
 // GET /api/admin/activity-logs

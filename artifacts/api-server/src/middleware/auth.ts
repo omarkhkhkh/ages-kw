@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from "express";
+import { logActivity } from "./activity-logger";
 
 declare module "express-session" {
   interface SessionData {
@@ -54,8 +55,31 @@ export function requireEdit(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-// Factory: create middleware that checks access to a specific module
-export function requireModule(field: keyof Pick<Express.Request["session"], 
+const MODULE_LABELS: Record<string, string> = {
+  accessTenders:    "المناقصات",
+  accessEntities:   "الجهات الحكومية",
+  accessSuppliers:  "الموردون",
+  accessProjects:   "المشاريع",
+  accessGuarantees: "الكفالات البنكية",
+  accessContracts:  "العقود",
+  accessRfq:        "طلبات عروض الأسعار",
+  accessPo:         "أوامر الشراء المباشر",
+};
+
+const MODULE_KEY_MAP: Record<string, string> = {
+  accessTenders:    "tenders",
+  accessEntities:   "entities",
+  accessSuppliers:  "suppliers",
+  accessProjects:   "projects",
+  accessGuarantees: "guarantees",
+  accessContracts:  "contracts",
+  accessRfq:        "rfq",
+  accessPo:         "po",
+};
+
+// Factory: creates middleware that checks session access to a specific module.
+// Admins bypass all module restrictions. Blocked attempts are logged to activity_logs.
+export function requireModule(field: keyof Pick<Express.Request["session"],
   "accessTenders" | "accessEntities" | "accessSuppliers" | "accessProjects" |
   "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo"
 >) {
@@ -70,6 +94,20 @@ export function requireModule(field: keyof Pick<Express.Request["session"],
       return;
     }
     if (!req.session[field]) {
+      const moduleName = MODULE_LABELS[field] ?? field;
+      const moduleKey  = MODULE_KEY_MAP[field] ?? field;
+
+      // Log the blocked attempt so admin can see it in activity log
+      logActivity({
+        userId:   req.session.userId,
+        username: req.session.username,
+        fullName: req.session.fullName,
+        action:   "access_denied",
+        module:   moduleKey,
+        details:  `محاولة الوصول إلى: ${moduleName}`,
+        ipAddress: (req.headers["x-forwarded-for"] as string) || req.ip || undefined,
+      }).catch(() => {});
+
       res.status(403).json({ error: "ليس لديك صلاحية الوصول إلى هذه الوحدة." });
       return;
     }

@@ -24,12 +24,13 @@ interface LogRow {
 interface UserOption { id: number; fullName: string; username: string; }
 
 const ACTION_LABELS: Record<string, { label: string; color: string; icon: any }> = {
-  login:   { label: "دخول",   color: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: LogIn },
-  logout:  { label: "خروج",   color: "bg-slate-100 text-slate-500 border-slate-200",      icon: LogOut },
-  create:  { label: "إضافة",  color: "bg-blue-100 text-blue-700 border-blue-200",          icon: Plus },
-  update:  { label: "تعديل",  color: "bg-amber-100 text-amber-700 border-amber-200",       icon: Pencil },
-  delete:  { label: "حذف",    color: "bg-red-100 text-red-700 border-red-200",             icon: Trash2 },
-  export:  { label: "تصدير",  color: "bg-purple-100 text-purple-700 border-purple-200",   icon: Download },
+  login:        { label: "دخول",          color: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: LogIn },
+  logout:       { label: "خروج",          color: "bg-slate-100 text-slate-500 border-slate-200",       icon: LogOut },
+  create:       { label: "إضافة",         color: "bg-blue-100 text-blue-700 border-blue-200",           icon: Plus },
+  update:       { label: "تعديل",         color: "bg-amber-100 text-amber-700 border-amber-200",        icon: Pencil },
+  delete:       { label: "حذف",           color: "bg-red-100 text-red-700 border-red-200",              icon: Trash2 },
+  export:       { label: "تصدير",         color: "bg-purple-100 text-purple-700 border-purple-200",    icon: Download },
+  access_denied:{ label: "⚠️ وصول مرفوض", color: "bg-orange-100 text-orange-700 border-orange-300",    icon: Trash2 },
 };
 
 const MODULE_LABELS: Record<string, string> = {

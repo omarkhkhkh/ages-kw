@@ -20,21 +20,25 @@ const GR = "#0b1a10";
 const GR2 = "#132a18";
 
 /* ── Nav structure ── */
+// Direct links shown inline in the navbar
+const buildDirectLinks = (user: AuthUser | null) => {
+  if (!user) return [];
+  const isAdmin = user.role === "admin";
+  const can = (field: keyof AuthUser) => isAdmin || !!user[field];
+  return [
+    { href: "/",         label: "لوحة التحكم",   icon: LayoutDashboard, show: true },
+    { href: "/tenders",  label: "المناقصات",      icon: FileText,        show: can("accessTenders") },
+    { href: "/calendar", label: "جدول الأعمال",   icon: Calendar,        show: true },
+  ].filter(i => i.show);
+};
+
+// Dropdown groups shown as menus
 const buildNavGroups = (user: AuthUser | null) => {
   if (!user) return [];
   const isAdmin = user.role === "admin";
   const can = (field: keyof AuthUser) => isAdmin || !!user[field];
 
   const groups = [
-    {
-      label: "الرئيسية",
-      icon: LayoutDashboard,
-      items: [
-        { href: "/",         label: "لوحة التحكم",  icon: LayoutDashboard, show: true },
-        { href: "/tenders",  label: "سجل المناقصات", icon: FileText,        show: can("accessTenders") },
-        { href: "/calendar", label: "جدول الأعمال",  icon: Calendar,        show: true },
-      ],
-    },
     {
       label: "قواعد البيانات",
       icon: Building2,
@@ -46,7 +50,7 @@ const buildNavGroups = (user: AuthUser | null) => {
       ],
     },
     {
-      label: "إدارة المشاريع",
+      label: "المشاريع والعقود",
       icon: FolderOpen,
       items: [
         { href: "/projects",   label: "المشاريع",         icon: FolderOpen,    show: can("accessProjects") },
@@ -54,18 +58,8 @@ const buildNavGroups = (user: AuthUser | null) => {
         { href: "/contracts",  label: "العقود",            icon: FileSignature, show: can("accessContracts") },
       ],
     },
-    {
-      label: "أدوات",
-      icon: BookOpen,
-      items: [
-        { href: "/guide",               label: "دليل Microsoft 365", icon: BookOpen, show: true      },
-        { href: "/admin/users",         label: "إدارة المستخدمين",   icon: Shield,   show: isAdmin   },
-        { href: "/admin/activity-log",  label: "سجل الحركات",        icon: Activity, show: isAdmin   },
-      ],
-    },
   ];
 
-  // Remove items user can't see, remove empty groups
   return groups
     .map(g => ({ ...g, items: g.items.filter(i => i.show) }))
     .filter(g => g.items.length > 0);
@@ -286,6 +280,7 @@ function UserMenu({ user, logout }: { user: any; logout: () => void }) {
 export function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  const directLinks = buildDirectLinks(user ?? null);
   const navGroups = buildNavGroups(user ?? null);
 
   return (
@@ -333,30 +328,34 @@ export function Layout({ children }: LayoutProps) {
           {/* Divider */}
           <div style={{ width: 1, height: 32, background: "rgba(255,255,255,0.1)", marginInline: 4, flexShrink: 0 }} />
 
-          {/* Nav groups — scrollable on small screens */}
+          {/* Nav — direct links + dropdown groups */}
           <nav style={{
             display: "flex", alignItems: "center", gap: 2,
-            flex: 1, overflowX: "auto",
-            scrollbarWidth: "none",
+            flex: 1, overflowX: "auto", scrollbarWidth: "none",
           }}>
-            {/* Dashboard direct link */}
-            <Link href="/">
-              <button style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "8px 14px", borderRadius: 10, cursor: "pointer",
-                fontFamily: "inherit", fontSize: 13, fontWeight: 700,
-                background: location === "/" ? "rgba(212,165,52,0.18)" : "transparent",
-                border: location === "/" ? "1px solid rgba(212,165,52,0.35)" : "1px solid transparent",
-                color: location === "/" ? G : "rgba(255,255,255,0.75)",
-                transition: "all 0.15s", whiteSpace: "nowrap",
-              }}
-                onMouseEnter={e => { if (location !== "/") e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-                onMouseLeave={e => { if (location !== "/") e.currentTarget.style.background = "transparent"; }}
-              >
-                <LayoutDashboard size={15} />
-                لوحة التحكم
-              </button>
-            </Link>
+            {/* Direct links */}
+            {directLinks.map(link => {
+              const isActive = location === link.href || (link.href !== "/" && location.startsWith(link.href));
+              return (
+                <Link key={link.href} href={link.href}>
+                  <button style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "8px 14px", borderRadius: 10, cursor: "pointer",
+                    fontFamily: "inherit", fontSize: 13, fontWeight: 700,
+                    background: isActive ? "rgba(212,165,52,0.18)" : "transparent",
+                    border: isActive ? "1px solid rgba(212,165,52,0.35)" : "1px solid transparent",
+                    color: isActive ? G : "rgba(255,255,255,0.75)",
+                    transition: "all 0.15s", whiteSpace: "nowrap",
+                  }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <link.icon size={15} />
+                    {link.label}
+                  </button>
+                </Link>
+              );
+            })}
 
             {/* Dropdown groups */}
             {navGroups.map(group => (

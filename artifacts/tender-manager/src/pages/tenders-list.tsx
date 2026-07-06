@@ -6,10 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
-import { Search, Plus, Filter, AlertCircle, FileText } from "lucide-react";
+import { Search, Plus, Filter, AlertCircle, FileText, Download } from "lucide-react";
+import { useAuth } from "@/contexts/auth";
+import { exportTendersToExcel } from "@/lib/export";
 import { TenderStatus } from "@workspace/api-client-react";
 
 export default function TendersList() {
+  const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<string>("all");
   
@@ -41,12 +44,19 @@ export default function TendersList() {
           <p className="text-muted-foreground text-sm mt-1">تصفح وإدارة جميع المناقصات في النظام.</p>
         </div>
         <div className="flex items-center gap-3">
-          <Link href="/tenders/new">
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              مناقصة جديدة
+          {(user?.role === "admin" || user?.canDownload) && (
+            <Button variant="outline" className="gap-2" onClick={() => exportTendersToExcel(tenders ?? [])}>
+              <Download className="h-4 w-4" /> تصدير Excel
             </Button>
-          </Link>
+          )}
+          {(user?.role === "admin" || user?.canEdit) && (
+            <Link href="/tenders/new">
+              <Button className="gap-2">
+                <Plus className="h-4 w-4" />
+                مناقصة جديدة
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
 

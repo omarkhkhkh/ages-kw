@@ -5,13 +5,16 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Users, Plus, Pencil, Trash2, X, Check } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, X, Check, Download } from "lucide-react";
+import { useAuth } from "@/contexts/auth";
+import { exportSuppliersToExcel } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 
 const SUPPLIER_TYPES = ["مقاول", "مورد", "استشاري", "مصنّع", "أخرى"];
 const emptyForm = { name: "", type: "", contactPerson: "", phone: "", email: "", address: "", specialization: "", commercialRegNo: "", notes: "" };
 
 export default function SuppliersList() {
+  const { user } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showForm, setShowForm] = useState(false);
@@ -37,7 +40,14 @@ export default function SuppliersList() {
           <h1 className="text-2xl font-bold text-foreground">الموردون والمقاولون</h1>
           <p className="text-muted-foreground text-sm mt-1">إدارة الموردين والمقاولين المشاركين في المناقصات.</p>
         </div>
-        <Button onClick={() => { closeForm(); setShowForm(true); }} className="gap-2"><Plus className="h-4 w-4" />إضافة مورد</Button>
+        <div className="flex items-center gap-2">
+          {(user?.role === "admin" || user?.canDownload) && (
+            <Button variant="outline" className="gap-2" onClick={() => exportSuppliersToExcel(suppliers)}><Download className="h-4 w-4" />تصدير</Button>
+          )}
+          {(user?.role === "admin" || user?.canEdit) && (
+            <Button onClick={() => { closeForm(); setShowForm(true); }} className="gap-2"><Plus className="h-4 w-4" />إضافة مورد</Button>
+          )}
+        </div>
       </div>
 
       {showForm && (
@@ -95,10 +105,12 @@ export default function SuppliersList() {
                     <td className="p-4 text-muted-foreground">{s.contactPerson || "—"}</td>
                     <td className="p-4 text-muted-foreground" dir="ltr">{s.phone || "—"}</td>
                     <td className="p-4 text-left">
-                      <div className="flex gap-2 justify-end">
-                        <Button variant="ghost" size="sm" onClick={() => handleEdit(s)}><Pencil className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => { if (confirm("هل تريد حذف هذا المورد؟")) deleteMutation.mutate(s.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
-                      </div>
+                      {(user?.role === "admin" || user?.canEdit) && (
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="ghost" size="sm" onClick={() => handleEdit(s)}><Pencil className="h-3.5 w-3.5" /></Button>
+                          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => { if (confirm("هل تريد حذف هذا المورد؟")) deleteMutation.mutate(s.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

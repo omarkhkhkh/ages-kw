@@ -5,7 +5,9 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { FolderOpen, Plus, Pencil, Trash2, X, Check } from "lucide-react";
+import { FolderOpen, Plus, Pencil, Trash2, X, Check, Download } from "lucide-react";
+import { useAuth } from "@/contexts/auth";
+import { exportProjectsToExcel } from "@/lib/export";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useListTenders } from "@workspace/api-client-react";
@@ -19,6 +21,7 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 const emptyForm = { tenderId: "", projectNumber: "", name: "", governmentEntityId: "", contractValue: "", startDate: "", endDate: "", status: "active", projectManager: "", completionPercentage: "0", notes: "" };
 
 export default function ProjectsList() {
+  const { user } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showForm, setShowForm] = useState(false);
@@ -48,7 +51,14 @@ export default function ProjectsList() {
           <h1 className="text-2xl font-bold text-foreground">المشاريع</h1>
           <p className="text-muted-foreground text-sm mt-1">تتبع المشاريع المنبثقة عن المناقصات الرابحة.</p>
         </div>
-        <Button onClick={() => { closeForm(); setShowForm(true); }} className="gap-2"><Plus className="h-4 w-4" />مشروع جديد</Button>
+        <div className="flex items-center gap-2">
+          {(user?.role === "admin" || user?.canDownload) && (
+            <Button variant="outline" className="gap-2" onClick={() => exportProjectsToExcel(projects)}><Download className="h-4 w-4" />تصدير</Button>
+          )}
+          {(user?.role === "admin" || user?.canEdit) && (
+            <Button onClick={() => { closeForm(); setShowForm(true); }} className="gap-2"><Plus className="h-4 w-4" />مشروع جديد</Button>
+          )}
+        </div>
       </div>
 
       {showForm && (
@@ -128,10 +138,12 @@ export default function ProjectsList() {
                       <td className="p-4 text-muted-foreground">{formatDate(p.endDate)}</td>
                       <td className="p-4"><span className={`px-2 py-0.5 rounded-full text-xs border ${st.color}`}>{st.label}</span></td>
                       <td className="p-4 text-left">
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="ghost" size="sm" onClick={() => handleEdit(p)}><Pencil className="h-3.5 w-3.5" /></Button>
-                          <Button variant="ghost" size="sm" className="text-destructive" onClick={() => { if (confirm("حذف المشروع؟")) deleteM.mutate(p.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
-                        </div>
+                        {(user?.role === "admin" || user?.canEdit) && (
+                          <div className="flex gap-2 justify-end">
+                            <Button variant="ghost" size="sm" onClick={() => handleEdit(p)}><Pencil className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="sm" className="text-destructive" onClick={() => { if (confirm("حذف المشروع؟")) deleteM.mutate(p.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

@@ -1,12 +1,14 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard, FileText, Plus, BellRing,
+  LayoutDashboard, FileText, Plus,
   Building2, Users, ClipboardList, ShoppingCart,
   FolderOpen, ShieldCheck, FileSignature, BookOpen,
-  ChevronDown,
+  ChevronDown, Calendar, Shield, LogOut, UserCircle,
 } from "lucide-react";
 import React, { useState } from "react";
+import { useAuth } from "@/contexts/auth";
+import { nowKuwait } from "@/lib/timezone";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -16,45 +18,51 @@ interface NavItem {
   href: string;
   label: string;
   icon: React.ElementType;
+  adminOnly?: boolean;
 }
 
 interface NavGroup {
   label: string;
   items: NavItem[];
+  adminOnly?: boolean;
 }
 
-const navGroups: NavGroup[] = [
-  {
-    label: "الرئيسية",
-    items: [
-      { href: "/", label: "لوحة التحكم", icon: LayoutDashboard },
-      { href: "/tenders", label: "سجل المناقصات", icon: FileText },
-    ],
-  },
-  {
-    label: "قواعد البيانات",
-    items: [
-      { href: "/entities", label: "الجهات الحكومية", icon: Building2 },
-      { href: "/suppliers", label: "الموردون", icon: Users },
-      { href: "/rfq", label: "طلبات عروض الأسعار", icon: ClipboardList },
-      { href: "/purchase-orders", label: "أوامر الشراء المباشر", icon: ShoppingCart },
-    ],
-  },
-  {
-    label: "إدارة المشاريع",
-    items: [
-      { href: "/projects", label: "المشاريع", icon: FolderOpen },
-      { href: "/guarantees", label: "الكفالات البنكية", icon: ShieldCheck },
-      { href: "/contracts", label: "العقود", icon: FileSignature },
-    ],
-  },
-  {
-    label: "أدوات",
-    items: [
-      { href: "/guide", label: "دليل Microsoft 365", icon: BookOpen },
-    ],
-  },
-];
+function buildNavGroups(isAdmin: boolean): NavGroup[] {
+  return [
+    {
+      label: "الرئيسية",
+      items: [
+        { href: "/", label: "لوحة التحكم", icon: LayoutDashboard },
+        { href: "/tenders", label: "سجل المناقصات", icon: FileText },
+        { href: "/calendar", label: "جدول الأعمال", icon: Calendar },
+      ],
+    },
+    {
+      label: "قواعد البيانات",
+      items: [
+        { href: "/entities", label: "الجهات الحكومية", icon: Building2 },
+        { href: "/suppliers", label: "الموردون", icon: Users },
+        { href: "/rfq", label: "طلبات عروض الأسعار", icon: ClipboardList },
+        { href: "/purchase-orders", label: "أوامر الشراء المباشر", icon: ShoppingCart },
+      ],
+    },
+    {
+      label: "إدارة المشاريع",
+      items: [
+        { href: "/projects", label: "المشاريع", icon: FolderOpen },
+        { href: "/guarantees", label: "الكفالات البنكية", icon: ShieldCheck },
+        { href: "/contracts", label: "العقود", icon: FileSignature },
+      ],
+    },
+    {
+      label: "أدوات",
+      items: [
+        { href: "/guide", label: "دليل Microsoft 365", icon: BookOpen },
+        ...(isAdmin ? [{ href: "/admin/users", label: "إدارة المستخدمين", icon: Shield }] : []),
+      ],
+    },
+  ];
+}
 
 function NavSection({ group, location }: { group: NavGroup; location: string }) {
   const [open, setOpen] = useState(true);
@@ -93,8 +101,30 @@ function NavSection({ group, location }: { group: NavGroup; location: string }) 
   );
 }
 
+// Kuwait clock
+function KuwaitClock() {
+  const [time, setTime] = useState(() => {
+    const now = nowKuwait();
+    return now.toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  });
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      const now = nowKuwait();
+      setTime(now.toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <span className="font-mono text-xs text-sidebar-foreground/60 tabular-nums">{time} (KWT)</span>;
+}
+
 export function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
+  const { user, logout } = useAuth();
+  const navGroups = buildNavGroups(user?.role === "admin");
+
+  const todayAr = nowKuwait().toLocaleDateString("ar-KW", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
 
   return (
     <div className="flex min-h-screen w-full bg-background" dir="rtl">
@@ -116,24 +146,41 @@ export function Layout({ children }: LayoutProps) {
 
           <div className="mt-2 pt-4 border-t border-sidebar-border">
             <div className="px-3 mb-1.5 text-xs font-semibold text-sidebar-foreground/50 uppercase tracking-wider">إجراءات</div>
-            <Link href="/tenders/new" className="w-full">
-              <div className="flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm font-medium text-sidebar-primary hover:bg-sidebar-accent">
-                <Plus className="h-4 w-4" />
-                مناقصة جديدة
-              </div>
-            </Link>
+            {(user?.role === "admin" || user?.canEdit) && (
+              <Link href="/tenders/new" className="w-full">
+                <div className="flex items-center gap-3 px-3 py-2 rounded-md transition-colors text-sm font-medium text-sidebar-primary hover:bg-sidebar-accent">
+                  <Plus className="h-4 w-4" />
+                  مناقصة جديدة
+                </div>
+              </Link>
+            )}
           </div>
         </nav>
 
-        <div className="p-4 border-t border-sidebar-border">
+        {/* User info + logout */}
+        <div className="p-4 border-t border-sidebar-border space-y-3">
+          {/* Kuwait time */}
+          <div className="flex flex-col gap-0.5 px-1">
+            <KuwaitClock />
+            <span className="text-[11px] text-sidebar-foreground/40">{todayAr}</span>
+          </div>
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full bg-sidebar-accent flex items-center justify-center text-xs font-bold text-sidebar-foreground">
-              م
+            <div className="h-8 w-8 rounded-full bg-sidebar-accent flex items-center justify-center text-xs font-bold text-sidebar-foreground flex-shrink-0">
+              <UserCircle className="h-5 w-5" />
             </div>
-            <div className="flex flex-col">
-              <span className="text-sm font-medium text-sidebar-foreground">مهندس رئيسي</span>
-              <span className="text-xs text-sidebar-foreground/50">إدارة العطاءات</span>
+            <div className="flex flex-col flex-1 min-w-0">
+              <span className="text-sm font-medium text-sidebar-foreground truncate">{user?.fullName}</span>
+              <span className="text-xs text-sidebar-foreground/50">
+                {user?.role === "admin" ? "مدير النظام" : "موظف"}
+              </span>
             </div>
+            <button
+              onClick={() => logout()}
+              title="تسجيل الخروج"
+              className="text-sidebar-foreground/50 hover:text-red-400 transition-colors flex-shrink-0"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </aside>
@@ -149,13 +196,16 @@ export function Layout({ children }: LayoutProps) {
           </div>
           <div className="hidden md:block" />
           <div className="flex items-center gap-4">
-            <button className="text-muted-foreground hover:text-foreground relative">
-              <BellRing className="h-5 w-5" />
-              <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-primary border-2 border-card"></span>
-              </span>
-            </button>
+            {/* Permissions badge */}
+            {user && (
+              <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full">
+                {user.role === "admin" ? (
+                  <><Shield className="h-3 w-3 text-amber-500" /> مدير</>
+                ) : (
+                  <><UserCircle className="h-3 w-3" /> {user.fullName}</>
+                )}
+              </div>
+            )}
           </div>
         </header>
 

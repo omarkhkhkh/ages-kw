@@ -5,7 +5,9 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ShieldCheck, Plus, Pencil, Trash2, X, Check, AlertTriangle } from "lucide-react";
+import { ShieldCheck, Plus, Pencil, Trash2, X, Check, AlertTriangle, Download } from "lucide-react";
+import { useAuth } from "@/contexts/auth";
+import { exportGuaranteesToExcel } from "@/lib/export";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useListTenders } from "@workspace/api-client-react";
@@ -26,6 +28,7 @@ function isNearExpiry(expiryDate: string | null): boolean {
 }
 
 export default function GuaranteesList() {
+  const { user } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showForm, setShowForm] = useState(false);
@@ -55,7 +58,14 @@ export default function GuaranteesList() {
           <h1 className="text-2xl font-bold text-foreground">الكفالات البنكية</h1>
           <p className="text-muted-foreground text-sm mt-1">إدارة الكفالات البنكية المرتبطة بالمناقصات.</p>
         </div>
-        <Button onClick={() => { closeForm(); setShowForm(true); }} className="gap-2"><Plus className="h-4 w-4" />كفالة جديدة</Button>
+        <div className="flex items-center gap-2">
+          {(user?.role === "admin" || user?.canDownload) && (
+            <Button variant="outline" className="gap-2" onClick={() => exportGuaranteesToExcel(guarantees as any[])}><Download className="h-4 w-4" />تصدير</Button>
+          )}
+          {(user?.role === "admin" || user?.canEdit) && (
+            <Button onClick={() => { closeForm(); setShowForm(true); }} className="gap-2"><Plus className="h-4 w-4" />كفالة جديدة</Button>
+          )}
+        </div>
       </div>
 
       {expiring.length > 0 && (
@@ -135,10 +145,12 @@ export default function GuaranteesList() {
                       <td className={cn("p-4", nearExpiry ? "text-amber-700 font-medium" : "text-muted-foreground")}>{formatDate(g.expiryDate)}</td>
                       <td className="p-4"><span className={`px-2 py-0.5 rounded-full text-xs border ${st.color}`}>{st.label}</span></td>
                       <td className="p-4 text-left">
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="ghost" size="sm" onClick={() => handleEdit(g)}><Pencil className="h-3.5 w-3.5" /></Button>
-                          <Button variant="ghost" size="sm" className="text-destructive" onClick={() => { if (confirm("حذف الكفالة؟")) deleteM.mutate(g.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
-                        </div>
+                        {(user?.role === "admin" || user?.canEdit) && (
+                          <div className="flex gap-2 justify-end">
+                            <Button variant="ghost" size="sm" onClick={() => handleEdit(g)}><Pencil className="h-3.5 w-3.5" /></Button>
+                            <Button variant="ghost" size="sm" className="text-destructive" onClick={() => { if (confirm("حذف الكفالة؟")) deleteM.mutate(g.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

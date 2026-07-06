@@ -1,6 +1,9 @@
 import express, { type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import { pool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
@@ -25,9 +28,49 @@ app.use(
     },
   }),
 );
-app.use(cors());
+
+// Allow requests from the same Replit proxy domain or localhost in dev
+const allowedOrigins = process.env.REPLIT_DEV_DOMAIN
+  ? [`https://${process.env.REPLIT_DEV_DOMAIN}`]
+  : ["http://localhost:21269", "http://localhost:5173"];
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow same-origin requests (no Origin header) and allowed origins
+      if (!origin || allowedOrigins.some((o) => origin.startsWith(o))) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
+    credentials: true,
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// ── Session middleware ───────────────────────────────────────────────────────
+const PgSession = connectPgSimple(session);
+
+app.use(
+  session({
+    store: new PgSession({
+      pool,
+      tableName: "session",
+      createTableIfMissing: false,
+    }),
+    secret: process.env.SESSION_SECRET ?? (() => { throw new Error("SESSION_SECRET env var is required"); })(),
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    },
+  }),
+);
 
 app.use("/api", router);
 

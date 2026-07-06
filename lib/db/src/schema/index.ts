@@ -6,3 +6,4 @@ export * from "./direct-purchase-orders";
 export * from "./projects";
 export * from "./bank-guarantees";
 export * from "./contracts";
+export * from "./users";

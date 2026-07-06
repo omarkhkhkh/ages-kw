@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/auth";
 import { Eye, EyeOff, LogIn } from "lucide-react";
+import logoImg from "@/assets/logo.png";
 
 export default function Login() {
   const { login } = useAuth();
@@ -85,7 +86,7 @@ export default function Login() {
             display: "inline-block",
           }}>
             <img
-              src="/logo.png"
+              src={logoImg}
               alt="Arabian Group Logo"
               style={{ width: 200, display: "block", objectFit: "contain" }}
             />
@@ -122,7 +123,7 @@ export default function Login() {
           {/* Mobile logo */}
           <div style={{ textAlign: "center", marginBottom: 28 }}>
             <img
-              src="/logo.png"
+              src={logoImg}
               alt="Arabian Group Logo"
               style={{ width: 160, objectFit: "contain", margin: "0 auto 6px", display: "block" }}
             />

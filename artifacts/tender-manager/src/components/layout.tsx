@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import React, { useState } from "react";
 import { useAuth } from "@/contexts/auth";
+import logoImg from "@/assets/logo.png";
 import { nowKuwait } from "@/lib/timezone";
 
 interface LayoutProps {
@@ -136,7 +137,7 @@ export function Layout({ children }: LayoutProps) {
           {/* Logo */}
           <div className="mb-2">
             <img
-              src="/logo-transparent.png"
+              src={logoImg}
               alt="Arabian Group"
               style={{ width: 140, objectFit: "contain", filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.3))" }}
             />

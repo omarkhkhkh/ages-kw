@@ -106,7 +106,7 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || user.accessTransportation}><TransportationList /></ModuleGuard>
         </Route>
         <Route path="/finance">
-          <ModuleGuard access={isAdmin || user.accessFinance}><FinancesList /></ModuleGuard>
+          <ModuleGuard access={isAdmin}><FinancesList /></ModuleGuard>
         </Route>
         <Route path="/guide" component={Guide} />
         <Route path="/calendar" component={CalendarPage} />

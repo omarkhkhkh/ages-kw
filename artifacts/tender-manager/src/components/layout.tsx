@@ -35,7 +35,7 @@ const buildNavLinks = (user: AuthUser | null) => {
     { href: "/rfq",            label: "عروض الأسعار",           icon: ClipboardList,   show: can("accessRfq") },
     { href: "/purchase-orders",   label: "أوامر الشراء",    icon: ShoppingCart,  show: can("accessPo") },
     { href: "/transportation",    label: "النقل والتوزيع",  icon: Truck,         show: can("accessTransportation") },
-    { href: "/finance",           label: "الإدارة المالية", icon: Wallet,        show: can("accessFinance") },
+    { href: "/finance",           label: "الإدارة المالية", icon: Wallet,        show: isAdmin },
     { href: "/calendar",          label: "جدول الأعمال",    icon: Calendar,      show: true },
   ].filter(i => i.show);
 };

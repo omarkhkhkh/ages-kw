@@ -1,17 +1,13 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { contractsApi, entitiesApi } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   FileSignature, Plus, Pencil, Trash2, X, Check, Download,
   Building2, Banknote, CalendarDays, CheckCircle2, XCircle, Clock,
-  AlertCircle,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { exportContractsToExcel } from "@/lib/export";
-import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useListTenders } from "@workspace/api-client-react";
 
@@ -27,10 +23,10 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string; ico
 };
 
 const TABS = [
-  { id: "all",       label: "الجميع",  icon: FileSignature, color: "#64748b" },
-  { id: "active",    label: "سارية",   icon: CheckCircle2,  color: "#16a34a" },
-  { id: "completed", label: "منتهية",  icon: Clock,         color: "#2563eb" },
-  { id: "terminated",label: "مُفسوخة", icon: XCircle,       color: "#dc2626" },
+  { id: "all",        label: "الجميع",  icon: FileSignature, color: "#64748b" },
+  { id: "active",     label: "سارية",   icon: CheckCircle2,  color: "#16a34a" },
+  { id: "completed",  label: "منتهية",  icon: Clock,         color: "#2563eb" },
+  { id: "terminated", label: "مُفسوخة", icon: XCircle,       color: "#dc2626" },
 ];
 
 const emptyForm = {
@@ -39,10 +35,239 @@ const emptyForm = {
   status: "active", notes: "",
 };
 
+/* ─── Modal Component ─── */
+function ContractModal({
+  open, editId, form, setForm, onClose, onSubmit, isPending,
+  entities, tenders,
+}: any) {
+  if (!open) return null;
+
+  const inputCls: React.CSSProperties = {
+    width: "100%", boxSizing: "border-box",
+    padding: "10px 14px", borderRadius: 10,
+    border: "1.5px solid #e5e7eb", fontSize: 13, color: "#1e2a1e",
+    background: "#fafaf8", outline: "none", fontFamily: "inherit",
+    transition: "border-color 0.15s, box-shadow 0.15s",
+  };
+  const labelCls: React.CSSProperties = {
+    display: "block", fontSize: 12, fontWeight: 700, color: GR, marginBottom: 5,
+  };
+  const focus = (e: any) => {
+    e.target.style.borderColor = G;
+    e.target.style.boxShadow = `0 0 0 3px rgba(212,165,52,0.15)`;
+  };
+  const blur = (e: any) => {
+    e.target.style.borderColor = "#e5e7eb";
+    e.target.style.boxShadow = "none";
+  };
+
+  const f = (field: string) => (e: any) =>
+    setForm((p: any) => ({ ...p, [field]: e.target.value }));
+
+  return (
+    /* Backdrop */
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(11,26,16,0.55)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 24,
+        backdropFilter: "blur(4px)",
+        animation: "fadeIn 0.2s ease",
+      }}
+    >
+      {/* Modal panel */}
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: 700,
+          background: "white", borderRadius: 24,
+          boxShadow: "0 32px 80px rgba(0,0,0,0.3), 0 0 0 1px rgba(212,165,52,0.15)",
+          overflow: "hidden",
+          animation: "slideUp 0.25s ease",
+          maxHeight: "90vh",
+          display: "flex", flexDirection: "column",
+        }}
+      >
+        {/* Modal header */}
+        <div style={{
+          padding: "20px 28px",
+          background: `linear-gradient(135deg, ${GR}, #1e4028)`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          flexShrink: 0,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              width: 42, height: 42, borderRadius: 12,
+              background: "rgba(212,165,52,0.2)",
+              border: "1px solid rgba(212,165,52,0.35)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <FileSignature size={20} color={G} />
+            </div>
+            <div>
+              <h2 style={{ color: "white", fontSize: 17, fontWeight: 800, margin: 0 }}>
+                {editId ? "تعديل بيانات العقد" : "إضافة عقد جديد"}
+              </h2>
+              <p style={{ color: "rgba(212,165,52,0.6)", fontSize: 12, margin: "2px 0 0" }}>
+                {editId ? "قم بتعديل بيانات العقد وحفظها" : "أدخل بيانات العقد الجديد"}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            width: 34, height: 34, borderRadius: 8,
+            background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.18)",
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            color: "rgba(255,255,255,0.7)", transition: "background 0.15s",
+          }}
+            onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.22)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.12)")}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Modal body — scrollable */}
+        <form onSubmit={onSubmit} style={{ overflowY: "auto", padding: 28, display: "flex", flexDirection: "column", gap: 0 }}>
+          {/* Section: Basic Info */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <div style={{ width: 3, height: 18, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
+              <span style={{ fontSize: 13, fontWeight: 800, color: GR }}>البيانات الأساسية</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div>
+                <label style={labelCls}>رقم العقد <span style={{ color: "#dc2626" }}>*</span></label>
+                <input value={form.contractNumber} onChange={f("contractNumber")} placeholder="مثال: CONT-2025-001" dir="ltr" required style={inputCls} onFocus={focus} onBlur={blur} />
+              </div>
+              <div>
+                <label style={labelCls}>الحالة</label>
+                <select value={form.status} onChange={f("status")} style={{ ...inputCls, height: 42 }} onFocus={focus} onBlur={blur}>
+                  {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelCls}>المناقصة المرتبطة</label>
+                <select value={form.tenderId} onChange={f("tenderId")} style={{ ...inputCls, height: 42 }} onFocus={focus} onBlur={blur}>
+                  <option value="">— اختر المناقصة —</option>
+                  {(tenders as any[]).map((t: any) => (
+                    <option key={t.id} value={t.id}>{t.tenderNumber} · {t.projectName}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={labelCls}>الجهة الحكومية</label>
+                <select value={form.governmentEntityId} onChange={f("governmentEntityId")} style={{ ...inputCls, height: 42 }} onFocus={focus} onBlur={blur}>
+                  <option value="">— اختر الجهة —</option>
+                  {(entities as any[]).map((e: any) => (
+                    <option key={e.id} value={e.id}>{e.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={labelCls}>قيمة العقد (د.ك)</label>
+                <input type="number" value={form.contractValue} onChange={f("contractValue")} min="0" dir="ltr" placeholder="0.000" style={inputCls} onFocus={focus} onBlur={blur} />
+              </div>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: 1, background: "linear-gradient(90deg, transparent, #f0ead8, transparent)", marginBottom: 24 }} />
+
+          {/* Section: Dates */}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <div style={{ width: 3, height: 18, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
+              <span style={{ fontSize: 13, fontWeight: 800, color: GR }}>التواريخ</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+              <div>
+                <label style={labelCls}>تاريخ التوقيع</label>
+                <input type="date" value={form.signDate} onChange={f("signDate")} style={inputCls} onFocus={focus} onBlur={blur} />
+              </div>
+              <div>
+                <label style={labelCls}>تاريخ البداية</label>
+                <input type="date" value={form.startDate} onChange={f("startDate")} style={inputCls} onFocus={focus} onBlur={blur} />
+              </div>
+              <div>
+                <label style={labelCls}>تاريخ الانتهاء</label>
+                <input type="date" value={form.endDate} onChange={f("endDate")} style={inputCls} onFocus={focus} onBlur={blur} />
+              </div>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: 1, background: "linear-gradient(90deg, transparent, #f0ead8, transparent)", marginBottom: 24 }} />
+
+          {/* Notes */}
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <div style={{ width: 3, height: 18, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
+              <span style={{ fontSize: 13, fontWeight: 800, color: GR }}>ملاحظات</span>
+            </div>
+            <textarea
+              value={form.notes} onChange={f("notes")}
+              placeholder="أي ملاحظات إضافية حول العقد..."
+              rows={3}
+              style={{ ...inputCls, resize: "vertical", lineHeight: 1.6 }}
+              onFocus={focus} onBlur={blur}
+            />
+          </div>
+
+          {/* Footer actions */}
+          <div style={{
+            display: "flex", gap: 10, justifyContent: "flex-start",
+            paddingTop: 4, borderTop: "1px solid #f5f0e6",
+          }}>
+            <button type="submit" disabled={isPending}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "11px 28px", borderRadius: 12, fontSize: 14, fontWeight: 800,
+                cursor: isPending ? "not-allowed" : "pointer",
+                background: `linear-gradient(135deg,${G},${GD})`,
+                border: "none", color: "white", fontFamily: "inherit",
+                boxShadow: `0 6px 20px rgba(212,165,52,0.4)`,
+                opacity: isPending ? 0.7 : 1,
+                transition: "transform 0.1s, box-shadow 0.1s",
+              }}
+              onMouseEnter={e => { if (!isPending) { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = `0 8px 24px rgba(212,165,52,0.5)`; } }}
+              onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = `0 6px 20px rgba(212,165,52,0.4)`; }}
+            >
+              <Check size={16} />
+              {isPending ? "جارٍ الحفظ..." : (editId ? "حفظ التعديلات" : "إضافة العقد")}
+            </button>
+            <button type="button" onClick={onClose}
+              style={{
+                display: "flex", alignItems: "center", gap: 7,
+                padding: "11px 22px", borderRadius: 12, fontSize: 14, fontWeight: 600,
+                cursor: "pointer", background: "#f9fafb",
+                border: "1.5px solid #e5e7eb", color: "#374151",
+                fontFamily: "inherit", transition: "border-color 0.15s",
+              }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = "#9ca3af")}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = "#e5e7eb")}
+            >
+              <X size={15} /> إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <style>{`
+        @keyframes fadeIn  { from{opacity:0}to{opacity:1} }
+        @keyframes slideUp { from{transform:translateY(32px);opacity:0}to{transform:translateY(0);opacity:1} }
+      `}</style>
+    </div>
+  );
+}
+
+/* ─── Main Page ─── */
 export default function ContractsList() {
-  const { user }   = useAuth();
-  const qc         = useQueryClient();
-  const { toast }  = useToast();
+  const { user }  = useAuth();
+  const qc        = useQueryClient();
+  const { toast } = useToast();
+
   const [showForm, setShowForm] = useState(false);
   const [editId,   setEditId]   = useState<number | null>(null);
   const [form,     setForm]     = useState({ ...emptyForm });
@@ -53,42 +278,67 @@ export default function ContractsList() {
   const { data: entities  = [] } = useQuery({ queryKey: ["government-entities"], queryFn: () => entitiesApi.list() });
   const { data: tenders   = [] } = useListTenders({});
 
-  const createM = useMutation({ mutationFn: contractsApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ["contracts"] }); closeForm(); toast({ title: "تم إضافة العقد" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
-  const updateM = useMutation({ mutationFn: ({ id, data }: any) => contractsApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ["contracts"] }); closeForm(); toast({ title: "تم تحديث العقد" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
-  const deleteM = useMutation({ mutationFn: contractsApi.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ["contracts"] }); toast({ title: "تم حذف العقد" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
+  const createM = useMutation({
+    mutationFn: contractsApi.create,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["contracts"] }); closeForm(); toast({ title: "✅ تم إضافة العقد بنجاح" }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
+  const updateM = useMutation({
+    mutationFn: ({ id, data }: any) => contractsApi.update(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["contracts"] }); closeForm(); toast({ title: "✅ تم تحديث العقد" }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
+  const deleteM = useMutation({
+    mutationFn: contractsApi.delete,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["contracts"] }); toast({ title: "🗑 تم حذف العقد" }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
 
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
-  const handleEdit = (c: any) => {
+
+  const openEdit = (c: any) => {
     setEditId(c.id);
-    setForm({ tenderId: c.tenderId || "", contractNumber: c.contractNumber, governmentEntityId: c.governmentEntityId || "", contractValue: c.contractValue || "", signDate: c.signDate || "", startDate: c.startDate || "", endDate: c.endDate || "", status: c.status, notes: c.notes || "" });
+    setForm({
+      tenderId: c.tenderId || "", contractNumber: c.contractNumber,
+      governmentEntityId: c.governmentEntityId || "",
+      contractValue: c.contractValue || "", signDate: c.signDate || "",
+      startDate: c.startDate || "", endDate: c.endDate || "",
+      status: c.status, notes: c.notes || "",
+    });
     setShowForm(true);
   };
+
   const handleSubmit = (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!form.contractNumber) return;
-    const data = { ...form, tenderId: form.tenderId ? Number(form.tenderId) : null, governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : null, contractValue: form.contractValue ? Number(form.contractValue) : null };
+    const data = {
+      ...form,
+      tenderId: form.tenderId ? Number(form.tenderId) : null,
+      governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : null,
+      contractValue: form.contractValue ? Number(form.contractValue) : null,
+    };
     editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data);
   };
 
   const activeTabCfg = TABS.find(t => t.id === tab)!;
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%", boxSizing: "border-box",
-    padding: "9px 12px", borderRadius: 10,
-    border: "1.5px solid #e5e7eb", fontSize: 13, color: "#1e2a1e",
-    background: "#fafaf8", outline: "none", fontFamily: "inherit",
-  };
-  const labelStyle: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 700, color: GR, marginBottom: 5 };
-
   return (
     <div dir="rtl" style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif", display: "flex", flexDirection: "column", gap: 24 }}>
+
+      {/* ── Modal ── */}
+      <ContractModal
+        open={showForm} editId={editId} form={form} setForm={setForm}
+        onClose={closeForm} onSubmit={handleSubmit}
+        isPending={createM.isPending || updateM.isPending}
+        entities={entities} tenders={tenders}
+      />
 
       {/* ── Header ── */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
             <div style={{ width: 4, height: 26, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>العقود</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>إدارة العقود</h1>
           </div>
           <p style={{ color: "#6b7280", fontSize: 13, margin: 0 }}>
             {isLoading ? "جارٍ التحميل..." : `${(contracts as any[]).length} عقد مسجّل`}
@@ -106,7 +356,9 @@ export default function ContractsList() {
           )}
           {(user?.role === "admin" || user?.canEdit) && (
             <button onClick={() => { closeForm(); setShowForm(true); }}
-              style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 18px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", fontFamily: "inherit", boxShadow: `0 4px 14px rgba(212,165,52,0.4)` }}
+              style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 18px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", fontFamily: "inherit", boxShadow: `0 4px 14px rgba(212,165,52,0.4)`, transition: "transform 0.1s" }}
+              onMouseEnter={e => (e.currentTarget.style.transform = "translateY(-1px)")}
+              onMouseLeave={e => (e.currentTarget.style.transform = "translateY(0)")}
             >
               <Plus size={15} /> عقد جديد
             </button>
@@ -114,90 +366,13 @@ export default function ContractsList() {
         </div>
       </div>
 
-      {/* ── Form ── */}
-      {showForm && (
-        <div style={{ background: "white", borderRadius: 18, border: `1.5px solid ${G}30`, boxShadow: `0 8px 32px rgba(212,165,52,0.12)`, overflow: "hidden" }}>
-          {/* Form header */}
-          <div style={{ padding: "16px 24px", background: "#fdf8ec", borderBottom: `1.5px solid ${G}20`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 36, height: 36, borderRadius: 10, background: `${G}15`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <FileSignature size={18} color={GD} />
-              </div>
-              <span style={{ fontSize: 16, fontWeight: 800, color: GR }}>{editId ? "تعديل العقد" : "عقد جديد"}</span>
-            </div>
-            <button onClick={closeForm} style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af", padding: 4 }}>
-              <X size={18} />
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} style={{ padding: 24 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 16, marginBottom: 16 }}>
-              <div>
-                <label style={labelStyle}>رقم العقد *</label>
-                <input value={form.contractNumber} onChange={e => setForm(p => ({ ...p, contractNumber: e.target.value }))} placeholder="رقم العقد" dir="ltr" required style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>الحالة</label>
-                <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))} style={{ ...inputStyle, height: 40 }}>
-                  {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>المناقصة</label>
-                <select value={form.tenderId} onChange={e => setForm(p => ({ ...p, tenderId: e.target.value }))} style={{ ...inputStyle, height: 40 }}>
-                  <option value="">اختر المناقصة</option>
-                  {(tenders as any[]).map((t: any) => <option key={t.id} value={t.id}>{t.tenderNumber} - {t.projectName}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>الجهة الحكومية</label>
-                <select value={form.governmentEntityId} onChange={e => setForm(p => ({ ...p, governmentEntityId: e.target.value }))} style={{ ...inputStyle, height: 40 }}>
-                  <option value="">اختر الجهة</option>
-                  {(entities as any[]).map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>قيمة العقد (د.ك)</label>
-                <input type="number" value={form.contractValue} onChange={e => setForm(p => ({ ...p, contractValue: e.target.value }))} min="0" dir="ltr" style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>تاريخ التوقيع</label>
-                <input type="date" value={form.signDate} onChange={e => setForm(p => ({ ...p, signDate: e.target.value }))} style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>تاريخ البداية</label>
-                <input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))} style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>تاريخ الانتهاء</label>
-                <input type="date" value={form.endDate} onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))} style={inputStyle} />
-              </div>
-            </div>
-            <div style={{ marginBottom: 20 }}>
-              <label style={labelStyle}>ملاحظات</label>
-              <input value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} style={inputStyle} />
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button type="submit" disabled={createM.isPending || updateM.isPending}
-                style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 22px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", fontFamily: "inherit" }}>
-                <Check size={15} /> حفظ
-              </button>
-              <button type="button" onClick={closeForm}
-                style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 18px", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", background: "#f9fafb", border: "1.5px solid #e5e7eb", color: "#374151", fontFamily: "inherit" }}>
-                <X size={15} /> إلغاء
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
       {/* ── Filter tabs ── */}
       <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "12px 16px", display: "flex", gap: 6, flexWrap: "wrap", boxShadow: "0 2px 12px rgba(0,0,0,0.05)" }}>
         {TABS.map(t => {
           const active = t.id === tab;
           return (
             <button key={t.id} onClick={() => setTab(t.id)}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", border: active ? `1.5px solid ${t.color}22` : "1.5px solid transparent", background: active ? `${t.color}12` : "transparent", color: active ? t.color : "#6b7280" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", border: active ? `1.5px solid ${t.color}33` : "1.5px solid transparent", background: active ? `${t.color}12` : "transparent", color: active ? t.color : "#6b7280" }}
             >
               <t.icon size={13} />
               {t.label}
@@ -224,14 +399,14 @@ export default function ContractsList() {
             <thead>
               <tr style={{ background: "#fafaf8" }}>
                 {[
-                  { label: "رقم العقد",       icon: FileSignature },
-                  { label: "الجهة الحكومية",  icon: Building2     },
-                  { label: "المناقصة",         icon: null          },
-                  { label: "قيمة العقد",      icon: Banknote      },
-                  { label: "تاريخ التوقيع",   icon: CalendarDays  },
-                  { label: "تاريخ الانتهاء",  icon: CalendarDays  },
-                  { label: "الحالة",           icon: null          },
-                  { label: "إجراءات",          icon: null          },
+                  { label: "رقم العقد",      icon: FileSignature  },
+                  { label: "الجهة الحكومية", icon: Building2      },
+                  { label: "المناقصة",        icon: null           },
+                  { label: "قيمة العقد",     icon: Banknote       },
+                  { label: "تاريخ التوقيع",  icon: CalendarDays   },
+                  { label: "تاريخ الانتهاء", icon: CalendarDays   },
+                  { label: "الحالة",          icon: null           },
+                  { label: "إجراءات",         icon: null           },
                 ].map((h, i) => (
                   <th key={i} style={{ padding: "12px 16px", fontWeight: 700, fontSize: 11, color: "#6b7280", borderBottom: "1.5px solid #f0ead8", whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -255,10 +430,20 @@ export default function ContractsList() {
                 ))
               ) : !(contracts as any[]).length ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: "56px 0", textAlign: "center" }}>
-                    <FileSignature size={44} color="#e2d5b0" style={{ margin: "0 auto 12px", display: "block" }} />
-                    <p style={{ color: "#94a3b8", fontSize: 14, margin: "0 0 4px", fontWeight: 600 }}>لا توجد عقود مسجّلة</p>
-                    <p style={{ color: "#cbd5e1", fontSize: 12, margin: 0 }}>أضف عقداً جديداً بالضغط على "عقد جديد"</p>
+                  <td colSpan={8} style={{ padding: "64px 0", textAlign: "center" }}>
+                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                      <div style={{ width: 72, height: 72, borderRadius: 20, background: "#fdf8ec", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <FileSignature size={32} color="#e2d5b0" />
+                      </div>
+                      <p style={{ color: "#94a3b8", fontSize: 14, margin: 0, fontWeight: 600 }}>لا توجد عقود مسجّلة</p>
+                      <p style={{ color: "#cbd5e1", fontSize: 12, margin: 0 }}>اضغط "عقد جديد" لإضافة أول عقد</p>
+                      {(user?.role === "admin" || user?.canEdit) && (
+                        <button onClick={() => { closeForm(); setShowForm(true); }}
+                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 10, fontSize: 12, fontWeight: 700, cursor: "pointer", background: `${G}15`, color: GD, border: `1px solid ${G}30`, fontFamily: "inherit", marginTop: 4 }}>
+                          <Plus size={13} /> إضافة عقد
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -288,12 +473,7 @@ export default function ContractsList() {
                       <td style={{ padding: "14px 16px", color: "#6b7280", fontSize: 12 }}>{formatDate(c.signDate)}</td>
                       <td style={{ padding: "14px 16px", color: "#6b7280", fontSize: 12 }}>{formatDate(c.endDate)}</td>
                       <td style={{ padding: "14px 16px" }}>
-                        <span style={{
-                          display: "inline-flex", alignItems: "center", gap: 5,
-                          padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
-                          background: st.bg, color: st.color,
-                          border: `1px solid ${st.color}22`,
-                        }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.color, border: `1px solid ${st.color}22` }}>
                           <st.icon size={11} />
                           {st.label}
                         </span>
@@ -301,12 +481,18 @@ export default function ContractsList() {
                       <td style={{ padding: "14px 16px" }}>
                         {(user?.role === "admin" || user?.canEdit) && (
                           <div style={{ display: "flex", gap: 6 }}>
-                            <button onClick={() => handleEdit(c)}
-                              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", cursor: "pointer", fontFamily: "inherit" }}>
+                            <button onClick={() => openEdit(c)}
+                              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", cursor: "pointer", fontFamily: "inherit", transition: "background 0.1s" }}
+                              onMouseEnter={e => (e.currentTarget.style.background = "#dcfce7")}
+                              onMouseLeave={e => (e.currentTarget.style.background = "#f0fdf4")}
+                            >
                               <Pencil size={11} /> تعديل
                             </button>
-                            <button onClick={() => { if (confirm("حذف العقد؟")) deleteM.mutate(c.id); }}
-                              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#fff1f2", color: "#dc2626", border: "1px solid #fecaca", cursor: "pointer", fontFamily: "inherit" }}>
+                            <button onClick={() => { if (confirm("هل تريد حذف هذا العقد؟")) deleteM.mutate(c.id); }}
+                              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#fff1f2", color: "#dc2626", border: "1px solid #fecaca", cursor: "pointer", fontFamily: "inherit", transition: "background 0.1s" }}
+                              onMouseEnter={e => (e.currentTarget.style.background = "#fee2e2")}
+                              onMouseLeave={e => (e.currentTarget.style.background = "#fff1f2")}
+                            >
                               <Trash2 size={11} /> حذف
                             </button>
                           </div>

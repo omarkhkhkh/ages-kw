@@ -5,6 +5,7 @@ import {
   Building2, Users, ClipboardList, ShoppingCart,
   FolderOpen, ShieldCheck, FileSignature, BookOpen,
   ChevronDown, Calendar, Shield, LogOut, UserCircle, Activity,
+  Home, ChevronLeft,
 } from "lucide-react";
 import React, { useState } from "react";
 import { useAuth } from "@/contexts/auth";
@@ -117,6 +118,21 @@ function KuwaitClock() {
   return <span className="font-mono text-xs text-sidebar-foreground/50 tabular-nums">{time} (KWT)</span>;
 }
 
+const PAGE_NAMES: Record<string, string> = {
+  "/tenders":         "سجل المناقصات",
+  "/entities":        "الجهات الحكومية",
+  "/suppliers":       "الموردون",
+  "/projects":        "المشاريع",
+  "/guarantees":      "الكفالات البنكية",
+  "/contracts":       "العقود",
+  "/rfq":             "طلبات عروض الأسعار",
+  "/purchase-orders": "أوامر الشراء المباشر",
+  "/calendar":        "جدول الأعمال",
+  "/guide":           "دليل Microsoft 365",
+  "/admin/users":     "إدارة المستخدمين",
+  "/admin/activity-log": "سجل الحركات",
+};
+
 export function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
@@ -209,19 +225,46 @@ export function Layout({ children }: LayoutProps) {
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top bar */}
         <header className="h-16 flex items-center justify-between px-6 bg-white border-b border-slate-200 shadow-sm z-10 shrink-0">
-          {/* Mobile brand */}
-          <div className="md:hidden font-black text-base text-slate-800">
-            المجموعة العربية للخدمات التعلمية
+
+          {/* Left side — back button + page name */}
+          <div className="flex items-center gap-3">
+            {location !== "/" ? (
+              <Link href="/">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer"
+                  style={{ background: "rgba(212,165,52,0.10)", color: "#A87C20", border: "1px solid rgba(212,165,52,0.25)" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(212,165,52,0.20)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "rgba(212,165,52,0.10)")}
+                >
+                  <Home className="h-4 w-4" />
+                  <span className="hidden sm:inline">الرئيسية</span>
+                  <ChevronLeft className="h-3.5 w-3.5 opacity-60" />
+                  <span className="hidden sm:inline text-slate-500 font-medium">
+                    {PAGE_NAMES[location] ?? PAGE_NAMES[Object.keys(PAGE_NAMES).find(k => location.startsWith(k) && k !== "/") ?? ""] ?? ""}
+                  </span>
+                </div>
+              </Link>
+            ) : (
+              /* On dashboard — show icon only */
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                style={{ background: "rgba(11,26,16,0.06)" }}>
+                <LayoutDashboard className="h-4 w-4" style={{ color: "#132a18" }} />
+                <span className="hidden sm:inline text-sm font-bold" style={{ color: "#132a18" }}>لوحة التحكم</span>
+              </div>
+            )}
+
+            {/* Mobile brand */}
+            <div className="md:hidden font-black text-sm text-slate-800">
+              المجموعة العربية
+            </div>
           </div>
-          <div className="hidden md:block" />
 
           {/* Right side */}
           <div className="flex items-center gap-3">
             {user && (
               <div className="hidden md:flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border"
                 style={user.role === "admin"
-                  ? { background: "rgba(245,158,11,0.08)", color: "#d97706", borderColor: "rgba(245,158,11,0.3)" }
-                  : { background: "rgba(59,130,246,0.08)", color: "#2563eb", borderColor: "rgba(59,130,246,0.2)" }
+                  ? { background: "rgba(212,165,52,0.08)", color: "#A87C20", borderColor: "rgba(212,165,52,0.3)" }
+                  : { background: "rgba(11,26,16,0.07)", color: "#132a18", borderColor: "rgba(11,26,16,0.15)" }
                 }>
                 {user.role === "admin"
                   ? <><Shield className="h-3.5 w-3.5" /> مدير النظام</>

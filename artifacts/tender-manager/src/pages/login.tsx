@@ -75,12 +75,19 @@ export default function Login() {
 
         {/* Brand content */}
         <div style={{ position: "relative", zIndex: 1, textAlign: "center", padding: "0 60px", direction: "rtl" }}>
-          {/* Company Logo — transparent version on dark bg */}
-          <div style={{ margin: "0 auto 20px", width: 200 }}>
+          {/* Company Logo on white card */}
+          <div style={{
+            margin: "0 auto 24px",
+            background: "rgba(255,255,255,0.97)",
+            borderRadius: 20,
+            padding: "20px 32px",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
+            display: "inline-block",
+          }}>
             <img
-              src="/logo-transparent.png"
+              src="/logo.png"
               alt="Arabian Group Logo"
-              style={{ width: "100%", objectFit: "contain", filter: "drop-shadow(0 8px 24px rgba(0,0,0,0.4))" }}
+              style={{ width: 200, display: "block", objectFit: "contain" }}
             />
           </div>
 

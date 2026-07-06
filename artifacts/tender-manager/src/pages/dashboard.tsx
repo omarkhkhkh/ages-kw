@@ -1,14 +1,16 @@
 import { useGetTenderStats, useListTenders } from "@workspace/api-client-react";
-import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { Link, useLocation } from "wouter";
 import {
   FileText, AlertCircle, Trophy, Banknote, Percent,
   Building2, Users, ClipboardList, ShoppingCart,
   FolderOpen, ShieldCheck, FileSignature, Calendar,
-  ArrowLeftCircle, TrendingUp,
+  ArrowLeftCircle, TrendingUp, MessageSquare,
 } from "lucide-react";
 import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
 import { useAuth } from "@/contexts/auth";
+import { contractsApi } from "@/lib/api";
 
 /* ─── brand palette ─── */
 const G  = "#D4A534";   // gold
@@ -33,6 +35,17 @@ export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useGetTenderStats();
   const { data: recentTenders, isLoading: tendersLoading } = useListTenders({});
   const { user } = useAuth();
+  const [, navigate] = useLocation();
+  const isAdmin = user?.role === "admin";
+
+  // Unread contract comments count — employees only
+  const { data: unreadData } = useQuery({
+    queryKey: ["unread-comments-count"],
+    queryFn: () => contractsApi.unreadCommentsCount(),
+    enabled: !isAdmin,
+    refetchInterval: 30000,
+  });
+  const unreadCount = unreadData?.count ?? 0;
 
   const greeting = () => {
     const h = new Date().getHours();
@@ -193,55 +206,76 @@ export default function Dashboard() {
           <h2 style={{ fontSize: 17, fontWeight: 800, color: "#132a18", margin: 0 }}>الوحدات الرئيسية</h2>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 14 }}>
-          {MODULES.map((m) => (
-            <Link key={m.href} href={m.href}>
-              <div style={{
-                background: "white",
-                border: `1.5px solid ${m.bg}`,
-                borderRadius: 18,
-                padding: "22px 16px",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 12,
-                cursor: "pointer",
-                textDecoration: "none",
-                boxShadow: "0 2px 12px rgba(0,0,0,0.05)",
-                transition: "transform 0.15s, box-shadow 0.15s, border-color 0.15s",
-              }}
-                onMouseEnter={e => {
-                  const el = e.currentTarget as HTMLElement;
-                  el.style.transform = "translateY(-4px)";
-                  el.style.boxShadow = `0 12px 32px rgba(0,0,0,0.12)`;
-                  el.style.borderColor = m.accent;
-                }}
-                onMouseLeave={e => {
-                  const el = e.currentTarget as HTMLElement;
-                  el.style.transform = "translateY(0)";
-                  el.style.boxShadow = "0 2px 12px rgba(0,0,0,0.05)";
-                  el.style.borderColor = m.bg;
+          {MODULES.map((m) => {
+            const hasAlert = !isAdmin && m.href === "/contracts" && unreadCount > 0;
+            return (
+              <a
+                key={m.href}
+                href={m.href}
+                onClick={e => { e.preventDefault(); navigate(m.href); }}
+                className="module-card"
+                data-accent={m.accent}
+                data-bg={m.bg}
+                style={{
+                  background: hasAlert ? "#fff5f5" : "white",
+                  border: hasAlert ? "1.5px solid #fca5a5" : `1.5px solid ${m.bg}`,
+                  borderRadius: 18,
+                  padding: "22px 16px",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 12,
+                  cursor: "pointer",
+                  textDecoration: "none",
+                  boxShadow: hasAlert ? "0 4px 20px rgba(220,38,38,0.12)" : "0 2px 12px rgba(0,0,0,0.05)",
+                  transition: "transform 0.15s, box-shadow 0.15s, border-color 0.15s",
+                  position: "relative",
                 }}
               >
+                {/* Red badge for unread comments */}
+                {hasAlert && (
+                  <div style={{
+                    position: "absolute", top: 10, left: 10,
+                    background: "#dc2626", color: "white",
+                    fontSize: 10, fontWeight: 800,
+                    minWidth: 20, height: 20, borderRadius: 10,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    padding: "0 5px",
+                    boxShadow: "0 2px 8px rgba(220,38,38,0.5)",
+                    animation: "pulse-red 2s infinite",
+                  }}>
+                    {unreadCount}
+                  </div>
+                )}
+
                 {/* Icon circle */}
                 <div style={{
                   width: 56, height: 56, borderRadius: 16,
-                  background: m.bg,
+                  background: hasAlert ? "#fee2e2" : m.bg,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: `0 4px 12px ${m.accent}22`,
+                  boxShadow: `0 4px 12px ${hasAlert ? "rgba(220,38,38,0.2)" : `${m.accent}22`}`,
                 }}>
-                  <m.icon size={26} color={m.accent} strokeWidth={1.8} />
+                  {hasAlert
+                    ? <MessageSquare size={26} color="#dc2626" strokeWidth={1.8} />
+                    : <m.icon size={26} color={m.accent} strokeWidth={1.8} />
+                  }
                 </div>
                 <span style={{
                   fontSize: 13, fontWeight: 700,
-                  color: "#1e2a1e", textAlign: "center", lineHeight: 1.4,
+                  color: hasAlert ? "#dc2626" : "#1e2a1e",
+                  textAlign: "center", lineHeight: 1.4,
                 }}>
                   {m.label}
+                  {hasAlert && (
+                    <div style={{ fontSize: 10, fontWeight: 600, color: "#dc2626", marginTop: 2 }}>
+                      {unreadCount} تعليق جديد
+                    </div>
+                  )}
                 </span>
-                {/* arrow */}
-                <ArrowLeftCircle size={15} color={`${m.accent}88`} />
-              </div>
-            </Link>
-          ))}
+                <ArrowLeftCircle size={15} color={hasAlert ? "#dc262688" : `${m.accent}88`} />
+              </a>
+            );
+          })}
         </div>
       </div>
 
@@ -338,6 +372,14 @@ export default function Dashboard() {
       <style>{`
         @keyframes pulse {
           0%,100% { opacity:1 } 50% { opacity:0.4 }
+        }
+        @keyframes pulse-red {
+          0%,100% { box-shadow: 0 2px 8px rgba(220,38,38,0.5); }
+          50%      { box-shadow: 0 2px 16px rgba(220,38,38,0.9); }
+        }
+        .module-card:hover {
+          transform: translateY(-4px) !important;
+          box-shadow: 0 12px 32px rgba(0,0,0,0.12) !important;
         }
       `}</style>
     </div>

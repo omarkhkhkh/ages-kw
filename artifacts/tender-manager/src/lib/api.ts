@@ -80,4 +80,29 @@ export const contractsApi = {
   create: (data: any) => apiFetch<any>("/api/contracts", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: any) => apiFetch<any>(`/api/contracts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id: number) => apiFetch<void>(`/api/contracts/${id}`, { method: "DELETE" }),
+
+  // Documents
+  listDocuments: (contractId: number) => apiFetch<any[]>(`/api/contracts/${contractId}/documents`),
+  uploadDocument: (contractId: number, data: { fileName: string; fileSize?: number; mimeType?: string; fileData: string }) =>
+    apiFetch<any>(`/api/contracts/${contractId}/documents`, { method: "POST", body: JSON.stringify(data) }),
+  deleteDocument: (contractId: number, docId: number) =>
+    apiFetch<void>(`/api/contracts/${contractId}/documents/${docId}`, { method: "DELETE" }),
+  downloadUrl: (contractId: number, docId: number) => `/api/contracts/${contractId}/documents/${docId}/download`,
+
+  // Permissions (admin)
+  getPermissions: (contractId: number) => apiFetch<any[]>(`/api/contracts/${contractId}/permissions`),
+  setPermission: (contractId: number, userId: number, canView: boolean) =>
+    apiFetch<any>(`/api/contracts/${contractId}/permissions/${userId}`, { method: "PUT", body: JSON.stringify({ canView }) }),
+
+  // Comments
+  listComments: (contractId: number) => apiFetch<any[]>(`/api/contracts/${contractId}/comments`),
+  addComment: (contractId: number, toUserId: number, content: string) =>
+    apiFetch<any>(`/api/contracts/${contractId}/comments`, { method: "POST", body: JSON.stringify({ toUserId, content }) }),
+  markCommentsRead: (contractId: number) =>
+    apiFetch<any>(`/api/contracts/${contractId}/comments/read`, { method: "PATCH" }),
+  deleteComment: (contractId: number, commentId: number) =>
+    apiFetch<void>(`/api/contracts/${contractId}/comments/${commentId}`, { method: "DELETE" }),
+
+  // Dashboard badge
+  unreadCommentsCount: () => apiFetch<{ count: number }>("/api/contracts/meta/unread-comments"),
 };

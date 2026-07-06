@@ -26,3 +26,6 @@ lib/db's tsconfig has `composite: true` and `emitDeclarationOnly: true`. The api
 
 ## Drawer form sync
 Use `useEffect([editing, open])` to sync form state when editing record changes. Using `useState` (lazy initializer) only runs once and causes stale form data on edit-open.
+
+## Express route ordering in shared router
+When a router has both static segment paths (e.g. `GET /teams`, `GET /tasks`) AND dynamic `/:id` for a different resource, the static paths MUST be registered BEFORE `GET /:id`. Otherwise Express matches `/teams` and `/tasks` as `:id = "teams"` and `:id = "tasks"`, silently bypassing the correct handlers. Rule: sort routes by specificity — exact literals first, dynamic segments last.

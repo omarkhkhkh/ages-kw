@@ -28,6 +28,21 @@ router.use("/admin/activity-logs", activityLogsRouter);
 // Protected routes — require valid session
 router.use(requireAuth);
 
+// Lightweight user directory — accessible to all authenticated users for team assignment
+import { db as _db, usersTable as _usersTable } from "@workspace/db";
+import { eq as _eq } from "drizzle-orm";
+router.get("/users/directory", async (req, res) => {
+  try {
+    const rows = await _db
+      .select({ id: _usersTable.id, fullName: _usersTable.fullName, username: _usersTable.username })
+      .from(_usersTable)
+      .where(_eq(_usersTable.isActive, true));
+    return res.json(rows);
+  } catch {
+    return res.status(500).json({ error: "فشل في جلب قائمة المستخدمين" });
+  }
+});
+
 // Log all successful mutations (create/update/delete) to activity_logs
 router.use(activityLogger);
 

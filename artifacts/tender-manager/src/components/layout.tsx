@@ -1,287 +1,401 @@
 import { Link, useLocation } from "wouter";
-import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, FileText, Plus,
   Building2, Users, ClipboardList, ShoppingCart,
   FolderOpen, ShieldCheck, FileSignature, BookOpen,
-  ChevronDown, Calendar, Shield, LogOut, UserCircle, Activity,
-  Home, ChevronLeft,
+  Calendar, Shield, LogOut, UserCircle, Activity,
+  ChevronDown, Clock,
 } from "lucide-react";
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/auth";
 import logoImg from "@/assets/logo.png";
 import { nowKuwait } from "@/lib/timezone";
 
-interface LayoutProps {
-  children: React.ReactNode;
-}
+interface LayoutProps { children: React.ReactNode; }
 
-interface NavItem {
-  href: string;
-  label: string;
-  icon: React.ElementType;
-}
+const G  = "#D4A534";
+const GD = "#A87C20";
+const GR = "#0b1a10";
+const GR2 = "#132a18";
 
-interface NavGroup {
-  label: string;
-  items: NavItem[];
-}
+/* ── Nav structure ── */
+const buildNavGroups = (isAdmin: boolean) => [
+  {
+    label: "الرئيسية",
+    icon: LayoutDashboard,
+    items: [
+      { href: "/",         label: "لوحة التحكم",  icon: LayoutDashboard },
+      { href: "/tenders",  label: "سجل المناقصات", icon: FileText        },
+      { href: "/calendar", label: "جدول الأعمال",  icon: Calendar        },
+    ],
+  },
+  {
+    label: "قواعد البيانات",
+    icon: Building2,
+    items: [
+      { href: "/entities",        label: "الجهات الحكومية",        icon: Building2    },
+      { href: "/suppliers",       label: "الموردون",               icon: Users        },
+      { href: "/rfq",             label: "طلبات عروض الأسعار",    icon: ClipboardList },
+      { href: "/purchase-orders", label: "أوامر الشراء المباشر",  icon: ShoppingCart },
+    ],
+  },
+  {
+    label: "إدارة المشاريع",
+    icon: FolderOpen,
+    items: [
+      { href: "/projects",    label: "المشاريع",         icon: FolderOpen   },
+      { href: "/guarantees",  label: "الكفالات البنكية", icon: ShieldCheck  },
+      { href: "/contracts",   label: "العقود",            icon: FileSignature },
+    ],
+  },
+  {
+    label: "أدوات",
+    icon: BookOpen,
+    items: [
+      { href: "/guide", label: "دليل Microsoft 365", icon: BookOpen },
+      ...(isAdmin ? [
+        { href: "/admin/users",         label: "إدارة المستخدمين", icon: Shield   },
+        { href: "/admin/activity-log",  label: "سجل الحركات",      icon: Activity },
+      ] : []),
+    ],
+  },
+];
 
-function buildNavGroups(isAdmin: boolean): NavGroup[] {
-  return [
-    {
-      label: "الرئيسية",
-      items: [
-        { href: "/", label: "لوحة التحكم", icon: LayoutDashboard },
-        { href: "/tenders", label: "سجل المناقصات", icon: FileText },
-        { href: "/calendar", label: "جدول الأعمال", icon: Calendar },
-      ],
-    },
-    {
-      label: "قواعد البيانات",
-      items: [
-        { href: "/entities", label: "الجهات الحكومية", icon: Building2 },
-        { href: "/suppliers", label: "الموردون", icon: Users },
-        { href: "/rfq", label: "طلبات عروض الأسعار", icon: ClipboardList },
-        { href: "/purchase-orders", label: "أوامر الشراء المباشر", icon: ShoppingCart },
-      ],
-    },
-    {
-      label: "إدارة المشاريع",
-      items: [
-        { href: "/projects", label: "المشاريع", icon: FolderOpen },
-        { href: "/guarantees", label: "الكفالات البنكية", icon: ShieldCheck },
-        { href: "/contracts", label: "العقود", icon: FileSignature },
-      ],
-    },
-    {
-      label: "أدوات",
-      items: [
-        { href: "/guide", label: "دليل Microsoft 365", icon: BookOpen },
-        ...(isAdmin ? [
-          { href: "/admin/users", label: "إدارة المستخدمين", icon: Shield },
-          { href: "/admin/activity-log", label: "سجل الحركات", icon: Activity },
-        ] : []),
-      ],
-    },
-  ];
-}
-
-function NavSection({ group, location }: { group: NavGroup; location: string }) {
-  const [open, setOpen] = useState(true);
+/* ── Kuwait clock ── */
+function KuwaitClock() {
+  const [time, setTime] = useState(() => {
+    return nowKuwait().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  });
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTime(nowKuwait().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
   return (
-    <div>
+    <div style={{ display: "flex", alignItems: "center", gap: 5, color: "rgba(212,165,52,0.65)", fontSize: 12, fontFamily: "monospace" }}>
+      <Clock size={12} />
+      {time}
+    </div>
+  );
+}
+
+/* ── Dropdown menu item ── */
+function NavDropdown({ group, location }: { group: ReturnType<typeof buildNavGroups>[0]; location: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const isGroupActive = group.items.some(
+    item => location === item.href || (item.href !== "/" && location.startsWith(item.href))
+  );
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold text-sidebar-foreground/40 uppercase tracking-widest hover:text-sidebar-foreground/60 transition-colors"
+        style={{
+          display: "flex", alignItems: "center", gap: 6,
+          padding: "8px 14px", borderRadius: 10, cursor: "pointer",
+          fontFamily: "inherit", fontSize: 13, fontWeight: 700,
+          background: isGroupActive ? "rgba(212,165,52,0.18)" : open ? "rgba(255,255,255,0.08)" : "transparent",
+          border: isGroupActive ? "1px solid rgba(212,165,52,0.35)" : "1px solid transparent",
+          color: isGroupActive ? G : "rgba(255,255,255,0.75)",
+          transition: "all 0.15s",
+          whiteSpace: "nowrap",
+        }}
+        onMouseEnter={e => { if (!isGroupActive && !open) e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
+        onMouseLeave={e => { if (!isGroupActive && !open) e.currentTarget.style.background = "transparent"; }}
       >
-        <span>{group.label}</span>
-        <ChevronDown className={cn("h-3 w-3 transition-transform duration-200", open ? "rotate-0" : "-rotate-90")} />
+        <group.icon size={15} />
+        {group.label}
+        <ChevronDown size={13} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0deg)", opacity: 0.7 }} />
       </button>
+
+      {/* Dropdown panel */}
       {open && (
-        <div className="flex flex-col gap-0.5 mt-1">
-          {group.items.map((item) => {
-            const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
-            return (
-              <Link key={item.href} href={item.href} className="w-full">
-                <div className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 text-sm font-medium",
-                  isActive
-                    ? "bg-amber-500/15 text-amber-600 border border-amber-500/20 shadow-sm"
-                    : "text-sidebar-foreground/65 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
-                )}>
-                  <item.icon className={cn("h-4 w-4 shrink-0", isActive && "text-amber-500")} />
-                  <span className="truncate">{item.label}</span>
-                  {isActive && <div className="mr-auto w-1.5 h-1.5 rounded-full bg-amber-500" />}
-                </div>
-              </Link>
-            );
-          })}
+        <div style={{
+          position: "absolute", top: "calc(100% + 8px)",
+          right: 0, minWidth: 220, zIndex: 100,
+          background: "white",
+          borderRadius: 14,
+          border: "1.5px solid #f0ead8",
+          boxShadow: "0 16px 48px rgba(0,0,0,0.15), 0 4px 16px rgba(0,0,0,0.08)",
+          overflow: "hidden",
+          animation: "dropDown 0.15s ease",
+        }}>
+          {/* Arrow */}
+          <div style={{ position: "absolute", top: -6, right: 18, width: 12, height: 12, background: "white", border: "1.5px solid #f0ead8", borderBottom: "none", borderLeft: "none", transform: "rotate(-45deg)", borderRadius: "2px 0 0 0" }} />
+
+          <div style={{ padding: "6px" }}>
+            {group.items.map(item => {
+              const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
+              return (
+                <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 12px", borderRadius: 10,
+                    fontSize: 13, fontWeight: isActive ? 700 : 500,
+                    color: isActive ? GD : "#374151",
+                    background: isActive ? `${G}12` : "transparent",
+                    cursor: "pointer", transition: "all 0.12s",
+                  }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "#f9fafb"; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <div style={{
+                      width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                      background: isActive ? `${G}18` : "#f3f4f6",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      transition: "background 0.12s",
+                    }}>
+                      <item.icon size={15} color={isActive ? GD : "#6b7280"} />
+                    </div>
+                    <span>{item.label}</span>
+                    {isActive && <div style={{ marginRight: "auto", width: 6, height: 6, borderRadius: "50%", background: G }} />}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-function KuwaitClock() {
-  const [time, setTime] = useState(() => {
-    const now = nowKuwait();
-    return now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
-  });
-  React.useEffect(() => {
-    const id = setInterval(() => {
-      const now = nowKuwait();
-      setTime(now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }));
-    }, 1000);
-    return () => clearInterval(id);
+/* ── User menu ── */
+function UserMenu({ user, logout }: { user: any; logout: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
-  return <span className="font-mono text-xs text-sidebar-foreground/50 tabular-nums">{time} (KWT)</span>;
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "6px 12px 6px 6px", borderRadius: 12, cursor: "pointer",
+        background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)",
+        fontFamily: "inherit", transition: "background 0.15s",
+      }}
+        onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.14)")}
+        onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.08)")}
+      >
+        <div style={{
+          width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+          background: `linear-gradient(135deg,${G},${GD})`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 13, fontWeight: 800, color: "white",
+        }}>
+          {user?.fullName?.charAt(0) ?? "م"}
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "white", lineHeight: 1.2 }}>{user?.fullName}</div>
+          <div style={{ fontSize: 10, color: "rgba(212,165,52,0.6)" }}>
+            {user?.role === "admin" ? "مدير النظام" : "موظف"}
+          </div>
+        </div>
+        <ChevronDown size={12} style={{ color: "rgba(255,255,255,0.4)", transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0deg)" }} />
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 8px)", left: 0, minWidth: 180, zIndex: 100,
+          background: "white", borderRadius: 12,
+          border: "1.5px solid #f0ead8",
+          boxShadow: "0 16px 48px rgba(0,0,0,0.15)",
+          overflow: "hidden", animation: "dropDown 0.15s ease",
+          padding: "6px",
+        }}>
+          <div style={{ padding: "8px 12px 10px", borderBottom: "1px solid #f5f0e6", marginBottom: 6 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: GR2 }}>{user?.fullName}</div>
+            <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+              {user?.role === "admin" ? "مدير النظام" : "موظف"}
+            </div>
+          </div>
+          <button onClick={() => { setOpen(false); logout(); }}
+            style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600, color: "#dc2626", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", transition: "background 0.12s" }}
+            onMouseEnter={e => (e.currentTarget.style.background = "#fff1f2")}
+            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+          >
+            <LogOut size={14} /> تسجيل الخروج
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
-const PAGE_NAMES: Record<string, string> = {
-  "/tenders":         "سجل المناقصات",
-  "/entities":        "الجهات الحكومية",
-  "/suppliers":       "الموردون",
-  "/projects":        "المشاريع",
-  "/guarantees":      "الكفالات البنكية",
-  "/contracts":       "العقود",
-  "/rfq":             "طلبات عروض الأسعار",
-  "/purchase-orders": "أوامر الشراء المباشر",
-  "/calendar":        "جدول الأعمال",
-  "/guide":           "دليل Microsoft 365",
-  "/admin/users":     "إدارة المستخدمين",
-  "/admin/activity-log": "سجل الحركات",
-};
-
+/* ── Main Layout ── */
 export function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
   const navGroups = buildNavGroups(user?.role === "admin");
 
-  const todayAr = nowKuwait().toLocaleDateString("ar-KW", {
-    weekday: "long", year: "numeric", month: "long", day: "numeric",
-  });
-
   return (
-    <div className="flex min-h-screen w-full bg-slate-50" dir="rtl">
-      {/* ── Sidebar ── */}
-      <aside className="w-64 flex-shrink-0 hidden md:flex flex-col shadow-xl"
-        style={{ background: "linear-gradient(180deg, #0b1a10 0%, #132a18 60%, #1a3a20 100%)" }}>
+    <div style={{ minHeight: "100vh", background: "#f5f0e8", fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif" }} dir="rtl">
 
-        {/* Company header */}
-        <div className="px-5 pt-6 pb-5 border-b border-white/10">
-          {/* Logo on white card */}
-          <div className="mb-2" style={{
-            background: "rgba(255,255,255,0.95)",
-            borderRadius: 12,
-            padding: "10px 16px",
-            display: "inline-block",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
-          }}>
-            <img
-              src={logoImg}
-              alt="Arabian Group"
-              style={{ width: 120, objectFit: "contain", display: "block" }}
-            />
-          </div>
-          <div style={{ color: "rgba(212,165,52,0.5)", fontSize: 10, fontWeight: 600, letterSpacing: 1, marginTop: 10 }}>
-            نظام إدارة المناقصات والعقود
-          </div>
-        </div>
+      {/* ══ Top Navbar ══ */}
+      <header style={{
+        position: "sticky", top: 0, zIndex: 50,
+        background: `linear-gradient(135deg, ${GR} 0%, ${GR2} 60%, #1a3a20 100%)`,
+        boxShadow: "0 4px 24px rgba(0,0,0,0.25)",
+      }}>
+        {/* Main nav row */}
+        <div style={{
+          display: "flex", alignItems: "center",
+          padding: "0 24px", height: 64, gap: 8,
+          maxWidth: 1600, margin: "0 auto",
+        }}>
 
-        {/* Nav */}
-        <nav className="flex-1 py-4 px-3 flex flex-col gap-3 overflow-y-auto">
-          {navGroups.map((group) => (
-            <NavSection key={group.label} group={group} location={location} />
-          ))}
-
-          {/* Quick action */}
-          {(user?.role === "admin" || user?.canEdit) && (
-            <div className="mt-2 pt-3 border-t border-white/10">
-              <Link href="/tenders/new" className="w-full">
-                <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all"
-                  style={{ background: "rgba(212,165,52,0.15)", color: "#D4A534", border: "1px solid rgba(212,165,52,0.3)" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(212,165,52,0.28)")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "rgba(212,165,52,0.15)")}>
-                  <Plus className="h-4 w-4" />
-                  مناقصة جديدة
-                </div>
-              </Link>
-            </div>
-          )}
-        </nav>
-
-        {/* User footer */}
-        <div className="p-4 border-t border-white/10">
-          <div className="flex flex-col gap-1 px-1 mb-3">
-            <KuwaitClock />
-            <span style={{ fontSize: 10, color: "rgba(212,165,52,0.3)" }}>{todayAr}</span>
-          </div>
-          <div className="flex items-center gap-3 p-2 rounded-xl"
-            style={{ background: "rgba(255,255,255,0.06)" }}>
-            <div className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-              style={{ background: "linear-gradient(135deg, #E8BE55, #A87C20)", color: "white" }}>
-              {user?.fullName?.charAt(0) ?? "م"}
-            </div>
-            <div className="flex flex-col flex-1 min-w-0">
-              <span className="text-sm font-semibold text-white truncate">{user?.fullName}</span>
-              <span style={{ fontSize: 11, color: "rgba(212,165,52,0.5)" }}>
-                {user?.role === "admin" ? "مدير النظام" : "موظف"}
-              </span>
-            </div>
-            <button
-              onClick={() => logout()}
-              title="تسجيل الخروج"
-              style={{ color: "rgba(212,165,52,0.4)", background: "none", border: "none", cursor: "pointer" }}
-              className="hover:text-red-400 transition-colors flex-shrink-0"
+          {/* Logo */}
+          <Link href="/">
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "6px 12px 6px 6px", borderRadius: 12,
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              cursor: "pointer", flexShrink: 0,
+              transition: "background 0.15s",
+            }}
+              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.12)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
             >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      {/* ── Main ── */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top bar */}
-        <header className="h-16 flex items-center justify-between px-6 bg-white border-b border-slate-200 shadow-sm z-10 shrink-0">
-
-          {/* Left side — back button + page name */}
-          <div className="flex items-center gap-3">
-            {location !== "/" ? (
-              <Link href="/">
-                <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all cursor-pointer"
-                  style={{ background: "rgba(212,165,52,0.10)", color: "#A87C20", border: "1px solid rgba(212,165,52,0.25)" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(212,165,52,0.20)")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "rgba(212,165,52,0.10)")}
-                >
-                  <Home className="h-4 w-4" />
-                  <span className="hidden sm:inline">الرئيسية</span>
-                  <ChevronLeft className="h-3.5 w-3.5 opacity-60" />
-                  <span className="hidden sm:inline text-slate-500 font-medium">
-                    {PAGE_NAMES[location] ?? PAGE_NAMES[Object.keys(PAGE_NAMES).find(k => location.startsWith(k) && k !== "/") ?? ""] ?? ""}
-                  </span>
-                </div>
-              </Link>
-            ) : (
-              /* On dashboard — show icon only */
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
-                style={{ background: "rgba(11,26,16,0.06)" }}>
-                <LayoutDashboard className="h-4 w-4" style={{ color: "#132a18" }} />
-                <span className="hidden sm:inline text-sm font-bold" style={{ color: "#132a18" }}>لوحة التحكم</span>
+              <div style={{
+                background: "rgba(255,255,255,0.95)",
+                borderRadius: 8, padding: "4px 8px",
+              }}>
+                <img src={logoImg} alt="Arabian Group" style={{ height: 30, objectFit: "contain", display: "block" }} />
               </div>
-            )}
-
-            {/* Mobile brand */}
-            <div className="md:hidden font-black text-sm text-slate-800">
-              المجموعة العربية
+              <div style={{ display: "none" }} className="sm-show">
+                <div style={{ fontSize: 11, fontWeight: 800, color: G, lineHeight: 1.2 }}>المجموعة العربية</div>
+                <div style={{ fontSize: 9, color: "rgba(212,165,52,0.45)", marginTop: 1 }}>للخدمات التعلمية</div>
+              </div>
             </div>
-          </div>
+          </Link>
 
-          {/* Right side */}
-          <div className="flex items-center gap-3">
-            {user && (
-              <div className="hidden md:flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border"
-                style={user.role === "admin"
-                  ? { background: "rgba(212,165,52,0.08)", color: "#A87C20", borderColor: "rgba(212,165,52,0.3)" }
-                  : { background: "rgba(11,26,16,0.07)", color: "#132a18", borderColor: "rgba(11,26,16,0.15)" }
-                }>
-                {user.role === "admin"
-                  ? <><Shield className="h-3.5 w-3.5" /> مدير النظام</>
-                  : <><UserCircle className="h-3.5 w-3.5" /> {user.fullName}</>
-                }
-              </div>
+          {/* Divider */}
+          <div style={{ width: 1, height: 32, background: "rgba(255,255,255,0.1)", marginInline: 4, flexShrink: 0 }} />
+
+          {/* Nav groups — scrollable on small screens */}
+          <nav style={{
+            display: "flex", alignItems: "center", gap: 2,
+            flex: 1, overflowX: "auto",
+            scrollbarWidth: "none",
+          }}>
+            {/* Dashboard direct link */}
+            <Link href="/">
+              <button style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 10, cursor: "pointer",
+                fontFamily: "inherit", fontSize: 13, fontWeight: 700,
+                background: location === "/" ? "rgba(212,165,52,0.18)" : "transparent",
+                border: location === "/" ? "1px solid rgba(212,165,52,0.35)" : "1px solid transparent",
+                color: location === "/" ? G : "rgba(255,255,255,0.75)",
+                transition: "all 0.15s", whiteSpace: "nowrap",
+              }}
+                onMouseEnter={e => { if (location !== "/") e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
+                onMouseLeave={e => { if (location !== "/") e.currentTarget.style.background = "transparent"; }}
+              >
+                <LayoutDashboard size={15} />
+                لوحة التحكم
+              </button>
+            </Link>
+
+            {/* Dropdown groups */}
+            {navGroups.map(group => (
+              <NavDropdown key={group.label} group={group} location={location} />
+            ))}
+          </nav>
+
+          {/* Right side: clock + new tender + user */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+            <KuwaitClock />
+
+            {(user?.role === "admin" || user?.canEdit) && (
+              <Link href="/tenders/new">
+                <button style={{
+                  display: "flex", alignItems: "center", gap: 6,
+                  padding: "8px 16px", borderRadius: 10, cursor: "pointer",
+                  fontFamily: "inherit", fontSize: 13, fontWeight: 700,
+                  background: `linear-gradient(135deg,${G},${GD})`,
+                  border: "none", color: "white",
+                  boxShadow: `0 4px 14px rgba(212,165,52,0.4)`,
+                  transition: "transform 0.1s, box-shadow 0.1s",
+                  whiteSpace: "nowrap",
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = `0 6px 20px rgba(212,165,52,0.55)`; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = `0 4px 14px rgba(212,165,52,0.4)`; }}
+                >
+                  <Plus size={14} />
+                  مناقصة جديدة
+                </button>
+              </Link>
             )}
-          </div>
-        </header>
 
-        {/* Page content */}
-        <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
-            {children}
+            <UserMenu user={user} logout={logout} />
           </div>
         </div>
+
+        {/* Breadcrumb strip */}
+        {location !== "/" && (
+          <div style={{
+            borderTop: "1px solid rgba(255,255,255,0.07)",
+            padding: "0 24px", height: 34,
+            display: "flex", alignItems: "center", gap: 8,
+            background: "rgba(0,0,0,0.15)",
+            maxWidth: 1600, margin: "0 auto",
+          }}>
+            <Link href="/">
+              <span style={{ fontSize: 11, color: "rgba(212,165,52,0.5)", cursor: "pointer", transition: "color 0.12s" }}
+                onMouseEnter={e => (e.currentTarget.style.color = G)}
+                onMouseLeave={e => (e.currentTarget.style.color = "rgba(212,165,52,0.5)")}
+              >الرئيسية</span>
+            </Link>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)" }}>/</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.55)" }}>
+              {(() => {
+                const PAGE_NAMES: Record<string, string> = {
+                  "/tenders": "سجل المناقصات", "/entities": "الجهات الحكومية",
+                  "/suppliers": "الموردون", "/projects": "المشاريع",
+                  "/guarantees": "الكفالات البنكية", "/contracts": "العقود",
+                  "/rfq": "طلبات عروض الأسعار", "/purchase-orders": "أوامر الشراء المباشر",
+                  "/calendar": "جدول الأعمال", "/guide": "دليل Microsoft 365",
+                  "/admin/users": "إدارة المستخدمين", "/admin/activity-log": "سجل الحركات",
+                };
+                return PAGE_NAMES[location] ?? PAGE_NAMES[Object.keys(PAGE_NAMES).find(k => location.startsWith(k)) ?? ""] ?? location;
+              })()}
+            </span>
+          </div>
+        )}
+      </header>
+
+      {/* ══ Page content ══ */}
+      <main style={{ maxWidth: 1600, margin: "0 auto", padding: "28px 24px 48px" }}>
+        {children}
       </main>
+
+      <style>{`
+        @keyframes dropDown {
+          from { opacity: 0; transform: translateY(-8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        nav::-webkit-scrollbar { display: none; }
+      `}</style>
     </div>
   );
 }

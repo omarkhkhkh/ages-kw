@@ -134,15 +134,12 @@ export function Layout({ children }: LayoutProps) {
         {/* Company header */}
         <div className="px-5 pt-6 pb-5 border-b border-white/10">
           {/* Logo */}
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg overflow-hidden"
-              style={{ background: "white" }}>
-              <img src="/logo.png" alt="Arabian Group" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-            </div>
-            <div className="min-w-0">
-              <div className="text-white font-black text-sm leading-tight">المجموعة العربية</div>
-              <div className="text-amber-400 font-bold text-xs leading-tight">للخدمات التعلمية</div>
-            </div>
+          <div className="mb-2">
+            <img
+              src="/logo-transparent.png"
+              alt="Arabian Group"
+              style={{ width: 140, objectFit: "contain", filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.3))" }}
+            />
           </div>
           <div className="text-blue-300/50 text-[10px] font-medium tracking-wide">
             نظام إدارة المناقصات والعقود

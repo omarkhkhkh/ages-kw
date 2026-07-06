@@ -75,29 +75,14 @@ export default function Login() {
 
         {/* Brand content */}
         <div style={{ position: "relative", zIndex: 1, textAlign: "center", padding: "0 60px", direction: "rtl" }}>
-          {/* Company Logo */}
-          <div style={{
-            margin: "0 auto 28px",
-            width: 200,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            background: "rgba(255,255,255,0.92)",
-            borderRadius: 16,
-            boxShadow: "0 16px 50px rgba(0,0,0,0.3)",
-            padding: "16px 20px",
-          }}>
+          {/* Company Logo — transparent version on dark bg */}
+          <div style={{ margin: "0 auto 20px", width: 200 }}>
             <img
-              src="/logo.png"
+              src="/logo-transparent.png"
               alt="Arabian Group Logo"
-              style={{ width: "100%", objectFit: "contain" }}
+              style={{ width: "100%", objectFit: "contain", filter: "drop-shadow(0 8px 24px rgba(0,0,0,0.4))" }}
             />
           </div>
-
-          <h1 style={{ fontSize: 36, fontWeight: 900, color: "white", margin: 0, lineHeight: 1.2 }}>
-            المجموعة العربية
-          </h1>
-          <h2 style={{ fontSize: 24, fontWeight: 700, color: "#f59e0b", margin: "4px 0 28px" }}>
-            للخدمات التعلمية
-          </h2>
 
           <div style={{
             width: 80, height: 1, margin: "0 auto 28px",
@@ -132,7 +117,7 @@ export default function Login() {
             <img
               src="/logo.png"
               alt="Arabian Group Logo"
-              style={{ width: 90, height: 90, objectFit: "contain", margin: "0 auto 10px", display: "block" }}
+              style={{ width: 160, objectFit: "contain", margin: "0 auto 6px", display: "block" }}
             />
             <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>نظام إدارة المناقصات والعقود</p>
           </div>

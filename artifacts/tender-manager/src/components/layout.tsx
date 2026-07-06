@@ -224,25 +224,57 @@ function UserMenu({ user, logout }: { user: any; logout: () => void }) {
 
       {open && (
         <div style={{
-          position: "absolute", top: "calc(100% + 8px)", left: 0, minWidth: 180, zIndex: 100,
-          background: "white", borderRadius: 12,
+          position: "absolute", top: "calc(100% + 8px)", left: 0, minWidth: 210, zIndex: 100,
+          background: "white", borderRadius: 14,
           border: "1.5px solid #f0ead8",
           boxShadow: "0 16px 48px rgba(0,0,0,0.15)",
           overflow: "hidden", animation: "dropDown 0.15s ease",
           padding: "6px",
         }}>
-          <div style={{ padding: "8px 12px 10px", borderBottom: "1px solid #f5f0e6", marginBottom: 6 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: GR2 }}>{user?.fullName}</div>
+          {/* User info */}
+          <div style={{ padding: "10px 14px 12px", borderBottom: "1px solid #f5f0e6", marginBottom: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: GR2 }}>{user?.fullName}</div>
             <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-              {user?.role === "admin" ? "مدير النظام" : "موظف"}
+              {user?.role === "admin" ? "🛡 مدير النظام" : "موظف"}
             </div>
           </div>
+
+          {/* Admin links */}
+          {user?.role === "admin" && (
+            <>
+              <div style={{ padding: "4px 10px 2px", fontSize: 10, fontWeight: 700, color: "#9ca3af", letterSpacing: 0.5 }}>
+                إدارة النظام
+              </div>
+              {[
+                { href: "/admin/users",       icon: Users,     label: "إدارة المستخدمين", color: GD },
+                { href: "/admin/activity-log", icon: Activity,  label: "سجل الحركات",       color: "#7c3aed" },
+              ].map(item => (
+                <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600, color: item.color, cursor: "pointer", transition: "background 0.12s" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = `${item.color}10`)}
+                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: `${item.color}12`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <item.icon size={14} color={item.color} />
+                    </div>
+                    {item.label}
+                  </div>
+                </Link>
+              ))}
+              <div style={{ height: 1, background: "#f5f0e6", margin: "4px 0" }} />
+            </>
+          )}
+
+          {/* Logout */}
           <button onClick={() => { setOpen(false); logout(); }}
-            style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600, color: "#dc2626", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", transition: "background 0.12s" }}
+            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600, color: "#dc2626", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", transition: "background 0.12s" }}
             onMouseEnter={e => (e.currentTarget.style.background = "#fff1f2")}
             onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
           >
-            <LogOut size={14} /> تسجيل الخروج
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: "#fff1f2", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <LogOut size={14} color="#dc2626" />
+            </div>
+            تسجيل الخروج
           </button>
         </div>
       )}

@@ -16,6 +16,9 @@ export const transportationTable = pgTable("transportation_orders", {
   status: text("status").notNull().default("pending"), // pending | in_transit | delivered | cancelled
   vehicleInfo: text("vehicle_info"),
   notes: text("notes"),
+  lat: numeric("lat", { precision: 10, scale: 7 }),
+  lng: numeric("lng", { precision: 10, scale: 7 }),
+  locationUpdatedAt: timestamp("location_updated_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

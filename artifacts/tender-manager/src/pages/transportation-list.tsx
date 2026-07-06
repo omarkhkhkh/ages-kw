@@ -3,12 +3,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import { nowKuwait, todayKuwait } from "@/lib/timezone";
+import { TruckMap } from "@/components/TruckMap";
 import {
   Truck, Plus, Search, X, Save, Pencil, Trash2,
   MapPin, Calendar, Package, ChevronDown, ArrowRight,
   DollarSign, FileText, Users, ChevronLeft, ChevronRight,
   CheckCircle2, Clock, AlertCircle, UserPlus, Loader2,
-  ClipboardList, Layers,
+  ClipboardList, Layers, Navigation,
 } from "lucide-react";
 
 /* ── brand ── */
@@ -40,6 +41,7 @@ interface TransportRow {
   orderDate: string | null; deliveryDate: string | null; value: string | null;
   status: string; vehicleInfo: string | null; notes: string | null;
   createdAt: string; supplierName: string | null;
+  lat: string | null; lng: string | null; locationUpdatedAt: string | null;
 }
 interface Team {
   id: number; name: string; description: string | null;
@@ -672,6 +674,214 @@ function CalendarTab({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean 
 }
 
 /* ═══════════════════════════════════════════════════════
+   TAB 4 — GPS MAP
+═══════════════════════════════════════════════════════ */
+function GpsTab({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
+  const qc = useQueryClient();
+  const { data: orders = [], isLoading } = useQuery<TransportRow[]>({
+    queryKey: ["transportation"],
+    queryFn: () => apiFetch("/api/transportation"),
+  });
+
+  const updateLocMut = useMutation({
+    mutationFn: ({ id, lat, lng }: { id: number; lat: number; lng: number }) =>
+      apiFetch(`/api/transportation/${id}/location`, {
+        method: "PATCH",
+        body: JSON.stringify({ lat, lng }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["transportation"] }),
+  });
+
+  const withLocation = orders.filter(o => o.lat && o.lng);
+  const withoutLocation = orders.filter(o => !o.lat || !o.lng);
+
+  const markers = withLocation.map(o => ({
+    id: o.id,
+    orderNumber: o.orderNumber,
+    description: o.description,
+    vehicleInfo: o.vehicleInfo,
+    status: o.status,
+    lat: Number(o.lat),
+    lng: Number(o.lng),
+    locationUpdatedAt: o.locationUpdatedAt,
+    origin: o.origin,
+    destination: o.destination,
+  }));
+
+  /* Manual GPS update panel for orders without location */
+  const [manualId, setManualId] = useState<number | null>(null);
+  const [manualLat, setManualLat] = useState("");
+  const [manualLng, setManualLng] = useState("");
+  const [gpsLink, setGpsLink] = useState("");
+
+  const parseGoogleLink = (url: string) => {
+    // Handle formats: @lat,lng  or q=lat,lng  or ?ll=lat,lng
+    const m = url.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/)
+           ?? url.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d*)/)
+           ?? url.match(/ll=(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (m) { setManualLat(m[1]); setManualLng(m[2]); }
+  };
+
+  const handleGetMyLocation = (id: number) => {
+    navigator.geolocation.getCurrentPosition(
+      pos => updateLocMut.mutate({ id, lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => alert("تعذّر تحديد الموقع. تأكد من منح صلاحية الموقع للمتصفح."),
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  };
+
+  const handleManualSave = () => {
+    if (!manualId || !manualLat || !manualLng) return;
+    updateLocMut.mutate({ id: manualId, lat: Number(manualLat), lng: Number(manualLng) });
+    setManualId(null); setManualLat(""); setManualLng(""); setGpsLink("");
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Stats bar */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        {[
+          { label: "إجمالي الشاحنات", value: orders.length, color: GD, bg: `${G}15` },
+          { label: "موقع محدَّد", value: withLocation.length, color: "#16a34a", bg: "#f0fdf4" },
+          { label: "بدون موقع", value: withoutLocation.length, color: "#dc2626", bg: "#fff1f2" },
+        ].map(s => (
+          <div key={s.label} style={{ flex: "1 1 160px", background: s.bg, borderRadius: 14, padding: "14px 18px", border: `1px solid ${s.color}25` }}>
+            <div style={{ fontSize: 22, fontWeight: 900, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", marginTop: 2 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Map */}
+      <div style={{ background: "white", borderRadius: 20, border: "1.5px solid #f0ead8", overflow: "hidden", boxShadow: "0 2px 16px rgba(0,0,0,0.06)" }}>
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid #f5f0e6", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <Navigation size={16} color={G} />
+            <span style={{ fontSize: 14, fontWeight: 800, color: GR }}>خريطة مواقع الشاحنات</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#9ca3af" }}>— توقيت الكويت</span>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[
+              { color: "#d97706", label: "انتظار" },
+              { color: "#2563eb", label: "جارٍ" },
+              { color: "#16a34a", label: "تسليم" },
+              { color: "#dc2626", label: "ملغي" },
+            ].map(l => (
+              <span key={l.label} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, color: "#374151" }}>
+                <span style={{ width: 10, height: 10, borderRadius: "50%", background: l.color, display: "inline-block" }} />{l.label}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div style={{ height: 460, position: "relative" }}>
+          {isLoading ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#94a3b8", fontSize: 14 }}>
+              <Loader2 size={24} style={{ animation: "spin 1s linear infinite", marginLeft: 8 }} />جاري التحميل...
+            </div>
+          ) : markers.length === 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12 }}>
+              <MapPin size={44} color="#e2d5b0" />
+              <p style={{ color: "#94a3b8", fontSize: 14, fontWeight: 600, margin: 0 }}>لا توجد شاحنات بمواقع محددة بعد</p>
+              <p style={{ color: "#d1d5db", fontSize: 12, margin: 0 }}>أضف موقع GPS للأوامر أدناه</p>
+            </div>
+          ) : (
+            <TruckMap
+              markers={markers}
+              onUpdateLocation={(id, lat, lng) => updateLocMut.mutate({ id, lat, lng })}
+              canEdit={canEdit}
+              isAdmin={isAdmin}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Orders without location */}
+      {withoutLocation.length > 0 && canEdit && (
+        <div style={{ background: "white", borderRadius: 18, border: "1.5px solid #f0ead8", padding: "18px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+            <MapPin size={15} color="#dc2626" />
+            <span style={{ fontSize: 14, fontWeight: 800, color: GR }}>أوامر بدون موقع GPS</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {withoutLocation.map(o => {
+              const st = STATUS_ORDER[o.status] ?? STATUS_ORDER.pending;
+              const isSelected = manualId === o.id;
+              return (
+                <div key={o.id} style={{ borderRadius: 12, border: `1.5px solid ${isSelected ? G : "#e5e7eb"}`, overflow: "hidden", transition: "border-color 0.15s" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: isSelected ? "#fdf8ec" : "#fafaf8" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <Truck size={16} color={st.color} />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: GR }}>{o.description}</div>
+                        {o.vehicleInfo && <div style={{ fontSize: 11, color: "#6b7280" }}>{o.vehicleInfo}</div>}
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 12, background: st.bg, color: st.color }}>{st.label}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        onClick={() => handleGetMyLocation(o.id)}
+                        disabled={updateLocMut.isPending}
+                        style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 9, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", cursor: "pointer", fontFamily: "inherit" }}
+                      >
+                        <Navigation size={12} />موقعي الحالي
+                      </button>
+                      <button
+                        onClick={() => setManualId(isSelected ? null : o.id)}
+                        style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 9, fontSize: 12, fontWeight: 700, background: isSelected ? "#fff1f2" : "#f9fafb", border: `1px solid ${isSelected ? "#fecaca" : "#e5e7eb"}`, color: isSelected ? "#dc2626" : "#374151", cursor: "pointer", fontFamily: "inherit" }}
+                      >
+                        {isSelected ? <X size={12} /> : <MapPin size={12} />}{isSelected ? "إلغاء" : "إدخال يدوي"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Manual entry panel */}
+                  {isSelected && (
+                    <div style={{ padding: "14px 16px", background: "#fffdf5", borderTop: "1px solid #f0ead8", display: "flex", flexDirection: "column", gap: 12 }}>
+                      {/* Paste Google Maps link */}
+                      <div>
+                        <label style={lbl}>لصق رابط خرائط Google</label>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <input
+                            value={gpsLink}
+                            onChange={e => { setGpsLink(e.target.value); parseGoogleLink(e.target.value); }}
+                            placeholder="https://maps.google.com/?q=29.37,47.98 ..."
+                            dir="ltr"
+                            style={{ ...inp, flex: 1, fontSize: 12 }}
+                            onFocus={onFocus} onBlur={onBlur}
+                          />
+                        </div>
+                      </div>
+                      {/* Manual lat/lng */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <label style={lbl}>خط العرض (Latitude)</label>
+                          <input value={manualLat} onChange={e => setManualLat(e.target.value)} placeholder="29.3759" dir="ltr" style={{ ...inp, fontFamily: "monospace" }} onFocus={onFocus} onBlur={onBlur} />
+                        </div>
+                        <div>
+                          <label style={lbl}>خط الطول (Longitude)</label>
+                          <input value={manualLng} onChange={e => setManualLng(e.target.value)} placeholder="47.9774" dir="ltr" style={{ ...inp, fontFamily: "monospace" }} onFocus={onFocus} onBlur={onBlur} />
+                        </div>
+                      </div>
+                      <button
+                        onClick={handleManualSave}
+                        disabled={!manualLat || !manualLng || updateLocMut.isPending}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "10px 0", borderRadius: 10, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", cursor: "pointer", fontFamily: "inherit", opacity: (!manualLat || !manualLng) ? 0.5 : 1 }}
+                      >
+                        <Save size={14} />حفظ الموقع
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
    MAIN PAGE
 ═══════════════════════════════════════════════════════ */
 export default function TransportationList() {
@@ -679,7 +889,7 @@ export default function TransportationList() {
   const canEdit = user?.role === "admin" || !!user?.canEdit;
   const isAdmin = user?.role === "admin";
 
-  const [activeTab, setActiveTab] = useState<"orders"|"teams"|"calendar">("orders");
+  const [activeTab, setActiveTab] = useState<"orders"|"teams"|"calendar"|"gps">("orders");
 
   const { data: allTasks = [] } = useQuery<Task[]>({
     queryKey: ["transport-tasks"],
@@ -694,36 +904,38 @@ export default function TransportationList() {
     queryFn: () => apiFetch("/api/transportation/teams"),
   });
 
-  const todayStr  = todayKuwait();
+  const todayStr   = todayKuwait();
   const todayTasks = allTasks.filter(t => t.dueDate === todayStr).length;
+  const withGps    = orders.filter(o => o.lat && o.lng).length;
 
   const TABS = [
-    { key:"orders",   label:"الأوامر",   icon:Truck,         count:orders.length },
-    { key:"teams",    label:"الفرق",     icon:Users,         count:teams.length },
-    { key:"calendar", label:"التقويم",   icon:Calendar,      count:todayTasks > 0 ? todayTasks : undefined },
+    { key: "orders",   label: "الأوامر",  icon: Truck,      count: orders.length },
+    { key: "teams",    label: "الفرق",    icon: Users,      count: teams.length },
+    { key: "calendar", label: "التقويم",  icon: Calendar,   count: todayTasks > 0 ? todayTasks : undefined },
+    { key: "gps",      label: "الخريطة",  icon: Navigation, count: withGps > 0 ? withGps : undefined },
   ] as const;
 
   return (
-    <div dir="rtl" style={{ fontFamily:"'Cairo','IBM Plex Sans Arabic',sans-serif",display:"flex",flexDirection:"column",gap:20 }}>
+    <div dir="rtl" style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif", display: "flex", flexDirection: "column", gap: 20 }}>
 
       {/* Page header */}
-      <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,flexWrap:"wrap" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div>
-          <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:4 }}>
-            <div style={{ width:4,height:26,borderRadius:2,background:`linear-gradient(180deg,${G},${GD})` }} />
-            <h1 style={{ fontSize:22,fontWeight:800,color:GR,margin:0 }}>النقل والتوزيع</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <div style={{ width: 4, height: 26, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>النقل والتوزيع</h1>
           </div>
-          <p style={{ color:"#6b7280",fontSize:13,margin:0,paddingRight:14 }}>إدارة أوامر النقل · الفرق · جدول المهام</p>
+          <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>إدارة أوامر النقل · الفرق · جدول المهام · GPS</p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div style={{ display:"flex",gap:4,background:"white",borderRadius:16,border:"1.5px solid #f0ead8",padding:6,alignSelf:"flex-start" }}>
-        {TABS.map(t=>(
-          <button key={t.key} onClick={()=>setActiveTab(t.key)} style={{ display:"flex",alignItems:"center",gap:7,padding:"9px 18px",borderRadius:11,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",border:"none",background:activeTab===t.key?`linear-gradient(135deg,${G},${GD})`:"transparent",color:activeTab===t.key?"white":"#374151",boxShadow:activeTab===t.key?`0 3px 12px rgba(212,165,52,0.4)`:undefined }}>
-            <t.icon size={15}/>
+      <div style={{ display: "flex", gap: 4, background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: 6, alignSelf: "flex-start", flexWrap: "wrap" }}>
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 18px", borderRadius: 11, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s", border: "none", background: activeTab === t.key ? `linear-gradient(135deg,${G},${GD})` : "transparent", color: activeTab === t.key ? "white" : "#374151", boxShadow: activeTab === t.key ? `0 3px 12px rgba(212,165,52,0.4)` : undefined }}>
+            <t.icon size={15} />
             {t.label}
-            {t.count!==undefined && <span style={{ minWidth:20,height:20,borderRadius:10,background:activeTab===t.key?"rgba(255,255,255,0.25)":"#f3f4f6",color:activeTab===t.key?"white":"#6b7280",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px" }}>{t.count}</span>}
+            {t.count !== undefined && <span style={{ minWidth: 20, height: 20, borderRadius: 10, background: activeTab === t.key ? "rgba(255,255,255,0.25)" : "#f3f4f6", color: activeTab === t.key ? "white" : "#6b7280", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>{t.count}</span>}
           </button>
         ))}
       </div>
@@ -732,6 +944,7 @@ export default function TransportationList() {
       {activeTab === "orders"   && <OrdersTab   canEdit={canEdit} />}
       {activeTab === "teams"    && <TeamsTab    canEdit={canEdit} isAdmin={isAdmin} />}
       {activeTab === "calendar" && <CalendarTab canEdit={canEdit} isAdmin={isAdmin} />}
+      {activeTab === "gps"      && <GpsTab      canEdit={canEdit} isAdmin={isAdmin} />}
 
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>

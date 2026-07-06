@@ -274,6 +274,30 @@ router.delete("/tasks/:id", async (req: Request, res: Response) => {
 });
 
 /* ══════════════════════════════════════
+   GPS LOCATION UPDATE — static path, before /:id
+══════════════════════════════════════ */
+
+// PATCH /transportation/:id/location — update truck GPS (any canEdit user)
+router.patch("/:id/location", async (req: Request, res: Response) => {
+  try {
+    const id  = Number(req.params.id);
+    const { lat, lng } = req.body as any;
+    if (lat === undefined || lng === undefined) {
+      return res.status(400).json({ error: "lat و lng مطلوبان" });
+    }
+    const [row] = await db
+      .update(transportationTable)
+      .set({ lat: String(lat), lng: String(lng), locationUpdatedAt: new Date(), updatedAt: new Date() })
+      .where(eq(transportationTable.id, id))
+      .returning();
+    if (!row) return res.status(404).json({ error: "أمر النقل غير موجود" });
+    return res.json(row);
+  } catch {
+    return res.status(500).json({ error: "فشل في تحديث الموقع" });
+  }
+});
+
+/* ══════════════════════════════════════
    TRANSPORTATION ORDERS — DYNAMIC (/:id last)
    Must come AFTER all static routes above.
 ══════════════════════════════════════ */

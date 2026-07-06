@@ -7,6 +7,8 @@ import {
   UserPlus, Trash2, Pencil, ShieldCheck, CheckCircle2, XCircle,
   Eye, Download, Upload, FilePenLine, Save, X, Activity,
   Users, KeyRound, LayoutGrid, Lock, Unlock,
+  FileText, FolderOpen, FileSignature, TrendingUp, BarChart3,
+  Loader2, DollarSign, Calendar, Building2,
 } from "lucide-react";
 import { formatKuwaitDateTime } from "@/lib/timezone";
 
@@ -231,8 +233,340 @@ function Divider() {
   return <div style={{ height: 1, background: "linear-gradient(90deg,transparent,#f0ead8,transparent)" }} />;
 }
 
+/* ════════════════════════════════════════════════════
+   EMPLOYEE PROFILE MODAL
+════════════════════════════════════════════════════ */
+const kwd = (v: string | number | null | undefined) =>
+  v == null || v === "" ? "—"
+  : `${Number(v).toLocaleString("en-KW", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} د.ك`;
+
+const fmtDate = (d: string | null | undefined) =>
+  d ? new Date(d).toLocaleDateString("ar-KW", { year: "numeric", month: "short", day: "numeric" }) : "—";
+
+const TENDER_STATUS: Record<string, { label: string; color: string; bg: string }> = {
+  draft:     { label: "مسودة",    color: "#6b7280", bg: "#f9fafb" },
+  submitted: { label: "مقدّمة",   color: "#2563eb", bg: "#eff6ff" },
+  won:       { label: "رابحة",    color: "#16a34a", bg: "#f0fdf4" },
+  lost:      { label: "خاسرة",   color: "#dc2626", bg: "#fff1f2" },
+  cancelled: { label: "ملغاة",   color: "#9ca3af", bg: "#f3f4f6" },
+  pending:   { label: "انتظار",  color: "#d97706", bg: "#fffbeb" },
+};
+const CONTRACT_STATUS: Record<string, { label: string; color: string; bg: string }> = {
+  active:    { label: "فعّال",    color: "#16a34a", bg: "#f0fdf4" },
+  completed: { label: "مكتمل",   color: "#2563eb", bg: "#eff6ff" },
+  terminated:{ label: "منتهي",   color: "#dc2626", bg: "#fff1f2" },
+};
+const PROJECT_STATUS: Record<string, { label: string; color: string; bg: string }> = {
+  planning:    { label: "تخطيط",    color: "#6b7280", bg: "#f9fafb" },
+  active:      { label: "نشط",      color: "#16a34a", bg: "#f0fdf4" },
+  on_hold:     { label: "متوقف",    color: "#d97706", bg: "#fffbeb" },
+  completed:   { label: "مكتمل",    color: "#2563eb", bg: "#eff6ff" },
+  cancelled:   { label: "ملغي",     color: "#dc2626", bg: "#fff1f2" },
+};
+
+interface ProfileData {
+  user: UserRow;
+  tenders: any[];
+  contracts: any[];
+  projects: any[];
+  income: any[];
+  sales: any[];
+}
+
+function EmployeeProfileModal({ userId, onClose }: { userId: number; onClose: () => void }) {
+  const [tab, setTab] = useState<"tenders"|"contracts"|"projects"|"income"|"sales">("tenders");
+
+  const { data, isLoading, isError, refetch } = useQuery<ProfileData>({
+    queryKey: ["employee-profile", userId],
+    queryFn: () => apiFetch(`/api/admin/users/${userId}/profile`),
+    retry: 1,
+  });
+
+  const totalIncome = (data?.income ?? []).reduce((s, r) => s + Number(r.amount), 0);
+  const totalProfit = (data?.sales ?? []).reduce((s, r) => s + Number(r.profitAmount ?? 0), 0);
+
+  const TABS = [
+    { key: "tenders",   label: "المناقصات",  icon: FileText,       count: data?.tenders.length },
+    { key: "contracts", label: "العقود",     icon: FileSignature,  count: data?.contracts.length },
+    { key: "projects",  label: "المشاريع",   icon: FolderOpen,     count: data?.projects.length },
+    { key: "income",    label: "الإيرادات",  icon: TrendingUp,     count: data?.income.length },
+    { key: "sales",     label: "المبيعات",   icon: BarChart3,      count: data?.sales.length },
+  ] as const;
+
+  const thStyle: React.CSSProperties = { padding: "11px 14px", textAlign: "right", fontWeight: 800, color: "#374151", fontSize: 12, whiteSpace: "nowrap", background: "#fdf8ec", borderBottom: "2px solid #f0ead8" };
+  const tdStyle: React.CSSProperties = { padding: "11px 14px", fontSize: 12, color: "#374151", borderBottom: "1px solid #f5f0e6" };
+  const badge = (label: string, color: string, bg: string) => (
+    <span style={{ padding: "3px 10px", borderRadius: 10, background: bg, color, fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" as const }}>{label}</span>
+  );
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(11,26,16,0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(5px)", animation: "fadeIn 0.2s ease" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 900, background: "white", borderRadius: 24, boxShadow: "0 40px 100px rgba(0,0,0,0.35)", overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "90vh", animation: "slideUp 0.25s ease" }}>
+
+        {/* Header */}
+        <div style={{ padding: "20px 28px", background: `linear-gradient(135deg,${GR},#1e4028)`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: `linear-gradient(135deg,${G},${GD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, fontWeight: 900, color: "white" }}>
+              {data?.user.fullName.charAt(0) ?? "?"}
+            </div>
+            <div>
+              <h2 style={{ color: "white", fontSize: 18, fontWeight: 800, margin: 0 }}>{data?.user.fullName ?? "..."}</h2>
+              <p style={{ color: "rgba(212,165,52,0.6)", fontSize: 12, margin: "3px 0 0" }}>ملف الموظف الشخصي · عرض جميع الأعمال المرتبطة</p>
+            </div>
+          </div>
+          {/* Summary badges */}
+          {data && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {[
+                { label: "إيرادات", value: kwd(totalIncome), color: "#16a34a" },
+                { label: "أرباح",   value: kwd(totalProfit), color: G },
+              ].map(b => (
+                <div key={b.label} style={{ textAlign: "center", background: "rgba(255,255,255,0.1)", borderRadius: 10, padding: "6px 14px" }}>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", fontWeight: 600 }}>{b.label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: b.color, direction: "ltr" }}>{b.value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 8, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.7)", marginRight: 8 }}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 2, padding: "10px 20px 0", background: "#f9f7f2", borderBottom: "1.5px solid #f0ead8", flexShrink: 0, overflowX: "auto" }}>
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key as any)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: "10px 10px 0 0", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none", transition: "all 0.15s", background: tab === t.key ? "white" : "transparent", color: tab === t.key ? GR : "#6b7280", borderBottom: tab === t.key ? `2px solid ${G}` : "2px solid transparent", whiteSpace: "nowrap" }}>
+              <t.icon size={14} color={tab === t.key ? G : "#9ca3af"} />
+              {t.label}
+              {t.count !== undefined && (
+                <span style={{ minWidth: 20, height: 18, borderRadius: 9, background: tab === t.key ? `${G}20` : "#f3f4f6", color: tab === t.key ? GD : "#6b7280", fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
+                  {t.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {isLoading ? (
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: 60 }}>
+              <Loader2 size={28} color="#94a3b8" style={{ animation: "spin 1s linear infinite" }} />
+            </div>
+          ) : isError || !data ? (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 60, gap: 14 }}>
+              <div style={{ width: 52, height: 52, borderRadius: 16, background: "#fff1f2", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <X size={24} color="#dc2626" />
+              </div>
+              <p style={{ color: "#dc2626", fontSize: 14, fontWeight: 700, margin: 0 }}>تعذّر تحميل بيانات الملف الشخصي</p>
+              <button onClick={() => refetch()} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 18px", borderRadius: 10, fontSize: 13, fontWeight: 700, background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", cursor: "pointer", fontFamily: "inherit" }}>
+                إعادة المحاولة
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* TENDERS */}
+              {tab === "tenders" && (
+                data.tenders.length === 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: 50, gap: 10 }}>
+                    <FileText size={36} color="#e2d5b0" />
+                    <p style={{ color: "#94a3b8", fontSize: 14, fontWeight: 600, margin: 0 }}>لا توجد مناقصات مرتبطة بهذا الموظف</p>
+                    <p style={{ color: "#d1d5db", fontSize: 12, margin: 0 }}>يتم البحث بالاسم في حقول: المهندس المسؤول، مدير المناقصة، مسؤول المشتريات، المسؤول المالي، مسؤول النقل، مسؤول الموافقة</p>
+                  </div>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead><tr>
+                      {["رقم المناقصة","المشروع","الجهة","الحالة","قيمة العطاء","قيمة العقد","دوره"].map(h => <th key={h} style={thStyle}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {data.tenders.map((t: any, i: number) => {
+                        const st = TENDER_STATUS[t.status] ?? { label: t.status, color: "#6b7280", bg: "#f9fafb" };
+                        // Determine the employee's roles in this tender
+                        const roles: string[] = [];
+                        const n = data.user.fullName.toLowerCase();
+                        if (t.responsibleEngineer?.toLowerCase().includes(n)) roles.push("مهندس مسؤول");
+                        if (t.tenderManager?.toLowerCase().includes(n))       roles.push("مدير مناقصة");
+                        if (t.procurementOfficer?.toLowerCase().includes(n))  roles.push("مشتريات");
+                        if (t.financialOfficer?.toLowerCase().includes(n))    roles.push("مالي");
+                        if (t.transportOfficer?.toLowerCase().includes(n))    roles.push("نقل");
+                        if (t.approvalManager?.toLowerCase().includes(n))     roles.push("موافقة");
+                        return (
+                          <tr key={t.id} style={{ background: i % 2 === 0 ? "white" : "#fafaf8" }}>
+                            <td style={{ ...tdStyle, fontWeight: 700, color: GR }}>{t.tenderNumber ?? "—"}</td>
+                            <td style={{ ...tdStyle, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.projectName ?? "—"}</td>
+                            <td style={{ ...tdStyle, color: "#6b7280" }}>{t.governmentEntity ?? "—"}</td>
+                            <td style={tdStyle}>{badge(st.label, st.color, st.bg)}</td>
+                            <td style={{ ...tdStyle, direction: "ltr", textAlign: "right" }}>{kwd(t.offerValue)}</td>
+                            <td style={{ ...tdStyle, direction: "ltr", textAlign: "right", fontWeight: 700, color: "#16a34a" }}>{kwd(t.contractValue)}</td>
+                            <td style={tdStyle}>
+                              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                {roles.map(r => <span key={r} style={{ padding: "2px 8px", borderRadius: 8, background: `${G}15`, color: GD, fontSize: 11, fontWeight: 700 }}>{r}</span>)}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )
+              )}
+
+              {/* CONTRACTS */}
+              {tab === "contracts" && (
+                data.contracts.length === 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: 50, gap: 10 }}>
+                    <FileSignature size={36} color="#e2d5b0" />
+                    <p style={{ color: "#94a3b8", fontSize: 14, fontWeight: 600, margin: 0 }}>لا توجد عقود مرتبطة بمناقصات هذا الموظف</p>
+                  </div>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead><tr>
+                      {["رقم العقد","الجهة الحكومية","قيمة العقد","الحالة","تاريخ التوقيع","تاريخ البداية","تاريخ النهاية"].map(h => <th key={h} style={thStyle}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {data.contracts.map((c: any, i: number) => {
+                        const st = CONTRACT_STATUS[c.status] ?? { label: c.status, color: "#6b7280", bg: "#f9fafb" };
+                        return (
+                          <tr key={c.id} style={{ background: i % 2 === 0 ? "white" : "#fafaf8" }}>
+                            <td style={{ ...tdStyle, fontWeight: 700, color: GR }}>{c.contractNumber}</td>
+                            <td style={{ ...tdStyle, color: "#6b7280" }}>{c.governmentEntity ?? "—"}</td>
+                            <td style={{ ...tdStyle, direction: "ltr", textAlign: "right", fontWeight: 800, color: "#16a34a" }}>{kwd(c.contractValue)}</td>
+                            <td style={tdStyle}>{badge(st.label, st.color, st.bg)}</td>
+                            <td style={tdStyle}>{fmtDate(c.signDate)}</td>
+                            <td style={tdStyle}>{fmtDate(c.startDate)}</td>
+                            <td style={tdStyle}>{fmtDate(c.endDate)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )
+              )}
+
+              {/* PROJECTS */}
+              {tab === "projects" && (
+                data.projects.length === 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: 50, gap: 10 }}>
+                    <FolderOpen size={36} color="#e2d5b0" />
+                    <p style={{ color: "#94a3b8", fontSize: 14, fontWeight: 600, margin: 0 }}>لا توجد مشاريع مرتبطة بهذا الموظف</p>
+                    <p style={{ color: "#d1d5db", fontSize: 12, margin: 0 }}>يتم البحث في حقل "مدير المشروع"</p>
+                  </div>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead><tr>
+                      {["رقم المشروع","اسم المشروع","الجهة","الحالة","قيمة العقد","الإنجاز %","البداية","النهاية"].map(h => <th key={h} style={thStyle}>{h}</th>)}
+                    </tr></thead>
+                    <tbody>
+                      {data.projects.map((p: any, i: number) => {
+                        const st = PROJECT_STATUS[p.status] ?? { label: p.status, color: "#6b7280", bg: "#f9fafb" };
+                        const pct = Number(p.completionPercentage ?? 0);
+                        return (
+                          <tr key={p.id} style={{ background: i % 2 === 0 ? "white" : "#fafaf8" }}>
+                            <td style={{ ...tdStyle, fontWeight: 700, color: GR }}>{p.projectNumber ?? "—"}</td>
+                            <td style={{ ...tdStyle, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</td>
+                            <td style={{ ...tdStyle, color: "#6b7280" }}>{p.governmentEntity ?? "—"}</td>
+                            <td style={tdStyle}>{badge(st.label, st.color, st.bg)}</td>
+                            <td style={{ ...tdStyle, direction: "ltr", textAlign: "right", fontWeight: 700, color: "#16a34a" }}>{kwd(p.contractValue)}</td>
+                            <td style={tdStyle}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ flex: 1, height: 6, borderRadius: 3, background: "#f3f4f6", overflow: "hidden" }}>
+                                  <div style={{ height: "100%", width: `${Math.min(100, pct)}%`, background: pct >= 100 ? "#16a34a" : pct > 50 ? G : "#2563eb", borderRadius: 3, transition: "width 0.4s" }} />
+                                </div>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", minWidth: 32 }}>{pct}%</span>
+                              </div>
+                            </td>
+                            <td style={tdStyle}>{fmtDate(p.startDate)}</td>
+                            <td style={tdStyle}>{fmtDate(p.endDate)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )
+              )}
+
+              {/* INCOME */}
+              {tab === "income" && (
+                data.income.length === 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: 50, gap: 10 }}>
+                    <TrendingUp size={36} color="#e2d5b0" />
+                    <p style={{ color: "#94a3b8", fontSize: 14, fontWeight: 600, margin: 0 }}>لا توجد إيرادات مسجلة لهذا الموظف</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Income total */}
+                    <div style={{ padding: "14px 20px", background: "#f0fdf4", borderBottom: "1px solid #bbf7d0", display: "flex", alignItems: "center", gap: 10 }}>
+                      <TrendingUp size={16} color="#16a34a" />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#166534" }}>إجمالي الإيرادات: </span>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: "#16a34a", direction: "ltr" }}>{kwd(totalIncome)}</span>
+                    </div>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead><tr>
+                        {["التاريخ","الوصف","المبلغ","الفئة","الملاحظات"].map(h => <th key={h} style={thStyle}>{h}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {data.income.map((r: any, i: number) => (
+                          <tr key={r.id} style={{ background: i % 2 === 0 ? "white" : "#fafaf8" }}>
+                            <td style={tdStyle}>{fmtDate(r.date)}</td>
+                            <td style={{ ...tdStyle, fontWeight: 700, color: GR }}>{r.description}</td>
+                            <td style={{ ...tdStyle, direction: "ltr", textAlign: "right", fontWeight: 800, color: "#16a34a" }}>{kwd(r.amount)}</td>
+                            <td style={tdStyle}><span style={{ padding: "2px 10px", borderRadius: 10, background: "#f0fdf4", color: "#16a34a", fontSize: 11, fontWeight: 700 }}>{r.category}</span></td>
+                            <td style={{ ...tdStyle, color: "#9ca3af" }}>{r.notes ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )
+              )}
+
+              {/* SALES */}
+              {tab === "sales" && (
+                data.sales.length === 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: 50, gap: 10 }}>
+                    <BarChart3 size={36} color="#e2d5b0" />
+                    <p style={{ color: "#94a3b8", fontSize: 14, fontWeight: 600, margin: 0 }}>لا توجد مبيعات مسجلة لهذا الموظف</p>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ padding: "14px 20px", background: "#fffbeb", borderBottom: "1px solid #fde68a", display: "flex", alignItems: "center", gap: 14 }}>
+                      <BarChart3 size={16} color={GD} />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#78350f" }}>إجمالي الأرباح: </span>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: GD, direction: "ltr" }}>{kwd(totalProfit)}</span>
+                    </div>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead><tr>
+                        {["التاريخ","الوصف","إجمالي العقد","نسبة الربح %","مبلغ الربح","رقم العقد","الملاحظات"].map(h => <th key={h} style={thStyle}>{h}</th>)}
+                      </tr></thead>
+                      <tbody>
+                        {data.sales.map((s: any, i: number) => (
+                          <tr key={s.id} style={{ background: i % 2 === 0 ? "white" : "#fafaf8" }}>
+                            <td style={tdStyle}>{fmtDate(s.saleDate)}</td>
+                            <td style={{ ...tdStyle, fontWeight: 700, color: GR }}>{s.description}</td>
+                            <td style={{ ...tdStyle, direction: "ltr", textAlign: "right" }}>{kwd(s.totalContractAmount)}</td>
+                            <td style={{ ...tdStyle, direction: "ltr", textAlign: "right" }}>{s.profitPercentage ? `${Number(s.profitPercentage).toFixed(2)}%` : "—"}</td>
+                            <td style={{ ...tdStyle, direction: "ltr", textAlign: "right", fontWeight: 800, color: "#16a34a" }}>{kwd(s.profitAmount)}</td>
+                            <td style={{ ...tdStyle, color: "#6b7280" }}>{s.contractNumber ?? "—"}</td>
+                            <td style={{ ...tdStyle, color: "#9ca3af" }}>{s.notes ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )
+              )}
+            </>
+          )}
+        </div>
+      </div>
+      <style>{`@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(32px);opacity:0}to{transform:translateY(0);opacity:1}}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+}
+
 /* ── User Card ── */
-function UserCard({ u, me, onEdit, onDelete }: { u: UserRow; me: any; onEdit: () => void; onDelete: () => void }) {
+function UserCard({ u, me, onEdit, onDelete, onViewProfile }: { u: UserRow; me: any; onEdit: () => void; onDelete: () => void; onViewProfile: () => void }) {
   const isAdmin = u.role === "admin";
 
   return (
@@ -263,7 +597,13 @@ function UserCard({ u, me, onEdit, onDelete }: { u: UserRow; me: any; onEdit: ()
         </div>
 
         {/* Actions */}
-        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <button onClick={onViewProfile} title="ملف الموظف"
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#fffbeb", color: GD, border: `1px solid ${G}40`, cursor: "pointer", fontFamily: "inherit" }}
+            onMouseEnter={e => (e.currentTarget.style.background = `${G}18`)}
+            onMouseLeave={e => (e.currentTarget.style.background = "#fffbeb")}>
+            <Eye size={13} /> الملف
+          </button>
           <Link href={`/admin/activity-log?userId=${u.id}`}>
             <button title="سجل الحركات"
               style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#f8fafc", color: "#64748b", border: "1px solid #e2e8f0", cursor: "pointer", fontFamily: "inherit" }}>
@@ -330,10 +670,11 @@ function UserCard({ u, me, onEdit, onDelete }: { u: UserRow; me: any; onEdit: ()
 export default function AdminUsers() {
   const { user: me } = useAuth();
   const qc = useQueryClient();
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing]   = useState<UserRow | null>(null);
-  const [form,    setForm]      = useState({ ...defaultForm });
-  const [newPass, setNewPass]   = useState("");
+  const [showForm,      setShowForm]      = useState(false);
+  const [editing,       setEditing]       = useState<UserRow | null>(null);
+  const [form,          setForm]          = useState({ ...defaultForm });
+  const [newPass,       setNewPass]       = useState("");
+  const [profileUserId, setProfileUserId] = useState<number | null>(null);
 
   const { data: users = [], isLoading } = useQuery<UserRow[]>({
     queryKey: ["admin-users"],
@@ -393,7 +734,12 @@ export default function AdminUsers() {
   return (
     <div dir="rtl" style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif", display: "flex", flexDirection: "column", gap: 24 }}>
 
-      {/* Modal */}
+      {/* Employee profile modal */}
+      {profileUserId !== null && (
+        <EmployeeProfileModal userId={profileUserId} onClose={() => setProfileUserId(null)} />
+      )}
+
+      {/* User form modal */}
       <UserModal
         open={showForm || !!editing}
         editing={editing} form={form}
@@ -465,6 +811,7 @@ export default function AdminUsers() {
             <UserCard key={u.id} u={u} me={me}
               onEdit={() => { closeAll(); setEditing({ ...u }); }}
               onDelete={() => { if (confirm(`حذف ${u.fullName}؟`)) deleteMut.mutate(u.id); }}
+              onViewProfile={() => setProfileUserId(u.id)}
             />
           ))}
         </div>

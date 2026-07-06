@@ -1,6 +1,6 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
-import { db, usersTable } from "@workspace/db";
+import { db, pool, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth";
 import { activityLogger } from "../middleware/activity-logger";
@@ -135,6 +135,88 @@ router.patch("/users/:id", async (req, res) => {
     return;
   }
   res.json(user);
+});
+
+// GET /api/admin/users/:id/profile — full employee profile (tenders, projects, income, sales)
+router.get("/users/:id/profile", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "معرّف المستخدم غير صالح" });
+    return;
+  }
+
+  // Get employee info
+  const [user] = await db.select(USER_SELECT).from(usersTable).where(eq(usersTable.id, id));
+  if (!user) { res.status(404).json({ error: "المستخدم غير موجود" }); return; }
+
+  const name = user.fullName;
+
+  // Tenders where employee has any role (matched by full name, case-insensitive)
+  const { rows: tenders } = await pool.query(`
+    SELECT id, tender_number AS "tenderNumber", project_name AS "projectName",
+           government_entity AS "governmentEntity", status, offer_value AS "offerValue",
+           contract_value AS "contractValue", announcement_date AS "announcementDate",
+           responsible_engineer AS "responsibleEngineer", tender_manager AS "tenderManager",
+           procurement_officer AS "procurementOfficer", financial_officer AS "financialOfficer",
+           transport_officer AS "transportOfficer", approval_manager AS "approvalManager"
+    FROM tenders
+    WHERE responsible_engineer ILIKE $1
+       OR tender_manager       ILIKE $1
+       OR procurement_officer  ILIKE $1
+       OR financial_officer    ILIKE $1
+       OR transport_officer    ILIKE $1
+       OR approval_manager     ILIKE $1
+    ORDER BY created_at DESC
+  `, [`%${name}%`]);
+
+  // Contracts linked to those tenders
+  const { rows: contracts } = tenders.length > 0
+    ? await pool.query(`
+        SELECT c.id, c.contract_number AS "contractNumber", c.contract_value AS "contractValue",
+               c.status, c.sign_date AS "signDate", c.start_date AS "startDate",
+               c.end_date AS "endDate", ge.name AS "governmentEntity"
+        FROM contracts c
+        LEFT JOIN government_entities ge ON ge.id = c.government_entity_id
+        WHERE c.tender_id = ANY($1::int[])
+        ORDER BY c.created_at DESC
+      `, [tenders.map((t: any) => t.id)])
+    : { rows: [] };
+
+  // Projects where employee is project manager
+  const { rows: projects } = await pool.query(`
+    SELECT p.id, p.project_number AS "projectNumber", p.name,
+           p.status, p.contract_value AS "contractValue",
+           p.start_date AS "startDate", p.end_date AS "endDate",
+           p.completion_percentage AS "completionPercentage",
+           p.project_manager AS "projectManager",
+           ge.name AS "governmentEntity"
+    FROM projects p
+    LEFT JOIN government_entities ge ON ge.id = p.government_entity_id
+    WHERE p.project_manager ILIKE $1
+    ORDER BY p.created_at DESC
+  `, [`%${name}%`]);
+
+  // Finance income records
+  const { rows: income } = await pool.query(`
+    SELECT id, description, amount, date, category, notes, created_at AS "createdAt"
+    FROM finance_income
+    WHERE employee_id = $1
+    ORDER BY date DESC
+  `, [id]);
+
+  // Employee sales
+  const { rows: sales } = await pool.query(`
+    SELECT es.id, es.description, es.total_contract_amount AS "totalContractAmount",
+           es.profit_percentage AS "profitPercentage", es.profit_amount AS "profitAmount",
+           es.sale_date AS "saleDate", es.notes,
+           c.contract_number AS "contractNumber"
+    FROM employee_sales es
+    LEFT JOIN contracts c ON c.id = es.contract_id
+    WHERE es.employee_id = $1
+    ORDER BY es.sale_date DESC
+  `, [id]);
+
+  res.json({ user, tenders, contracts, projects, income, sales });
 });
 
 // DELETE /api/admin/users/:id

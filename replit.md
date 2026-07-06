@@ -1,10 +1,11 @@
-# [Project name]
+# سجل المناقصات
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+نظام إدارة المناقصات الحكومية — يتتبع دورة حياة المناقصة من بدايتها حتى إغلاقها لشركات المقاولات.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/tender-manager run dev` — run the frontend
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
@@ -15,22 +16,33 @@ _Replace the heading above with the project's name, and this line with one sente
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - API: Express 5
-- DB: PostgreSQL + Drizzle ORM
+- DB: PostgreSQL + Drizzle ORM (table: `tenders`)
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
+- Frontend: React + Vite, RTL (Arabic), TanStack Query
 - Build: esbuild (CJS bundle)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- DB schema: `lib/db/src/schema/tenders.ts`
+- API spec: `lib/api-spec/openapi.yaml`
+- API routes: `artifacts/api-server/src/routes/tenders.ts`
+- Frontend pages: `artifacts/tender-manager/src/pages/`
+- Frontend entry: `artifacts/tender-manager/src/App.tsx`
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Frontend is RTL (dir="rtl") — Arabic-first UI
+- Status enum enforced on both server (validation) and client (constants map)
+- Urgency logic excludes completed/submitted statuses on both server and client
+- Cache invalidated via TanStack Query queryKey helpers after every mutation
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- **لوحة التحكم** (`/`): إحصاءات + رسم بياني للحالات + آخر المناقصات
+- **جميع المناقصات** (`/tenders`): قائمة مع بحث وفلاتر وتبويبات الحالة
+- **مناقصة جديدة** (`/tenders/new`): نموذج إنشاء
+- **تفاصيل المناقصة** (`/tenders/:id`): عرض + تعديل + حذف
 
 ## User preferences
 
@@ -38,8 +50,5 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Frontend dev script must pass `--port $PORT --strictPort` explicitly (PORT injected by artifact.toml but needs CLI flag to take effect)
+- `tendersTable` columns use camelCase in Drizzle (e.g. `createdAt` not `created_at`) even though DB column is snake_case

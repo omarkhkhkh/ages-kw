@@ -1,0 +1,283 @@
+import { Router, type Request, type Response } from "express";
+import { eq, ilike, or, sql, and } from "drizzle-orm";
+import { db, tendersTable } from "@workspace/db";
+
+const router = Router();
+
+function formatTender(t: typeof tendersTable.$inferSelect) {
+  return {
+    id: t.id,
+    tenderNumber: t.tenderNumber,
+    governmentEntity: t.governmentEntity,
+    projectName: t.projectName,
+    tenderType: t.tenderType,
+    announcementDate: t.announcementDate,
+    deadline: t.deadline,
+    bondValue: t.bondValue !== null ? Number(t.bondValue) : null,
+    docsValue: t.docsValue !== null ? Number(t.docsValue) : null,
+    responsibleEngineer: t.responsibleEngineer,
+    status: t.status,
+    offerValue: t.offerValue !== null ? Number(t.offerValue) : null,
+    profitPercentage:
+      t.profitPercentage !== null ? Number(t.profitPercentage) : null,
+    isSubmitted: t.isSubmitted,
+    winner: t.winner,
+    notes: t.notes,
+    createdAt: t.createdAt.toISOString(),
+    updatedAt: t.updatedAt.toISOString(),
+  };
+}
+
+const VALID_STATUSES = [
+  "new",
+  "studying",
+  "requesting_quotes",
+  "preparing_technical",
+  "preparing_financial",
+  "management_review",
+  "ready_to_submit",
+  "submitted",
+  "under_evaluation",
+  "won",
+  "lost",
+  "cancelled",
+];
+
+// GET /api/tenders
+router.get("/", async (req: Request, res: Response): Promise<void> => {
+  const { status, entity, urgent, won, engineer, search } = req.query;
+
+  const conditions: ReturnType<typeof eq>[] = [];
+
+  if (status && typeof status === "string") {
+    conditions.push(eq(tendersTable.status, status));
+  }
+  if (entity && typeof entity === "string") {
+    conditions.push(ilike(tendersTable.governmentEntity, `%${entity}%`) as ReturnType<typeof eq>);
+  }
+  if (won === "true") {
+    conditions.push(eq(tendersTable.status, "won"));
+  }
+  if (engineer && typeof engineer === "string") {
+    conditions.push(ilike(tendersTable.responsibleEngineer, `%${engineer}%`) as ReturnType<typeof eq>);
+  }
+  if (urgent === "true") {
+    const sevenDaysFromNow = new Date();
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+    const today = new Date().toISOString().split("T")[0];
+    const urgentDate = sevenDaysFromNow.toISOString().split("T")[0];
+    const activeStatuses = ["new", "studying", "requesting_quotes", "preparing_technical", "preparing_financial", "management_review", "ready_to_submit", "under_evaluation"];
+    conditions.push(
+      and(
+        sql`${tendersTable.deadline} IS NOT NULL`,
+        sql`${tendersTable.deadline} >= ${today}`,
+        sql`${tendersTable.deadline} <= ${urgentDate}`,
+        sql`${tendersTable.status} = ANY(${activeStatuses})`
+      ) as ReturnType<typeof eq>
+    );
+  }
+  if (search && typeof search === "string") {
+    conditions.push(
+      or(
+        ilike(tendersTable.tenderNumber, `%${search}%`),
+        ilike(tendersTable.projectName, `%${search}%`),
+        ilike(tendersTable.governmentEntity, `%${search}%`)
+      ) as ReturnType<typeof eq>
+    );
+  }
+
+  const rows =
+    conditions.length > 0
+      ? await db
+          .select()
+          .from(tendersTable)
+          .where(and(...conditions))
+          .orderBy(sql`${tendersTable.createdAt} DESC`)
+      : await db
+          .select()
+          .from(tendersTable)
+          .orderBy(sql`${tendersTable.createdAt} DESC`);
+
+  res.json(rows.map(formatTender));
+});
+
+// GET /api/tenders/stats
+router.get("/stats", async (_req: Request, res: Response): Promise<void> => {
+  const all = await db.select().from(tendersTable);
+
+  const byStatus: Record<string, number> = {};
+  let totalOfferValue = 0;
+  let wonCount = 0;
+
+  const today = new Date();
+  const sevenDaysFromNow = new Date();
+  sevenDaysFromNow.setDate(today.getDate() + 7);
+  const todayStr = today.toISOString().split("T")[0];
+  const urgentStr = sevenDaysFromNow.toISOString().split("T")[0];
+  const activeStatuses = new Set(["new", "studying", "requesting_quotes", "preparing_technical", "preparing_financial", "management_review", "ready_to_submit", "under_evaluation"]);
+
+  let urgentCount = 0;
+
+  for (const t of all) {
+    byStatus[t.status] = (byStatus[t.status] ?? 0) + 1;
+    if (t.offerValue) totalOfferValue += Number(t.offerValue);
+    if (t.status === "won") wonCount++;
+    if (
+      t.deadline &&
+      t.deadline >= todayStr &&
+      t.deadline <= urgentStr &&
+      activeStatuses.has(t.status)
+    ) {
+      urgentCount++;
+    }
+  }
+
+  const completedStatuses = ["won", "lost", "cancelled"];
+  const completedCount = all.filter((t) =>
+    completedStatuses.includes(t.status)
+  ).length;
+  const winRate =
+    completedCount > 0 ? Math.round((wonCount / completedCount) * 100) : 0;
+
+  res.json({
+    total: all.length,
+    byStatus: Object.entries(byStatus).map(([status, count]) => ({
+      status,
+      count,
+    })),
+    urgentCount,
+    wonCount,
+    totalOfferValue,
+    winRate,
+  });
+});
+
+// GET /api/tenders/:id
+router.get("/:id", async (req: Request, res: Response): Promise<void> => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid ID" });
+    return;
+  }
+
+  const rows = await db
+    .select()
+    .from(tendersTable)
+    .where(eq(tendersTable.id, id));
+
+  if (rows.length === 0) {
+    res.status(404).json({ error: "Tender not found" });
+    return;
+  }
+
+  res.json(formatTender(rows[0]));
+});
+
+// POST /api/tenders
+router.post("/", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as Record<string, unknown>;
+  if (!body.tenderNumber || !body.projectName || !body.status) {
+    res.status(400).json({ error: "tenderNumber, projectName, and status are required" });
+    return;
+  }
+
+  const status = String(body.status);
+  if (!VALID_STATUSES.includes(status)) {
+    res.status(400).json({ error: `Invalid status: ${status}` });
+    return;
+  }
+
+  const rows = await db
+    .insert(tendersTable)
+    .values({
+      tenderNumber: String(body.tenderNumber),
+      governmentEntity: body.governmentEntity ? String(body.governmentEntity) : null,
+      projectName: String(body.projectName),
+      tenderType: body.tenderType ? String(body.tenderType) : null,
+      announcementDate: body.announcementDate ? String(body.announcementDate) : null,
+      deadline: body.deadline ? String(body.deadline) : null,
+      bondValue: body.bondValue != null ? String(body.bondValue) : null,
+      docsValue: body.docsValue != null ? String(body.docsValue) : null,
+      responsibleEngineer: body.responsibleEngineer ? String(body.responsibleEngineer) : null,
+      status,
+      offerValue: body.offerValue != null ? String(body.offerValue) : null,
+      profitPercentage: body.profitPercentage != null ? String(body.profitPercentage) : null,
+      isSubmitted: Boolean(body.isSubmitted ?? false),
+      winner: body.winner ? String(body.winner) : null,
+      notes: body.notes ? String(body.notes) : null,
+    })
+    .returning();
+
+  res.status(201).json(formatTender(rows[0]));
+});
+
+// PATCH /api/tenders/:id
+router.patch("/:id", async (req: Request, res: Response): Promise<void> => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid ID" });
+    return;
+  }
+
+  const body = req.body as Record<string, unknown>;
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+
+  if (body.tenderNumber !== undefined) updates.tenderNumber = String(body.tenderNumber);
+  if (body.governmentEntity !== undefined) updates.governmentEntity = body.governmentEntity ? String(body.governmentEntity) : null;
+  if (body.projectName !== undefined) updates.projectName = String(body.projectName);
+  if (body.tenderType !== undefined) updates.tenderType = body.tenderType ? String(body.tenderType) : null;
+  if (body.announcementDate !== undefined) updates.announcementDate = body.announcementDate ? String(body.announcementDate) : null;
+  if (body.deadline !== undefined) updates.deadline = body.deadline ? String(body.deadline) : null;
+  if (body.bondValue !== undefined) updates.bondValue = body.bondValue != null ? String(body.bondValue) : null;
+  if (body.docsValue !== undefined) updates.docsValue = body.docsValue != null ? String(body.docsValue) : null;
+  if (body.responsibleEngineer !== undefined) updates.responsibleEngineer = body.responsibleEngineer ? String(body.responsibleEngineer) : null;
+  if (body.status !== undefined) {
+    const newStatus = String(body.status);
+    if (!VALID_STATUSES.includes(newStatus)) {
+      res.status(400).json({ error: `Invalid status: ${newStatus}` });
+      return;
+    }
+    updates.status = newStatus;
+  }
+  if (body.offerValue !== undefined) updates.offerValue = body.offerValue != null ? String(body.offerValue) : null;
+  if (body.profitPercentage !== undefined) updates.profitPercentage = body.profitPercentage != null ? String(body.profitPercentage) : null;
+  if (body.isSubmitted !== undefined) updates.isSubmitted = Boolean(body.isSubmitted);
+  if (body.winner !== undefined) updates.winner = body.winner ? String(body.winner) : null;
+  if (body.notes !== undefined) updates.notes = body.notes ? String(body.notes) : null;
+
+  const rows = await db
+    .update(tendersTable)
+    .set(updates as Parameters<typeof db.update>[0] extends { set: (v: infer V) => unknown } ? V : never)
+    .where(eq(tendersTable.id, id))
+    .returning();
+
+  if (rows.length === 0) {
+    res.status(404).json({ error: "Tender not found" });
+    return;
+  }
+
+  res.json(formatTender(rows[0]));
+});
+
+// DELETE /api/tenders/:id
+router.delete("/:id", async (req: Request, res: Response): Promise<void> => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid ID" });
+    return;
+  }
+
+  const rows = await db
+    .delete(tendersTable)
+    .where(eq(tendersTable.id, id))
+    .returning();
+
+  if (rows.length === 0) {
+    res.status(404).json({ error: "Tender not found" });
+    return;
+  }
+
+  res.status(204).send();
+});
+
+export default router;

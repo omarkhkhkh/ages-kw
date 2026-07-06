@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Tender Management System API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: tenders
+    description: Tender management operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,152 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /tenders:
+    get:
+      operationId: listTenders
+      tags: [tenders]
+      summary: List all tenders
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: entity
+          in: query
+          schema:
+            type: string
+        - name: urgent
+          in: query
+          schema:
+            type: boolean
+        - name: won
+          in: query
+          schema:
+            type: boolean
+        - name: engineer
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of tenders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tender"
+    post:
+      operationId: createTender
+      tags: [tenders]
+      summary: Create a new tender
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenderInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tender"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /tenders/stats:
+    get:
+      operationId: getTenderStats
+      tags: [tenders]
+      summary: Get tender statistics
+      responses:
+        "200":
+          description: Tender statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenderStats"
+  /tenders/{id}:
+    get:
+      operationId: getTender
+      tags: [tenders]
+      summary: Get a tender by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Tender found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tender"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateTender
+      tags: [tenders]
+      summary: Update a tender
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenderUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tender"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteTender
+      tags: [tenders]
+      summary: Delete a tender
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +181,203 @@ components:
           type: string
       required:
         - status
-
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    Tender:
+      type: object
+      required:
+        - id
+        - tenderNumber
+        - projectName
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+        tenderNumber:
+          type: string
+        governmentEntity:
+          type: ["string", "null"]
+        projectName:
+          type: string
+        tenderType:
+          type: ["string", "null"]
+        announcementDate:
+          type: ["string", "null"]
+        deadline:
+          type: ["string", "null"]
+        bondValue:
+          type: ["number", "null"]
+        docsValue:
+          type: ["number", "null"]
+        responsibleEngineer:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum:
+            - new
+            - studying
+            - requesting_quotes
+            - preparing_technical
+            - preparing_financial
+            - management_review
+            - ready_to_submit
+            - submitted
+            - under_evaluation
+            - won
+            - lost
+            - cancelled
+        offerValue:
+          type: ["number", "null"]
+        profitPercentage:
+          type: ["number", "null"]
+        isSubmitted:
+          type: boolean
+        winner:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    TenderInput:
+      type: object
+      required:
+        - tenderNumber
+        - projectName
+        - status
+      properties:
+        tenderNumber:
+          type: string
+          minLength: 1
+        governmentEntity:
+          type: string
+        projectName:
+          type: string
+          minLength: 1
+        tenderType:
+          type: string
+        announcementDate:
+          type: string
+        deadline:
+          type: string
+        bondValue:
+          type: number
+        docsValue:
+          type: number
+        responsibleEngineer:
+          type: string
+        status:
+          type: string
+          enum:
+            - new
+            - studying
+            - requesting_quotes
+            - preparing_technical
+            - preparing_financial
+            - management_review
+            - ready_to_submit
+            - submitted
+            - under_evaluation
+            - won
+            - lost
+            - cancelled
+        offerValue:
+          type: number
+        profitPercentage:
+          type: number
+        isSubmitted:
+          type: boolean
+        winner:
+          type: string
+        notes:
+          type: string
+    TenderUpdate:
+      type: object
+      properties:
+        tenderNumber:
+          type: string
+          minLength: 1
+        governmentEntity:
+          type: string
+        projectName:
+          type: string
+          minLength: 1
+        tenderType:
+          type: string
+        announcementDate:
+          type: string
+        deadline:
+          type: string
+        bondValue:
+          type: number
+        docsValue:
+          type: number
+        responsibleEngineer:
+          type: string
+        status:
+          type: string
+          enum:
+            - new
+            - studying
+            - requesting_quotes
+            - preparing_technical
+            - preparing_financial
+            - management_review
+            - ready_to_submit
+            - submitted
+            - under_evaluation
+            - won
+            - lost
+            - cancelled
+        offerValue:
+          type: number
+        profitPercentage:
+          type: number
+        isSubmitted:
+          type: boolean
+        winner:
+          type: string
+        notes:
+          type: string
+    TenderStats:
+      type: object
+      required:
+        - total
+        - byStatus
+        - urgentCount
+        - wonCount
+        - totalOfferValue
+        - winRate
+      properties:
+        total:
+          type: integer
+        byStatus:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+        urgentCount:
+          type: integer
+        wonCount:
+          type: integer
+        totalOfferValue:
+          type: number
+        winRate:
+          type: number
+    StatusCount:
+      type: object
+      required:
+        - status
+        - count
+      properties:
+        status:
+          type: string
+        count:
+          type: integer

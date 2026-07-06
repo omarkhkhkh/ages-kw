@@ -42,7 +42,7 @@ export default function Dashboard() {
   const { data: unreadData } = useQuery({
     queryKey: ["unread-comments-count"],
     queryFn: () => contractsApi.unreadCommentsCount(),
-    enabled: !isAdmin,
+    enabled: !isAdmin && !!user?.accessContracts,
     refetchInterval: 30000,
   });
   const unreadCount = unreadData?.count ?? 0;

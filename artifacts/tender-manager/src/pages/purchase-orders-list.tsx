@@ -1,22 +1,49 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { purchaseOrdersApi, suppliersApi, entitiesApi } from "@/lib/api";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ShoppingCart, Plus, Pencil, Trash2, X, Check } from "lucide-react";
-import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { ShoppingCart, Plus, Pencil, Trash2, X, Check, Search, Truck, PackageCheck, RotateCcw, Sparkles } from "lucide-react";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
-const STATUS_MAP: Record<string, { label: string; color: string }> = {
-  new: { label: "جديد", color: "bg-slate-100 text-slate-700 border-slate-200" },
-  in_progress: { label: "جاري التنفيذ", color: "bg-blue-50 text-blue-700 border-blue-200" },
-  delivered: { label: "تم التسليم", color: "bg-amber-50 text-amber-700 border-amber-200" },
-  completed: { label: "مكتمل", color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+const G  = "#D4A534";
+const GL = "#E8BE55";
+const GD = "#A87C20";
+
+const STATUS_MAP: Record<string, { label: string; bg: string; text: string; border: string; icon: any }> = {
+  new:         { label: "جديد",          bg: "#f8fafc", text: "#475569", border: "#e2e8f0", icon: Sparkles },
+  in_progress: { label: "جاري التنفيذ", bg: "#dbeafe", text: "#1e40af", border: "#bfdbfe", icon: RotateCcw },
+  delivered:   { label: "تم التسليم",   bg: "#fef9c3", text: "#854d0e", border: "#fde047", icon: Truck },
+  completed:   { label: "مكتمل",        bg: "#dcfce7", text: "#166534", border: "#bbf7d0", icon: PackageCheck },
 };
 
 const emptyForm = { orderNumber: "", supplierId: "", governmentEntityId: "", description: "", amount: "", orderDate: "", deliveryDate: "", status: "new", notes: "" };
+
+const S = {
+  page: { fontFamily: "'Segoe UI', Tahoma, sans-serif", direction: "rtl" as const },
+  header: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 24 },
+  accentBar: { width: 4, height: 28, borderRadius: 2, background: `linear-gradient(180deg, ${GL}, ${GD})`, flexShrink: 0 },
+  titleRow: { display: "flex", alignItems: "center", gap: 10 },
+  title: { fontSize: 22, fontWeight: 800, color: "#132a18", margin: 0 },
+  subtitle: { fontSize: 13, color: "#6b7280", marginTop: 4 },
+  btnPrimary: { display: "flex", alignItems: "center", gap: 6, background: `linear-gradient(135deg, ${GL}, ${GD})`, color: "white", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: `0 4px 14px ${G}44` },
+  searchBar: { display: "flex", alignItems: "center", gap: 10, background: "white", border: "1.5px solid #e5dfc8", borderRadius: 12, padding: "8px 14px", width: 280 },
+  tableCard: { background: "white", borderRadius: 18, border: "1.5px solid #f0ead8", boxShadow: "0 2px 16px rgba(0,0,0,0.05)", overflow: "hidden" },
+  thead: { background: "#f9f6ee", borderBottom: "1.5px solid #f0ead8" },
+  th: { padding: "14px 18px", fontWeight: 700, color: "#4a3f1a", fontSize: 12, whiteSpace: "nowrap" as const, textAlign: "right" as const },
+  td: { padding: "13px 18px", fontSize: 13, textAlign: "right" as const, verticalAlign: "middle" as const },
+  overlay: { position: "fixed" as const, inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 40, backdropFilter: "blur(2px)" },
+  drawer: { position: "fixed" as const, top: 0, right: 0, bottom: 0, width: 500, background: "white", zIndex: 50, boxShadow: "-8px 0 40px rgba(0,0,0,0.15)", display: "flex", flexDirection: "column" as const, overflowY: "auto" as const },
+  drawerHeader: { padding: "20px 24px", borderBottom: "1px solid #f0ead8", background: "linear-gradient(135deg, #fffdf5, #fef9ec)", display: "flex", justifyContent: "space-between", alignItems: "center" },
+  drawerTitle: { fontSize: 17, fontWeight: 800, color: "#132a18" },
+  drawerBody: { padding: 24, flex: 1 },
+  label: { display: "block", fontSize: 12, fontWeight: 700, color: "#4a3f1a", marginBottom: 5 },
+  input: { width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5dfc8", fontSize: 13, background: "white", boxSizing: "border-box" as const, outline: "none", color: "#1e2a1e" },
+  select: { width: "100%", padding: "9px 12px", borderRadius: 8, border: "1.5px solid #e5dfc8", fontSize: 13, background: "white", boxSizing: "border-box" as const, outline: "none", color: "#1e2a1e", height: 38 },
+  fieldGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 },
+  saveBtn: { background: `linear-gradient(135deg, ${GL}, ${GD})`, color: "white", border: "none", borderRadius: 10, padding: "10px 22px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 },
+  cancelBtn: { background: "transparent", color: "#6b7280", border: "1.5px solid #e5e7eb", borderRadius: 10, padding: "9px 18px", fontWeight: 600, fontSize: 13, cursor: "pointer" },
+  iconBtn: { background: "transparent", border: "none", cursor: "pointer", padding: "6px 8px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center" },
+};
 
 export default function PurchaseOrdersList() {
   const qc = useQueryClient();
@@ -25,113 +52,212 @@ export default function PurchaseOrdersList() {
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [tab, setTab] = useState("all");
+  const [search, setSearch] = useState("");
 
   const statusFilter = tab !== "all" ? tab : undefined;
   const { data: orders = [], isLoading } = useQuery({ queryKey: ["purchase-orders", tab], queryFn: () => purchaseOrdersApi.list(statusFilter) });
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: () => suppliersApi.list() });
   const { data: entities = [] } = useQuery({ queryKey: ["government-entities"], queryFn: () => entitiesApi.list() });
 
-  const createM = useMutation({ mutationFn: purchaseOrdersApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); closeForm(); toast({ title: "تم إضافة أمر الشراء" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
-  const updateM = useMutation({ mutationFn: ({ id, data }: any) => purchaseOrdersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); closeForm(); toast({ title: "تم تحديث أمر الشراء" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
+  const createM = useMutation({ mutationFn: purchaseOrdersApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); closeForm(); toast({ title: "✅ تم إضافة أمر الشراء" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
+  const updateM = useMutation({ mutationFn: ({ id, data }: any) => purchaseOrdersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); closeForm(); toast({ title: "✅ تم تحديث أمر الشراء" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
   const deleteM = useMutation({ mutationFn: purchaseOrdersApi.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); toast({ title: "تم حذف أمر الشراء" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
 
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
-  const handleEdit = (o: any) => { setEditId(o.id); setForm({ orderNumber: o.orderNumber, supplierId: o.supplierId || "", governmentEntityId: o.governmentEntityId || "", description: o.description, amount: o.amount || "", orderDate: o.orderDate || "", deliveryDate: o.deliveryDate || "", status: o.status, notes: o.notes || "" }); setShowForm(true); };
-  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.orderNumber || !form.description) return; const data = { ...form, supplierId: form.supplierId ? Number(form.supplierId) : null, governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : null, amount: form.amount ? Number(form.amount) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
+  const openEdit = (o: any) => { setEditId(o.id); setForm({ orderNumber: o.orderNumber, supplierId: o.supplierId || "", governmentEntityId: o.governmentEntityId || "", description: o.description, amount: o.amount || "", orderDate: o.orderDate || "", deliveryDate: o.deliveryDate || "", status: o.status, notes: o.notes || "" }); setShowForm(true); };
+  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.orderNumber.trim() || !form.description.trim()) return; const data = { ...form, supplierId: form.supplierId ? Number(form.supplierId) : null, governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : null, amount: form.amount ? Number(form.amount) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
+
+  const filtered = (orders as any[]).filter(o => {
+    const matchSearch = !search || o.orderNumber.toLowerCase().includes(search.toLowerCase()) || (o.description || "").toLowerCase().includes(search.toLowerCase()) || (o.supplierName || "").includes(search);
+    return matchSearch;
+  });
 
   const tabs = [{ id: "all", label: "الجميع" }, ...Object.entries(STATUS_MAP).map(([k, v]) => ({ id: k, label: v.label }))];
+  const totalAmount = (orders as any[]).reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0);
+  const completedCount = (orders as any[]).filter((o: any) => o.status === "completed").length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
+    <div style={S.page}>
+      {/* Header */}
+      <div style={S.header}>
         <div>
-          <h1 className="text-2xl font-bold text-foreground">أوامر الشراء المباشر</h1>
-          <p className="text-muted-foreground text-sm mt-1">تتبع أوامر الشراء المباشر بدون مناقصة.</p>
+          <div style={S.titleRow}>
+            <div style={S.accentBar} />
+            <h1 style={S.title}>أوامر الشراء المباشر</h1>
+          </div>
+          <p style={S.subtitle}>تتبع أوامر الشراء المباشر خارج إطار المناقصات</p>
         </div>
-        <Button onClick={() => { closeForm(); setShowForm(true); }} className="gap-2"><Plus className="h-4 w-4" />أمر شراء جديد</Button>
+        <button style={S.btnPrimary} onClick={() => { closeForm(); setShowForm(true); }}>
+          <Plus size={15} /> أمر شراء جديد
+        </button>
       </div>
 
-      {showForm && (
-        <Card className="p-6 shadow-sm border-primary/20">
-          <h2 className="text-lg font-semibold mb-4">{editId ? "تعديل أمر الشراء" : "أمر شراء جديد"}</h2>
-          <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div className="space-y-1"><Label>رقم الأمر *</Label><Input value={form.orderNumber} onChange={e => setForm(p => ({ ...p, orderNumber: e.target.value }))} placeholder="رقم أمر الشراء" required dir="ltr" /></div>
-              <div className="space-y-1"><Label>الحالة</Label>
-                <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))} className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm">
-                  {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1"><Label>المورد</Label>
-                <select value={form.supplierId} onChange={e => setForm(p => ({ ...p, supplierId: e.target.value }))} className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="">اختر المورد</option>{(suppliers as any[]).map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1"><Label>الجهة الحكومية</Label>
-                <select value={form.governmentEntityId} onChange={e => setForm(p => ({ ...p, governmentEntityId: e.target.value }))} className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm">
-                  <option value="">اختر الجهة</option>{(entities as any[]).map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1 md:col-span-2"><Label>وصف الشراء *</Label><Input value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="وصف البضاعة أو الخدمة" required /></div>
-              <div className="space-y-1"><Label>المبلغ (ريال)</Label><Input type="number" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} min="0" dir="ltr" /></div>
-              <div className="space-y-1"><Label>تاريخ الأمر</Label><Input type="date" value={form.orderDate} onChange={e => setForm(p => ({ ...p, orderDate: e.target.value }))} /></div>
-              <div className="space-y-1"><Label>تاريخ التسليم المتوقع</Label><Input type="date" value={form.deliveryDate} onChange={e => setForm(p => ({ ...p, deliveryDate: e.target.value }))} /></div>
-              <div className="space-y-1"><Label>ملاحظات</Label><Input value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} /></div>
+      {/* Stats */}
+      <div style={{ display: "flex", gap: 14, marginBottom: 22, flexWrap: "wrap" as const }}>
+        {[
+          { label: "إجمالي الأوامر", value: (orders as any[]).length, color: G, icon: ShoppingCart },
+          { label: "جاري التنفيذ", value: (orders as any[]).filter((o: any) => o.status === "in_progress").length, color: "#1d4ed8", icon: RotateCcw },
+          { label: "مكتمل", value: completedCount, color: "#059669", icon: PackageCheck },
+          { label: "إجمالي المبالغ", value: formatCurrency(totalAmount), color: "#7c3aed", icon: ShoppingCart },
+        ].map(s => (
+          <div key={s.label} style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "14px 20px", display: "flex", alignItems: "center", gap: 12, boxShadow: "0 2px 10px rgba(0,0,0,0.04)" }}>
+            <div style={{ width: 36, height: 36, borderRadius: 9, background: `${s.color}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <s.icon size={17} color={s.color} strokeWidth={1.8} />
             </div>
-            <div className="flex gap-2">
-              <Button type="submit" disabled={createM.isPending || updateM.isPending} className="gap-2"><Check className="h-4 w-4" />حفظ</Button>
-              <Button type="button" variant="ghost" onClick={closeForm} className="gap-2"><X className="h-4 w-4" />إلغاء</Button>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: "#132a18" }}>{isLoading ? "—" : s.value}</div>
+              <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 600 }}>{s.label}</div>
             </div>
-          </form>
-        </Card>
-      )}
-
-      <div className="flex overflow-x-auto gap-1 bg-card border rounded-lg p-2">
-        {tabs.map(t => <button key={t.id} onClick={() => setTab(t.id)} className={cn("px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition-colors", tab === t.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted")}>{t.label}</button>)}
+          </div>
+        ))}
       </div>
 
-      <Card className="overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-right">
-            <thead className="bg-muted/50 text-muted-foreground border-b">
+      {/* Tabs + Search */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" as const, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 4, background: "white", border: "1.5px solid #f0ead8", borderRadius: 12, padding: "5px 6px" }}>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{ padding: "6px 14px", borderRadius: 9, fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer", transition: "all 0.15s", background: tab === t.id ? `linear-gradient(135deg, ${GL}55, ${GD}44)` : "transparent", color: tab === t.id ? GD : "#6b7280" }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <div style={S.searchBar}>
+          <Search size={15} color="#9ca3af" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث برقم الأمر أو الوصف..." style={{ border: "none", outline: "none", fontSize: 13, color: "#1e2a1e", background: "transparent", flex: 1 }} />
+          {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af" }}><X size={13} /></button>}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={S.tableCard}>
+        <div style={{ overflowX: "auto" as const }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: 13, textAlign: "right" as const }}>
+            <thead style={S.thead}>
               <tr>
-                <th className="font-medium p-4">رقم الأمر</th>
-                <th className="font-medium p-4">الوصف</th>
-                <th className="font-medium p-4">المورد</th>
-                <th className="font-medium p-4">الجهة</th>
-                <th className="font-medium p-4">المبلغ</th>
-                <th className="font-medium p-4">تاريخ الأمر</th>
-                <th className="font-medium p-4">الحالة</th>
-                <th className="font-medium p-4 text-left">إجراءات</th>
+                {["رقم الأمر", "وصف الشراء", "المورد", "الجهة", "المبلغ", "تاريخ التسليم", "الحالة", ""].map(h => (
+                  <th key={h} style={S.th}>{h}</th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
-              {isLoading ? [...Array(3)].map((_, i) => <tr key={i} className="animate-pulse">{[...Array(8)].map((_, j) => <td key={j} className="p-4"><div className="h-4 bg-muted rounded w-20" /></td>)}</tr>)
-                : orders.length === 0 ? <tr><td colSpan={8} className="p-12 text-center text-muted-foreground"><ShoppingCart className="h-10 w-10 mx-auto mb-3 text-muted" /><p>لا توجد أوامر شراء</p></td></tr>
-                : (orders as any[]).map((o: any) => {
-                  const st = STATUS_MAP[o.status] || STATUS_MAP.new;
-                  return (
-                    <tr key={o.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="p-4 font-mono text-xs font-medium">{o.orderNumber}</td>
-                      <td className="p-4 max-w-[180px]"><div className="line-clamp-2">{o.description}</div></td>
-                      <td className="p-4 text-muted-foreground">{o.supplierName || "—"}</td>
-                      <td className="p-4 text-muted-foreground">{o.entityName || "—"}</td>
-                      <td className="p-4 font-mono text-xs">{o.amount ? formatCurrency(o.amount) : "—"}</td>
-                      <td className="p-4 text-muted-foreground">{formatDate(o.orderDate)}</td>
-                      <td className="p-4"><span className={`px-2 py-0.5 rounded-full text-xs border ${st.color}`}>{st.label}</span></td>
-                      <td className="p-4 text-left">
-                        <div className="flex gap-2 justify-end">
-                          <Button variant="ghost" size="sm" onClick={() => handleEdit(o)}><Pencil className="h-3.5 w-3.5" /></Button>
-                          <Button variant="ghost" size="sm" className="text-destructive" onClick={() => { if (confirm("حذف أمر الشراء؟")) deleteM.mutate(o.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+            <tbody>
+              {isLoading ? [...Array(3)].map((_, i) => (
+                <tr key={i}>{[...Array(8)].map((_, j) => <td key={j} style={S.td}><div style={{ height: 14, background: "#f3f0e6", borderRadius: 4, width: 80, animation: "pulse 1.5s infinite" }} /></td>)}</tr>
+              )) : filtered.length === 0 ? (
+                <tr><td colSpan={8} style={{ padding: 48, textAlign: "center" as const, color: "#94a3b8" }}>
+                  <ShoppingCart size={40} color="#e2d5b0" style={{ margin: "0 auto 12px", display: "block" }} />
+                  <p style={{ margin: 0 }}>لا توجد أوامر شراء</p>
+                </td></tr>
+              ) : filtered.map((o: any, idx: number) => {
+                const st = STATUS_MAP[o.status] || STATUS_MAP.new;
+                return (
+                  <tr key={o.id} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #f5f0e6" : "none", background: "white", transition: "background 0.1s" }}
+                    onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = "#fffdf5"}
+                    onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "white"}
+                  >
+                    <td style={{ ...S.td, fontFamily: "monospace", fontWeight: 700, color: GD }}>{o.orderNumber}</td>
+                    <td style={{ ...S.td, maxWidth: 200 }}>
+                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, fontWeight: 600, color: "#132a18" }}>{o.description}</div>
+                    </td>
+                    <td style={{ ...S.td, color: "#4b5563" }}>{o.supplierName || "—"}</td>
+                    <td style={{ ...S.td, color: "#4b5563", fontSize: 12 }}>{o.entityName || "—"}</td>
+                    <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: "#132a18" }}>{o.amount ? formatCurrency(o.amount) : "—"}</td>
+                    <td style={{ ...S.td, color: "#4b5563", whiteSpace: "nowrap" as const }}>{formatDate(o.deliveryDate)}</td>
+                    <td style={S.td}>
+                      <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.text, border: `1px solid ${st.border}`, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <st.icon size={11} /> {st.label}
+                      </span>
+                    </td>
+                    <td style={{ ...S.td, textAlign: "left" as const }}>
+                      <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                        <button style={S.iconBtn} onClick={() => openEdit(o)}
+                          onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = `${G}18`}
+                          onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "transparent"}>
+                          <Pencil size={14} color={GD} />
+                        </button>
+                        <button style={S.iconBtn} onClick={() => { if (confirm("حذف أمر الشراء؟")) deleteM.mutate(o.id); }}
+                          onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = "#fee2e2"}
+                          onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "transparent"}>
+                          <Trash2 size={14} color="#dc2626" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
-      </Card>
+      </div>
+
+      {/* Drawer */}
+      {showForm && (
+        <>
+          <div style={S.overlay} onClick={closeForm} />
+          <div style={S.drawer}>
+            <div style={S.drawerHeader}>
+              <span style={S.drawerTitle}>{editId ? "✏️ تعديل أمر الشراء" : "🛒 أمر شراء جديد"}</span>
+              <button onClick={closeForm} style={S.iconBtn}><X size={18} color="#6b7280" /></button>
+            </div>
+            <div style={S.drawerBody}>
+              <form onSubmit={handleSubmit}>
+                <div style={S.fieldGrid}>
+                  <div>
+                    <label style={S.label}>رقم الأمر *</label>
+                    <input style={S.input} value={form.orderNumber} onChange={e => setForm(p => ({ ...p, orderNumber: e.target.value }))} placeholder="رقم أمر الشراء" required dir="ltr" />
+                  </div>
+                  <div>
+                    <label style={S.label}>الحالة</label>
+                    <select style={S.select} value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}>
+                      {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={S.label}>المورد</label>
+                    <select style={S.select} value={form.supplierId} onChange={e => setForm(p => ({ ...p, supplierId: e.target.value }))}>
+                      <option value="">اختر المورد</option>
+                      {(suppliers as any[]).map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={S.label}>الجهة الحكومية</label>
+                    <select style={S.select} value={form.governmentEntityId} onChange={e => setForm(p => ({ ...p, governmentEntityId: e.target.value }))}>
+                      <option value="">اختر الجهة</option>
+                      {(entities as any[]).map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <label style={S.label}>وصف الشراء *</label>
+                    <textarea style={{ ...S.input, height: 70, resize: "vertical" as const }} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="وصف البضاعة أو الخدمة" required />
+                  </div>
+                  <div>
+                    <label style={S.label}>المبلغ (د.ك)</label>
+                    <input style={S.input} type="number" value={form.amount} onChange={e => setForm(p => ({ ...p, amount: e.target.value }))} min="0" dir="ltr" />
+                  </div>
+                  <div>
+                    <label style={S.label}>تاريخ الأمر</label>
+                    <input style={S.input} type="date" value={form.orderDate} onChange={e => setForm(p => ({ ...p, orderDate: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={S.label}>تاريخ التسليم المتوقع</label>
+                    <input style={S.input} type="date" value={form.deliveryDate} onChange={e => setForm(p => ({ ...p, deliveryDate: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={S.label}>ملاحظات</label>
+                    <input style={S.input} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="ملاحظات" />
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                  <button type="submit" style={S.saveBtn} disabled={createM.isPending || updateM.isPending}>
+                    <Check size={15} />{editId ? "حفظ التعديلات" : "إضافة الأمر"}
+                  </button>
+                  <button type="button" style={S.cancelBtn} onClick={closeForm}>إلغاء</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </>
+      )}
+      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
     </div>
   );
 }

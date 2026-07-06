@@ -133,16 +133,11 @@ export function Layout({ children }: LayoutProps) {
 
         {/* Company header */}
         <div className="px-5 pt-6 pb-5 border-b border-white/10">
-          {/* Logo mark */}
+          {/* Logo */}
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg"
-              style={{ background: "linear-gradient(135deg, #f59e0b, #d97706)" }}>
-              <svg width="22" height="22" viewBox="0 0 48 48" fill="none">
-                <rect x="6" y="8" width="36" height="32" rx="3" stroke="white" strokeWidth="2.5" fill="none" />
-                <line x1="13" y1="17" x2="35" y2="17" stroke="white" strokeWidth="2" strokeLinecap="round" />
-                <line x1="13" y1="24" x2="35" y2="24" stroke="white" strokeWidth="2" strokeLinecap="round" />
-                <line x1="13" y1="31" x2="25" y2="31" stroke="white" strokeWidth="2" strokeLinecap="round" />
-              </svg>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg overflow-hidden"
+              style={{ background: "white" }}>
+              <img src="/logo.png" alt="Arabian Group" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
             </div>
             <div className="min-w-0">
               <div className="text-white font-black text-sm leading-tight">المجموعة العربية</div>

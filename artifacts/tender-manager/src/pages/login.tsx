@@ -24,14 +24,14 @@ export default function Login() {
   };
 
   return (
-    <div style={{
+    <div id="login-grid" style={{
       minHeight: "100vh",
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
       fontFamily: "'Cairo', 'IBM Plex Sans Arabic', sans-serif",
     }}>
       {/* ══ LEFT — Brand Panel ══ */}
-      <div style={{
+      <div id="login-brand" style={{
         position: "relative",
         overflow: "hidden",
         display: "flex",
@@ -75,29 +75,27 @@ export default function Login() {
 
         {/* Brand content */}
         <div style={{ position: "relative", zIndex: 1, textAlign: "center", padding: "0 60px", direction: "rtl" }}>
-          {/* Logo icon */}
+          {/* Company Logo */}
           <div style={{
             margin: "0 auto 28px",
-            width: 96, height: 96,
-            borderRadius: 20,
+            width: 200,
             display: "flex", alignItems: "center", justifyContent: "center",
-            background: "linear-gradient(135deg, #f59e0b, #d97706)",
-            boxShadow: "0 20px 60px rgba(245,158,11,0.45)",
+            background: "rgba(255,255,255,0.92)",
+            borderRadius: 16,
+            boxShadow: "0 16px 50px rgba(0,0,0,0.3)",
+            padding: "16px 20px",
           }}>
-            <svg width="50" height="50" viewBox="0 0 48 48" fill="none">
-              <rect x="6" y="8" width="36" height="32" rx="3" stroke="white" strokeWidth="2.5" fill="none"/>
-              <line x1="13" y1="17" x2="35" y2="17" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-              <line x1="13" y1="24" x2="35" y2="24" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-              <line x1="13" y1="31" x2="25" y2="31" stroke="white" strokeWidth="2" strokeLinecap="round"/>
-              <circle cx="38" cy="36" r="7" fill="#f59e0b" stroke="white" strokeWidth="2"/>
-              <path d="M35 36l2 2 4-3" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            <img
+              src="/logo.png"
+              alt="Arabian Group Logo"
+              style={{ width: "100%", objectFit: "contain" }}
+            />
           </div>
 
-          <h1 style={{ fontSize: 38, fontWeight: 900, color: "white", margin: 0, lineHeight: 1.2 }}>
+          <h1 style={{ fontSize: 36, fontWeight: 900, color: "white", margin: 0, lineHeight: 1.2 }}>
             المجموعة العربية
           </h1>
-          <h2 style={{ fontSize: 26, fontWeight: 700, color: "#f59e0b", margin: "4px 0 28px" }}>
+          <h2 style={{ fontSize: 24, fontWeight: 700, color: "#f59e0b", margin: "4px 0 28px" }}>
             للخدمات التعلمية
           </h2>
 
@@ -129,6 +127,16 @@ export default function Login() {
       }}>
         <div style={{ width: "100%", maxWidth: 380, direction: "rtl" }}>
 
+          {/* Mobile logo */}
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <img
+              src="/logo.png"
+              alt="Arabian Group Logo"
+              style={{ width: 90, height: 90, objectFit: "contain", margin: "0 auto 10px", display: "block" }}
+            />
+            <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>نظام إدارة المناقصات والعقود</p>
+          </div>
+
           {/* Form card */}
           <div style={{
             background: "white",
@@ -149,10 +157,11 @@ export default function Login() {
             <form onSubmit={handleSubmit} autoComplete="on" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
               {/* Username */}
               <div>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
+                <label htmlFor="login-username" style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
                   اسم المستخدم
                 </label>
                 <input
+                  id="login-username"
                   type="text" value={username} onChange={e => setUsername(e.target.value)}
                   placeholder="أدخل اسم المستخدم" required autoComplete="username"
                   style={{
@@ -170,11 +179,12 @@ export default function Login() {
 
               {/* Password */}
               <div>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
+                <label htmlFor="login-password" style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>
                   كلمة المرور
                 </label>
                 <div style={{ position: "relative" }}>
                   <input
+                    id="login-password"
                     type={showPass ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)}
                     placeholder="أدخل كلمة المرور" required autoComplete="current-password"
                     style={{
@@ -190,6 +200,8 @@ export default function Login() {
                   />
                   <button
                     type="button" onClick={() => setShowPass(v => !v)}
+                    aria-label={showPass ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                    aria-pressed={showPass}
                     style={{
                       position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
                       background: "none", border: "none", cursor: "pointer",
@@ -250,8 +262,8 @@ export default function Login() {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
         @media (max-width: 768px) {
-          [data-login-grid] { grid-template-columns: 1fr !important; }
-          [data-login-brand] { display: none !important; }
+          #login-grid { grid-template-columns: 1fr !important; }
+          #login-brand { display: none !important; }
         }
       `}</style>
     </div>

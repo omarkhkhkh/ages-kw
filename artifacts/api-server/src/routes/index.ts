@@ -13,6 +13,7 @@ import bankGuaranteesRouter from "./bank-guarantees";
 import contractsRouter from "./contracts";
 import transportationRouter from "./transportation";
 import financeRouter from "./finance";
+import tasksRouter from "./tasks";
 import { requireAuth, requireEdit, requireModule } from "../middleware/auth";
 import { activityLogger } from "../middleware/activity-logger";
 
@@ -46,6 +47,11 @@ router.get("/users/directory", async (req, res) => {
 
 // Log all successful mutations (create/update/delete) to activity_logs
 router.use(activityLogger);
+
+// Tasks — mounted BEFORE requireEdit so employees without canEdit can still
+// add notes and update status on their assigned tasks. The tasksRouter
+// enforces its own ownership checks internally.
+router.use("/tasks", tasksRouter);
 
 // Require canEdit for all mutation methods (POST/PUT/PATCH/DELETE)
 router.use((req, res, next) => {

@@ -6,17 +6,32 @@ import {
   Building2, Users, ClipboardList, ShoppingCart,
   FolderOpen, ShieldCheck, FileSignature, Calendar,
   ArrowLeftCircle, TrendingUp, MessageSquare,
+  ListChecks, Clock, ChevronDown, AlertTriangle, CheckCircle2,
 } from "lucide-react";
 import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
 import { useAuth } from "@/contexts/auth";
-import { contractsApi } from "@/lib/api";
+import { contractsApi, apiFetch } from "@/lib/api";
 
 /* ─── brand palette ─── */
 const G  = "#D4A534";   // gold
 const GL = "#E8BE55";   // gold light
 const GD = "#A87C20";   // gold dark
 const GR = "#0b1a10";   // green dark
+
+/* ─── priority/status maps (for task widget) ─── */
+const PRIORITY_COLORS: Record<string, { color: string; bg: string; icon: any }> = {
+  low:    { color: "#6b7280", bg: "#f9fafb",  icon: ChevronDown },
+  medium: { color: "#d97706", bg: "#fffbeb",  icon: Clock },
+  high:   { color: "#dc2626", bg: "#fff1f2",  icon: AlertCircle },
+  urgent: { color: "#7c3aed", bg: "#f5f3ff",  icon: AlertTriangle },
+};
+const STATUS_COLORS_TASK: Record<string, { color: string; bg: string; label: string }> = {
+  pending:     { color: "#d97706", bg: "#fffbeb", label: "قيد الانتظار" },
+  in_progress: { color: "#2563eb", bg: "#eff6ff", label: "جارٍ التنفيذ" },
+  completed:   { color: "#16a34a", bg: "#f0fdf4", label: "مكتملة" },
+  cancelled:   { color: "#6b7280", bg: "#f9fafb", label: "ملغاة" },
+};
 
 /* ─── module shortcuts ─── */
 const MODULES = [
@@ -46,6 +61,16 @@ export default function Dashboard() {
     refetchInterval: 30000,
   });
   const unreadCount = unreadData?.count ?? 0;
+
+  // My tasks — all authenticated users
+  const { data: myTasks = [] } = useQuery<any[]>({
+    queryKey: ["tasks"],
+    queryFn: () => apiFetch("/api/tasks"),
+    refetchInterval: 60000,
+  });
+  const activeTasks   = myTasks.filter(t => t.status === "pending" || t.status === "in_progress");
+  const urgentTasks   = activeTasks.filter(t => t.priority === "urgent" || t.priority === "high");
+  const unreadNotes   = isAdmin ? myTasks.filter(t => !t.notesReadByAdmin && t.employeeNotes) : [];
 
   const greeting = () => {
     const h = new Date().getHours();
@@ -278,6 +303,88 @@ export default function Dashboard() {
           })}
         </div>
       </div>
+
+      {/* ── My Tasks Widget ── */}
+      {myTasks.length > 0 && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 4, height: 22, borderRadius: 2, background: `linear-gradient(180deg,${GL},${GD})` }} />
+              <h2 style={{ fontSize: 17, fontWeight: 800, color: "#132a18", margin: 0 }}>
+                {isAdmin ? "المهام النشطة" : "مهامي"}
+              </h2>
+              {urgentTasks.length > 0 && (
+                <span style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 10, background: "#fff1f2", color: "#dc2626", fontSize: 11, fontWeight: 800, border: "1px solid #fecaca" }}>
+                  <AlertCircle size={11} /> {urgentTasks.length} عاجلة
+                </span>
+              )}
+              {isAdmin && unreadNotes.length > 0 && (
+                <span style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 10, background: "#fef9c3", color: "#b45309", fontSize: 11, fontWeight: 800, border: "1px solid #fde68a" }}>
+                  <MessageSquare size={11} /> {unreadNotes.length} ملاحظة جديدة
+                </span>
+              )}
+            </div>
+            <Link href="/tasks">
+              <span style={{ fontSize: 13, color: G, fontWeight: 700, cursor: "pointer", textDecoration: "none" }}>
+                {isAdmin ? "إدارة المهام ←" : "عرض كل مهامي ←"}
+              </span>
+            </Link>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 12 }}>
+            {(isAdmin ? activeTasks : myTasks).slice(0, 6).map((task: any) => {
+              const pri = PRIORITY_COLORS[task.priority] ?? PRIORITY_COLORS.medium;
+              const sta = STATUS_COLORS_TASK[task.status] ?? STATUS_COLORS_TASK.pending;
+              const PriIcon = pri.icon;
+              const isOverdue = task.dueDate && task.status !== "completed" && task.status !== "cancelled"
+                && new Date(task.dueDate) < new Date();
+              const hasUnreadNote = isAdmin && !task.notesReadByAdmin && task.employeeNotes;
+              return (
+                <a key={task.id} href="/tasks" onClick={e => { e.preventDefault(); navigate("/tasks"); }}
+                  style={{ display: "block", textDecoration: "none", background: "white", borderRadius: 14, border: `1.5px solid ${isOverdue ? "#fecaca" : hasUnreadNote ? "#fde68a" : "#f0ead8"}`, boxShadow: "0 2px 10px rgba(0,0,0,0.05)", overflow: "hidden", cursor: "pointer", transition: "transform 0.12s, box-shadow 0.12s" }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 24px rgba(0,0,0,0.1)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 10px rgba(0,0,0,0.05)"; }}>
+                  {/* Priority stripe */}
+                  <div style={{ height: 3, background: `linear-gradient(90deg,${pri.color},${pri.color}44)` }} />
+                  <div style={{ padding: "14px 16px" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: "#0b1a10", lineHeight: 1.4 }}>{task.title}</span>
+                      <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                        {hasUnreadNote && (
+                          <span style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 8, background: "#fef9c3", color: "#b45309", fontSize: 10, fontWeight: 800, border: "1px solid #fde68a" }}>
+                            <MessageSquare size={9} /> جديد
+                          </span>
+                        )}
+                        {isOverdue && (
+                          <span style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 8, background: "#fff1f2", color: "#dc2626", fontSize: 10, fontWeight: 800, border: "1px solid #fecaca" }}>
+                            <AlertCircle size={9} /> متأخرة
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ padding: "2px 8px", borderRadius: 8, background: sta.bg, color: sta.color, fontSize: 10, fontWeight: 700 }}>{sta.label}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 8px", borderRadius: 8, background: pri.bg, color: pri.color, fontSize: 10, fontWeight: 700 }}>
+                        <PriIcon size={9} /> {task.priority === "urgent" ? "عاجلة" : task.priority === "high" ? "عالية" : task.priority === "medium" ? "متوسطة" : "منخفضة"}
+                      </span>
+                      <span style={{ padding: "2px 8px", borderRadius: 8, background: "#f1f5f9", color: "#475569", fontSize: 10, fontWeight: 600 }}>{task.taskType}</span>
+                    </div>
+                    <div style={{ marginTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: "#9ca3af" }}>
+                      {isAdmin && <span style={{ color: "#6b7280", fontWeight: 600 }}>{task.assigneeName}</span>}
+                      <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <Clock size={10} />
+                        {task.dueDate
+                          ? new Date(task.dueDate).toLocaleDateString("ar-KW", { month: "short", day: "numeric" })
+                          : new Date(task.createdAt).toLocaleDateString("ar-KW", { month: "short", day: "numeric" })}
+                      </span>
+                    </div>
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Recent Tenders ── */}
       <div>

@@ -4,7 +4,7 @@ import {
   Building2, Users, ClipboardList, ShoppingCart,
   FolderOpen, ShieldCheck, FileSignature,
   Calendar, LogOut, Activity,
-  ChevronDown, Clock, Truck, Wallet,
+  ChevronDown, Clock, Truck, Wallet, ListChecks,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/auth";
@@ -36,6 +36,7 @@ const buildNavLinks = (user: AuthUser | null) => {
     { href: "/purchase-orders",   label: "أوامر الشراء",    icon: ShoppingCart,  show: can("accessPo") },
     { href: "/transportation",    label: "النقل والتوزيع",  icon: Truck,         show: can("accessTransportation") },
     { href: "/finance",           label: "الإدارة المالية", icon: Wallet,        show: isAdmin },
+    { href: "/tasks",             label: "المهام",           icon: ListChecks,    show: true },
     { href: "/calendar",          label: "جدول الأعمال",    icon: Calendar,      show: true },
   ].filter(i => i.show);
 };
@@ -255,6 +256,7 @@ export function Layout({ children }: LayoutProps) {
                   "/guarantees": "الكفالات البنكية", "/contracts": "العقود",
                   "/rfq": "طلبات عروض الأسعار", "/purchase-orders": "أوامر الشراء المباشر",
                   "/transportation": "النقل والتوزيع",
+                  "/tasks": "المهام",
                   "/calendar": "جدول الأعمال", "/guide": "دليل Microsoft 365",
                   "/admin/users": "إدارة المستخدمين", "/admin/activity-log": "سجل الحركات",
                 };

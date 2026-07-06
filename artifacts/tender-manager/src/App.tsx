@@ -22,6 +22,7 @@ import CalendarPage from '@/pages/calendar';
 import ActivityLog from '@/pages/activity-log';
 import TransportationList from '@/pages/transportation-list';
 import FinancesList from '@/pages/finances-list';
+import TasksList from '@/pages/tasks-list';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient({
@@ -108,6 +109,7 @@ function AppRouter() {
         <Route path="/finance">
           <ModuleGuard access={isAdmin}><FinancesList /></ModuleGuard>
         </Route>
+        <Route path="/tasks" component={TasksList} />
         <Route path="/guide" component={Guide} />
         <Route path="/calendar" component={CalendarPage} />
         <Route path="/admin/users" component={AdminUsers} />

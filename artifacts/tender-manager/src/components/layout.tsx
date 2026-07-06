@@ -130,19 +130,25 @@ export function Layout({ children }: LayoutProps) {
     <div className="flex min-h-screen w-full bg-slate-50" dir="rtl">
       {/* ── Sidebar ── */}
       <aside className="w-64 flex-shrink-0 hidden md:flex flex-col shadow-xl"
-        style={{ background: "linear-gradient(180deg, #0f2347 0%, #0a1628 100%)" }}>
+        style={{ background: "linear-gradient(180deg, #0b1a10 0%, #132a18 60%, #1a3a20 100%)" }}>
 
         {/* Company header */}
         <div className="px-5 pt-6 pb-5 border-b border-white/10">
-          {/* Logo */}
-          <div className="mb-2">
+          {/* Logo on white card */}
+          <div className="mb-2" style={{
+            background: "rgba(255,255,255,0.95)",
+            borderRadius: 12,
+            padding: "10px 16px",
+            display: "inline-block",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.25)",
+          }}>
             <img
               src={logoImg}
               alt="Arabian Group"
-              style={{ width: 140, objectFit: "contain", filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.3))" }}
+              style={{ width: 120, objectFit: "contain", display: "block" }}
             />
           </div>
-          <div className="text-blue-300/50 text-[10px] font-medium tracking-wide">
+          <div style={{ color: "rgba(212,165,52,0.5)", fontSize: 10, fontWeight: 600, letterSpacing: 1, marginTop: 10 }}>
             نظام إدارة المناقصات والعقود
           </div>
         </div>
@@ -158,9 +164,9 @@ export function Layout({ children }: LayoutProps) {
             <div className="mt-2 pt-3 border-t border-white/10">
               <Link href="/tenders/new" className="w-full">
                 <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all"
-                  style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.25)" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(245,158,11,0.25)")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "rgba(245,158,11,0.15)")}>
+                  style={{ background: "rgba(212,165,52,0.15)", color: "#D4A534", border: "1px solid rgba(212,165,52,0.3)" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(212,165,52,0.28)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "rgba(212,165,52,0.15)")}>
                   <Plus className="h-4 w-4" />
                   مناقصة جديدة
                 </div>
@@ -173,24 +179,25 @@ export function Layout({ children }: LayoutProps) {
         <div className="p-4 border-t border-white/10">
           <div className="flex flex-col gap-1 px-1 mb-3">
             <KuwaitClock />
-            <span className="text-[10px] text-blue-300/30">{todayAr}</span>
+            <span style={{ fontSize: 10, color: "rgba(212,165,52,0.3)" }}>{todayAr}</span>
           </div>
           <div className="flex items-center gap-3 p-2 rounded-xl"
             style={{ background: "rgba(255,255,255,0.06)" }}>
             <div className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-              style={{ background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "white" }}>
+              style={{ background: "linear-gradient(135deg, #E8BE55, #A87C20)", color: "white" }}>
               {user?.fullName?.charAt(0) ?? "م"}
             </div>
             <div className="flex flex-col flex-1 min-w-0">
               <span className="text-sm font-semibold text-white truncate">{user?.fullName}</span>
-              <span className="text-xs text-blue-300/50">
+              <span style={{ fontSize: 11, color: "rgba(212,165,52,0.5)" }}>
                 {user?.role === "admin" ? "مدير النظام" : "موظف"}
               </span>
             </div>
             <button
               onClick={() => logout()}
               title="تسجيل الخروج"
-              className="text-blue-300/40 hover:text-red-400 transition-colors flex-shrink-0"
+              style={{ color: "rgba(212,165,52,0.4)", background: "none", border: "none", cursor: "pointer" }}
+              className="hover:text-red-400 transition-colors flex-shrink-0"
             >
               <LogOut className="h-4 w-4" />
             </button>

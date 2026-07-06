@@ -50,9 +50,9 @@ export function activityLogger(req: Request, res: Response, next: NextFunction) 
 
     db.insert(activityLogsTable)
       .values({
-        userId: req.session.userId,
-        username: req.session.username,
-        fullName: req.session.fullName,
+        userId: req.session.userId!,
+        username: req.session.username ?? "",
+        fullName: req.session.fullName ?? "",
         action,
         module,
         resourceId,

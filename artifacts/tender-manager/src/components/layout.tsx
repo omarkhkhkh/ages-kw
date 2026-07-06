@@ -4,7 +4,7 @@ import {
   Building2, Users, ClipboardList, ShoppingCart,
   FolderOpen, ShieldCheck, FileSignature,
   Calendar, LogOut, Activity,
-  ChevronDown, Clock,
+  ChevronDown, Clock, Truck,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/auth";
@@ -33,8 +33,9 @@ const buildNavLinks = (user: AuthUser | null) => {
     { href: "/guarantees",     label: "الكفالات",               icon: ShieldCheck,     show: can("accessGuarantees") },
     { href: "/contracts",      label: "العقود",                  icon: FileSignature,   show: can("accessContracts") },
     { href: "/rfq",            label: "عروض الأسعار",           icon: ClipboardList,   show: can("accessRfq") },
-    { href: "/purchase-orders",label: "أوامر الشراء",           icon: ShoppingCart,    show: can("accessPo") },
-    { href: "/calendar",       label: "جدول الأعمال",           icon: Calendar,        show: true },
+    { href: "/purchase-orders",   label: "أوامر الشراء",    icon: ShoppingCart,  show: can("accessPo") },
+    { href: "/transportation",    label: "النقل والتوزيع",  icon: Truck,         show: can("accessTransportation") },
+    { href: "/calendar",          label: "جدول الأعمال",    icon: Calendar,      show: true },
   ].filter(i => i.show);
 };
 
@@ -252,6 +253,7 @@ export function Layout({ children }: LayoutProps) {
                   "/suppliers": "الموردون", "/projects": "المشاريع",
                   "/guarantees": "الكفالات البنكية", "/contracts": "العقود",
                   "/rfq": "طلبات عروض الأسعار", "/purchase-orders": "أوامر الشراء المباشر",
+                  "/transportation": "النقل والتوزيع",
                   "/calendar": "جدول الأعمال", "/guide": "دليل Microsoft 365",
                   "/admin/users": "إدارة المستخدمين", "/admin/activity-log": "سجل الحركات",
                 };

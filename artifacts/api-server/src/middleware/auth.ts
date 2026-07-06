@@ -20,6 +20,7 @@ declare module "express-session" {
     accessContracts: boolean;
     accessRfq: boolean;
     accessPo: boolean;
+    accessTransportation: boolean;
   }
 }
 
@@ -56,32 +57,34 @@ export function requireEdit(req: Request, res: Response, next: NextFunction) {
 }
 
 const MODULE_LABELS: Record<string, string> = {
-  accessTenders:    "المناقصات",
-  accessEntities:   "الجهات الحكومية",
-  accessSuppliers:  "الموردون",
-  accessProjects:   "المشاريع",
-  accessGuarantees: "الكفالات البنكية",
-  accessContracts:  "العقود",
-  accessRfq:        "طلبات عروض الأسعار",
-  accessPo:         "أوامر الشراء المباشر",
+  accessTenders:        "المناقصات",
+  accessEntities:       "الجهات الحكومية",
+  accessSuppliers:      "الموردون",
+  accessProjects:       "المشاريع",
+  accessGuarantees:     "الكفالات البنكية",
+  accessContracts:      "العقود",
+  accessRfq:            "طلبات عروض الأسعار",
+  accessPo:             "أوامر الشراء المباشر",
+  accessTransportation: "النقل والتوزيع",
 };
 
 const MODULE_KEY_MAP: Record<string, string> = {
-  accessTenders:    "tenders",
-  accessEntities:   "entities",
-  accessSuppliers:  "suppliers",
-  accessProjects:   "projects",
-  accessGuarantees: "guarantees",
-  accessContracts:  "contracts",
-  accessRfq:        "rfq",
-  accessPo:         "po",
+  accessTenders:        "tenders",
+  accessEntities:       "entities",
+  accessSuppliers:      "suppliers",
+  accessProjects:       "projects",
+  accessGuarantees:     "guarantees",
+  accessContracts:      "contracts",
+  accessRfq:            "rfq",
+  accessPo:             "po",
+  accessTransportation: "transportation",
 };
 
 // Factory: creates middleware that checks session access to a specific module.
 // Admins bypass all module restrictions. Blocked attempts are logged to activity_logs.
 export function requireModule(field: keyof Pick<Express.Request["session"],
   "accessTenders" | "accessEntities" | "accessSuppliers" | "accessProjects" |
-  "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo"
+  "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo" | "accessTransportation"
 >) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.session?.userId) {
@@ -100,8 +103,8 @@ export function requireModule(field: keyof Pick<Express.Request["session"],
       // Log the blocked attempt so admin can see it in activity log
       logActivity({
         userId:   req.session.userId,
-        username: req.session.username,
-        fullName: req.session.fullName,
+        username: req.session.username ?? "",
+        fullName: req.session.fullName ?? "",
         action:   "access_denied",
         module:   moduleKey,
         details:  `محاولة الوصول إلى: ${moduleName}`,

@@ -22,6 +22,7 @@ export const usersTable = pgTable("users", {
   accessContracts: boolean("access_contracts").notNull().default(true),
   accessRfq: boolean("access_rfq").notNull().default(true),
   accessPo: boolean("access_po").notNull().default(true),
+  accessTransportation: boolean("access_transportation").notNull().default(true),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastLogin: timestamp("last_login"),

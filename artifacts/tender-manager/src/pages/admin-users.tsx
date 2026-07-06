@@ -20,7 +20,7 @@ interface UserRow {
   canView: boolean; canDownload: boolean; canUpload: boolean; canEdit: boolean;
   accessTenders: boolean; accessEntities: boolean; accessSuppliers: boolean;
   accessProjects: boolean; accessGuarantees: boolean; accessContracts: boolean;
-  accessRfq: boolean; accessPo: boolean;
+  accessRfq: boolean; accessPo: boolean; accessTransportation: boolean;
   isActive: boolean; createdAt: string; lastLogin: string | null;
 }
 
@@ -31,8 +31,9 @@ const MODULES = [
   { key: "accessProjects",   label: "المشاريع",               icon: "📁" },
   { key: "accessGuarantees", label: "الكفالات البنكية",       icon: "🛡" },
   { key: "accessContracts",  label: "العقود",                  icon: "📝" },
-  { key: "accessRfq",        label: "طلبات عروض الأسعار",    icon: "📊" },
-  { key: "accessPo",         label: "أوامر الشراء المباشر",  icon: "🛒" },
+  { key: "accessRfq",            label: "طلبات عروض الأسعار",    icon: "📊" },
+  { key: "accessPo",             label: "أوامر الشراء المباشر",  icon: "🛒" },
+  { key: "accessTransportation", label: "النقل والتوزيع",         icon: "🚚" },
 ] as const;
 
 const GLOBAL_PERMS = [
@@ -47,7 +48,7 @@ const defaultForm = {
   canView: true, canDownload: false, canUpload: false, canEdit: false,
   accessTenders: true, accessEntities: true, accessSuppliers: true,
   accessProjects: true, accessGuarantees: true, accessContracts: true,
-  accessRfq: true, accessPo: true,
+  accessRfq: true, accessPo: true, accessTransportation: true,
 };
 
 /* ── Toggle switch ── */
@@ -364,6 +365,7 @@ export default function AdminUsers() {
           accessSuppliers: editing.accessSuppliers, accessProjects: editing.accessProjects,
           accessGuarantees: editing.accessGuarantees, accessContracts: editing.accessContracts,
           accessRfq: editing.accessRfq, accessPo: editing.accessPo,
+          accessTransportation: editing.accessTransportation,
           ...(newPass ? { password: newPass } : {}),
         },
       });

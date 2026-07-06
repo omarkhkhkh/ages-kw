@@ -161,7 +161,7 @@ function UserMenu({ user, logout }: { user: any; logout: () => void }) {
 
 /* ── Main Layout ── */
 export function Layout({ children }: LayoutProps) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const { user, logout } = useAuth();
   const navLinks = buildNavLinks(user ?? null);
 
@@ -182,30 +182,11 @@ export function Layout({ children }: LayoutProps) {
         }}>
 
           {/* Logo */}
-          <Link href="/">
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "6px 12px 6px 6px", borderRadius: 12,
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.1)",
-              cursor: "pointer", flexShrink: 0,
-              transition: "background 0.15s",
-            }}
-              onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.12)")}
-              onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
-            >
-              <div style={{
-                background: "rgba(255,255,255,0.95)",
-                borderRadius: 8, padding: "4px 8px",
-              }}>
-                <img src={logoImg} alt="Arabian Group" style={{ height: 30, objectFit: "contain", display: "block" }} />
-              </div>
-              <div style={{ display: "none" }} className="sm-show">
-                <div style={{ fontSize: 11, fontWeight: 800, color: G, lineHeight: 1.2 }}>المجموعة العربية</div>
-                <div style={{ fontSize: 9, color: "rgba(212,165,52,0.45)", marginTop: 1 }}>للخدمات التعلمية</div>
-              </div>
+          <a href="/" onClick={e => { e.preventDefault(); navigate("/"); }} className="nav-logo">
+            <div style={{ background: "rgba(255,255,255,0.95)", borderRadius: 8, padding: "4px 8px" }}>
+              <img src={logoImg} alt="Arabian Group" style={{ height: 30, objectFit: "contain", display: "block" }} />
             </div>
-          </Link>
+          </a>
 
           {/* Divider */}
           <div style={{ width: 1, height: 32, background: "rgba(255,255,255,0.1)", marginInline: 4, flexShrink: 0 }} />
@@ -220,14 +201,15 @@ export function Layout({ children }: LayoutProps) {
                 ? location === "/"
                 : location === link.href || location.startsWith(link.href + "/");
               return (
-                <Link
+                <a
                   key={link.href}
                   href={link.href}
+                  onClick={e => { e.preventDefault(); navigate(link.href); }}
                   className={isActive ? "nav-link nav-link-active" : "nav-link"}
                 >
                   <link.icon size={14} style={{ flexShrink: 0 }} />
                   {link.label}
-                </Link>
+                </a>
               );
             })}
           </nav>
@@ -237,10 +219,10 @@ export function Layout({ children }: LayoutProps) {
             <KuwaitClock />
 
             {(user?.role === "admin" || user?.canEdit) && (
-              <Link href="/tenders/new" className="btn-new-tender">
+              <a href="/tenders/new" onClick={e => { e.preventDefault(); navigate("/tenders/new"); }} className="btn-new-tender">
                 <Plus size={14} />
                 مناقصة جديدة
-              </Link>
+              </a>
             )}
 
             <UserMenu user={user} logout={logout} />
@@ -291,6 +273,21 @@ export function Layout({ children }: LayoutProps) {
           to   { opacity: 1; transform: translateY(0); }
         }
         nav::-webkit-scrollbar { display: none; }
+
+        /* Logo */
+        .nav-logo {
+          display: inline-flex;
+          align-items: center;
+          padding: 6px 8px;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.1);
+          cursor: pointer;
+          flex-shrink: 0;
+          text-decoration: none;
+          transition: background 0.15s;
+        }
+        .nav-logo:hover { background: rgba(255,255,255,0.12); }
 
         /* Nav links */
         .nav-link {

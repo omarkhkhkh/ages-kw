@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/auth";
+import type { AuthUser } from "@/contexts/auth";
 import logoImg from "@/assets/logo.png";
 import { nowKuwait } from "@/lib/timezone";
 
@@ -19,47 +20,56 @@ const GR = "#0b1a10";
 const GR2 = "#132a18";
 
 /* ── Nav structure ── */
-const buildNavGroups = (isAdmin: boolean) => [
-  {
-    label: "الرئيسية",
-    icon: LayoutDashboard,
-    items: [
-      { href: "/",         label: "لوحة التحكم",  icon: LayoutDashboard },
-      { href: "/tenders",  label: "سجل المناقصات", icon: FileText        },
-      { href: "/calendar", label: "جدول الأعمال",  icon: Calendar        },
-    ],
-  },
-  {
-    label: "قواعد البيانات",
-    icon: Building2,
-    items: [
-      { href: "/entities",        label: "الجهات الحكومية",        icon: Building2    },
-      { href: "/suppliers",       label: "الموردون",               icon: Users        },
-      { href: "/rfq",             label: "طلبات عروض الأسعار",    icon: ClipboardList },
-      { href: "/purchase-orders", label: "أوامر الشراء المباشر",  icon: ShoppingCart },
-    ],
-  },
-  {
-    label: "إدارة المشاريع",
-    icon: FolderOpen,
-    items: [
-      { href: "/projects",    label: "المشاريع",         icon: FolderOpen   },
-      { href: "/guarantees",  label: "الكفالات البنكية", icon: ShieldCheck  },
-      { href: "/contracts",   label: "العقود",            icon: FileSignature },
-    ],
-  },
-  {
-    label: "أدوات",
-    icon: BookOpen,
-    items: [
-      { href: "/guide", label: "دليل Microsoft 365", icon: BookOpen },
-      ...(isAdmin ? [
-        { href: "/admin/users",         label: "إدارة المستخدمين", icon: Shield   },
-        { href: "/admin/activity-log",  label: "سجل الحركات",      icon: Activity },
-      ] : []),
-    ],
-  },
-];
+const buildNavGroups = (user: AuthUser | null) => {
+  if (!user) return [];
+  const isAdmin = user.role === "admin";
+  const can = (field: keyof AuthUser) => isAdmin || !!user[field];
+
+  const groups = [
+    {
+      label: "الرئيسية",
+      icon: LayoutDashboard,
+      items: [
+        { href: "/",         label: "لوحة التحكم",  icon: LayoutDashboard, show: true },
+        { href: "/tenders",  label: "سجل المناقصات", icon: FileText,        show: can("accessTenders") },
+        { href: "/calendar", label: "جدول الأعمال",  icon: Calendar,        show: true },
+      ],
+    },
+    {
+      label: "قواعد البيانات",
+      icon: Building2,
+      items: [
+        { href: "/entities",        label: "الجهات الحكومية",       icon: Building2,    show: can("accessEntities") },
+        { href: "/suppliers",       label: "الموردون",              icon: Users,        show: can("accessSuppliers") },
+        { href: "/rfq",             label: "طلبات عروض الأسعار",   icon: ClipboardList, show: can("accessRfq") },
+        { href: "/purchase-orders", label: "أوامر الشراء المباشر", icon: ShoppingCart, show: can("accessPo") },
+      ],
+    },
+    {
+      label: "إدارة المشاريع",
+      icon: FolderOpen,
+      items: [
+        { href: "/projects",   label: "المشاريع",         icon: FolderOpen,    show: can("accessProjects") },
+        { href: "/guarantees", label: "الكفالات البنكية", icon: ShieldCheck,   show: can("accessGuarantees") },
+        { href: "/contracts",  label: "العقود",            icon: FileSignature, show: can("accessContracts") },
+      ],
+    },
+    {
+      label: "أدوات",
+      icon: BookOpen,
+      items: [
+        { href: "/guide",               label: "دليل Microsoft 365", icon: BookOpen, show: true      },
+        { href: "/admin/users",         label: "إدارة المستخدمين",   icon: Shield,   show: isAdmin   },
+        { href: "/admin/activity-log",  label: "سجل الحركات",        icon: Activity, show: isAdmin   },
+      ],
+    },
+  ];
+
+  // Remove items user can't see, remove empty groups
+  return groups
+    .map(g => ({ ...g, items: g.items.filter(i => i.show) }))
+    .filter(g => g.items.length > 0);
+};
 
 /* ── Kuwait clock ── */
 function KuwaitClock() {
@@ -244,7 +254,7 @@ function UserMenu({ user, logout }: { user: any; logout: () => void }) {
 export function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
-  const navGroups = buildNavGroups(user?.role === "admin");
+  const navGroups = buildNavGroups(user ?? null);
 
   return (
     <div style={{ minHeight: "100vh", background: "#f5f0e8", fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif" }} dir="rtl">

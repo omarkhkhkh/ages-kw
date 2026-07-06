@@ -2,8 +2,8 @@ import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, FileText, Plus,
   Building2, Users, ClipboardList, ShoppingCart,
-  FolderOpen, ShieldCheck, FileSignature, BookOpen,
-  Calendar, Shield, LogOut, UserCircle, Activity,
+  FolderOpen, ShieldCheck, FileSignature,
+  Calendar, LogOut, Activity,
   ChevronDown, Clock,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
@@ -19,50 +19,23 @@ const GD = "#A87C20";
 const GR = "#0b1a10";
 const GR2 = "#132a18";
 
-/* ── Nav structure ── */
-// Direct links shown inline in the navbar
-const buildDirectLinks = (user: AuthUser | null) => {
+/* ── All nav links (flat, no dropdowns) ── */
+const buildNavLinks = (user: AuthUser | null) => {
   if (!user) return [];
   const isAdmin = user.role === "admin";
   const can = (field: keyof AuthUser) => isAdmin || !!user[field];
   return [
-    { href: "/",         label: "لوحة التحكم",   icon: LayoutDashboard, show: true },
-    { href: "/tenders",  label: "المناقصات",      icon: FileText,        show: can("accessTenders") },
-    { href: "/calendar", label: "جدول الأعمال",   icon: Calendar,        show: true },
+    { href: "/",               label: "الرئيسية",               icon: LayoutDashboard, show: true },
+    { href: "/tenders",        label: "المناقصات",              icon: FileText,        show: can("accessTenders") },
+    { href: "/entities",       label: "الجهات الحكومية",        icon: Building2,       show: can("accessEntities") },
+    { href: "/suppliers",      label: "الموردون",               icon: Users,           show: can("accessSuppliers") },
+    { href: "/projects",       label: "المشاريع",               icon: FolderOpen,      show: can("accessProjects") },
+    { href: "/guarantees",     label: "الكفالات",               icon: ShieldCheck,     show: can("accessGuarantees") },
+    { href: "/contracts",      label: "العقود",                  icon: FileSignature,   show: can("accessContracts") },
+    { href: "/rfq",            label: "عروض الأسعار",           icon: ClipboardList,   show: can("accessRfq") },
+    { href: "/purchase-orders",label: "أوامر الشراء",           icon: ShoppingCart,    show: can("accessPo") },
+    { href: "/calendar",       label: "جدول الأعمال",           icon: Calendar,        show: true },
   ].filter(i => i.show);
-};
-
-// Dropdown groups shown as menus
-const buildNavGroups = (user: AuthUser | null) => {
-  if (!user) return [];
-  const isAdmin = user.role === "admin";
-  const can = (field: keyof AuthUser) => isAdmin || !!user[field];
-
-  const groups = [
-    {
-      label: "قواعد البيانات",
-      icon: Building2,
-      items: [
-        { href: "/entities",        label: "الجهات الحكومية",       icon: Building2,    show: can("accessEntities") },
-        { href: "/suppliers",       label: "الموردون",              icon: Users,        show: can("accessSuppliers") },
-        { href: "/rfq",             label: "طلبات عروض الأسعار",   icon: ClipboardList, show: can("accessRfq") },
-        { href: "/purchase-orders", label: "أوامر الشراء المباشر", icon: ShoppingCart, show: can("accessPo") },
-      ],
-    },
-    {
-      label: "المشاريع والعقود",
-      icon: FolderOpen,
-      items: [
-        { href: "/projects",   label: "المشاريع",         icon: FolderOpen,    show: can("accessProjects") },
-        { href: "/guarantees", label: "الكفالات البنكية", icon: ShieldCheck,   show: can("accessGuarantees") },
-        { href: "/contracts",  label: "العقود",            icon: FileSignature, show: can("accessContracts") },
-      ],
-    },
-  ];
-
-  return groups
-    .map(g => ({ ...g, items: g.items.filter(i => i.show) }))
-    .filter(g => g.items.length > 0);
 };
 
 /* ── Kuwait clock ── */
@@ -84,96 +57,6 @@ function KuwaitClock() {
   );
 }
 
-/* ── Dropdown menu item ── */
-function NavDropdown({ group, location }: { group: ReturnType<typeof buildNavGroups>[0]; location: string }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  const isGroupActive = group.items.some(
-    item => location === item.href || (item.href !== "/" && location.startsWith(item.href))
-  );
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button
-        onClick={() => setOpen(o => !o)}
-        style={{
-          display: "flex", alignItems: "center", gap: 6,
-          padding: "8px 14px", borderRadius: 10, cursor: "pointer",
-          fontFamily: "inherit", fontSize: 13, fontWeight: 700,
-          background: isGroupActive ? "rgba(212,165,52,0.18)" : open ? "rgba(255,255,255,0.08)" : "transparent",
-          border: isGroupActive ? "1px solid rgba(212,165,52,0.35)" : "1px solid transparent",
-          color: isGroupActive ? G : "rgba(255,255,255,0.75)",
-          transition: "all 0.15s",
-          whiteSpace: "nowrap",
-        }}
-        onMouseEnter={e => { if (!isGroupActive && !open) e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-        onMouseLeave={e => { if (!isGroupActive && !open) e.currentTarget.style.background = "transparent"; }}
-      >
-        <group.icon size={15} />
-        {group.label}
-        <ChevronDown size={13} style={{ transition: "transform 0.2s", transform: open ? "rotate(180deg)" : "rotate(0deg)", opacity: 0.7 }} />
-      </button>
-
-      {/* Dropdown panel */}
-      {open && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 8px)",
-          right: 0, minWidth: 220, zIndex: 100,
-          background: "white",
-          borderRadius: 14,
-          border: "1.5px solid #f0ead8",
-          boxShadow: "0 16px 48px rgba(0,0,0,0.15), 0 4px 16px rgba(0,0,0,0.08)",
-          overflow: "hidden",
-          animation: "dropDown 0.15s ease",
-        }}>
-          {/* Arrow */}
-          <div style={{ position: "absolute", top: -6, right: 18, width: 12, height: 12, background: "white", border: "1.5px solid #f0ead8", borderBottom: "none", borderLeft: "none", transform: "rotate(-45deg)", borderRadius: "2px 0 0 0" }} />
-
-          <div style={{ padding: "6px" }}>
-            {group.items.map(item => {
-              const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
-              return (
-                <Link key={item.href} href={item.href} onClick={() => setOpen(false)}>
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: 10,
-                    padding: "10px 12px", borderRadius: 10,
-                    fontSize: 13, fontWeight: isActive ? 700 : 500,
-                    color: isActive ? GD : "#374151",
-                    background: isActive ? `${G}12` : "transparent",
-                    cursor: "pointer", transition: "all 0.12s",
-                  }}
-                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "#f9fafb"; }}
-                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
-                  >
-                    <div style={{
-                      width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-                      background: isActive ? `${G}18` : "#f3f4f6",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      transition: "background 0.12s",
-                    }}>
-                      <item.icon size={15} color={isActive ? GD : "#6b7280"} />
-                    </div>
-                    <span>{item.label}</span>
-                    {isActive && <div style={{ marginRight: "auto", width: 6, height: 6, borderRadius: "50%", background: G }} />}
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ── User menu ── */
 function UserMenu({ user, logout }: { user: any; logout: () => void }) {
@@ -280,8 +163,7 @@ function UserMenu({ user, logout }: { user: any; logout: () => void }) {
 export function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
   const { user, logout } = useAuth();
-  const directLinks = buildDirectLinks(user ?? null);
-  const navGroups = buildNavGroups(user ?? null);
+  const navLinks = buildNavLinks(user ?? null);
 
   return (
     <div style={{ minHeight: "100vh", background: "#f5f0e8", fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif" }} dir="rtl">
@@ -328,39 +210,34 @@ export function Layout({ children }: LayoutProps) {
           {/* Divider */}
           <div style={{ width: 1, height: 32, background: "rgba(255,255,255,0.1)", marginInline: 4, flexShrink: 0 }} />
 
-          {/* Nav — direct links + dropdown groups */}
+          {/* Nav — all direct links, horizontally scrollable */}
           <nav style={{
             display: "flex", alignItems: "center", gap: 2,
             flex: 1, overflowX: "auto", scrollbarWidth: "none",
           }}>
-            {/* Direct links */}
-            {directLinks.map(link => {
-              const isActive = location === link.href || (link.href !== "/" && location.startsWith(link.href));
+            {navLinks.map(link => {
+              const isActive = link.href === "/"
+                ? location === "/"
+                : location === link.href || location.startsWith(link.href + "/");
               return (
-                <Link key={link.href} href={link.href}>
-                  <button style={{
-                    display: "flex", alignItems: "center", gap: 6,
-                    padding: "8px 14px", borderRadius: 10, cursor: "pointer",
-                    fontFamily: "inherit", fontSize: 13, fontWeight: 700,
-                    background: isActive ? "rgba(212,165,52,0.18)" : "transparent",
-                    border: isActive ? "1px solid rgba(212,165,52,0.35)" : "1px solid transparent",
-                    color: isActive ? G : "rgba(255,255,255,0.75)",
-                    transition: "all 0.15s", whiteSpace: "nowrap",
-                  }}
-                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
-                  >
-                    <link.icon size={15} />
-                    {link.label}
-                  </button>
+                <Link key={link.href} href={link.href} style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "8px 13px", borderRadius: 10, cursor: "pointer",
+                  fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif",
+                  fontSize: 13, fontWeight: 700, textDecoration: "none",
+                  whiteSpace: "nowrap", flexShrink: 0, transition: "all 0.15s",
+                  background: isActive ? "rgba(212,165,52,0.18)" : "transparent",
+                  border: `1px solid ${isActive ? "rgba(212,165,52,0.35)" : "transparent"}`,
+                  color: isActive ? G : "rgba(255,255,255,0.78)",
+                }}
+                  onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.09)"; }}
+                  onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                >
+                  <link.icon size={14} style={{ flexShrink: 0 }} />
+                  {link.label}
                 </Link>
               );
             })}
-
-            {/* Dropdown groups */}
-            {navGroups.map(group => (
-              <NavDropdown key={group.label} group={group} location={location} />
-            ))}
           </nav>
 
           {/* Right side: clock + new tender + user */}
@@ -368,23 +245,21 @@ export function Layout({ children }: LayoutProps) {
             <KuwaitClock />
 
             {(user?.role === "admin" || user?.canEdit) && (
-              <Link href="/tenders/new">
-                <button style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  padding: "8px 16px", borderRadius: 10, cursor: "pointer",
-                  fontFamily: "inherit", fontSize: 13, fontWeight: 700,
-                  background: `linear-gradient(135deg,${G},${GD})`,
-                  border: "none", color: "white",
-                  boxShadow: `0 4px 14px rgba(212,165,52,0.4)`,
-                  transition: "transform 0.1s, box-shadow 0.1s",
-                  whiteSpace: "nowrap",
-                }}
-                  onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = `0 6px 20px rgba(212,165,52,0.55)`; }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = `0 4px 14px rgba(212,165,52,0.4)`; }}
-                >
-                  <Plus size={14} />
-                  مناقصة جديدة
-                </button>
+              <Link href="/tenders/new" style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "8px 16px", borderRadius: 10, cursor: "pointer",
+                fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif",
+                fontSize: 13, fontWeight: 700, textDecoration: "none",
+                background: `linear-gradient(135deg,${G},${GD})`,
+                color: "white", whiteSpace: "nowrap", flexShrink: 0,
+                boxShadow: `0 4px 14px rgba(212,165,52,0.4)`,
+                transition: "transform 0.1s, box-shadow 0.1s",
+              }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; (e.currentTarget as HTMLElement).style.boxShadow = `0 6px 20px rgba(212,165,52,0.55)`; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; (e.currentTarget as HTMLElement).style.boxShadow = `0 4px 14px rgba(212,165,52,0.4)`; }}
+              >
+                <Plus size={14} />
+                مناقصة جديدة
               </Link>
             )}
 

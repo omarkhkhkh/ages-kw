@@ -1,0 +1,134 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { entitiesApi } from "@/lib/api";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Building2, Plus, Pencil, Trash2, X, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+
+const ENTITY_TYPES = ["وزارة", "هيئة", "شركة حكومية", "جامعة", "أخرى"];
+
+const emptyForm = { name: "", type: "", contactPerson: "", phone: "", email: "", address: "", notes: "" };
+
+export default function EntitiesList() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [form, setForm] = useState({ ...emptyForm });
+  const [search, setSearch] = useState("");
+
+  const { data: entities = [], isLoading } = useQuery({
+    queryKey: ["government-entities"],
+    queryFn: () => entitiesApi.list(),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: any) => entitiesApi.create(data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["government-entities"] }); closeForm(); toast({ title: "تم إضافة الجهة بنجاح" }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: any) => entitiesApi.update(id, data),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["government-entities"] }); closeForm(); toast({ title: "تم تحديث الجهة" }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => entitiesApi.delete(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["government-entities"] }); toast({ title: "تم حذف الجهة" }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
+
+  const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
+  const handleEdit = (e: any) => { setEditId(e.id); setForm({ name: e.name, type: e.type || "", contactPerson: e.contactPerson || "", phone: e.phone || "", email: e.email || "", address: e.address || "", notes: e.notes || "" }); setShowForm(true); };
+  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.name) return; editId ? updateMutation.mutate({ id: editId, data: form }) : createMutation.mutate(form); };
+
+  const filtered = entities.filter((e: any) => !search || e.name.includes(search) || (e.type || "").includes(search));
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">الجهات الحكومية</h1>
+          <p className="text-muted-foreground text-sm mt-1">إدارة الجهات الحكومية المتعاملة معها في المناقصات.</p>
+        </div>
+        <Button onClick={() => { closeForm(); setShowForm(true); }} className="gap-2"><Plus className="h-4 w-4" />إضافة جهة</Button>
+      </div>
+
+      {showForm && (
+        <Card className="p-6 shadow-sm border-primary/20">
+          <h2 className="text-lg font-semibold mb-4">{editId ? "تعديل الجهة" : "جهة جديدة"}</h2>
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div className="space-y-1"><Label>اسم الجهة *</Label><Input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="اسم الجهة الحكومية" required /></div>
+              <div className="space-y-1"><Label>نوع الجهة</Label>
+                <select value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))} className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="">اختر النوع</option>
+                  {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1"><Label>الشخص المسؤول</Label><Input value={form.contactPerson} onChange={e => setForm(p => ({ ...p, contactPerson: e.target.value }))} placeholder="اسم المسؤول" /></div>
+              <div className="space-y-1"><Label>الهاتف</Label><Input value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} placeholder="رقم الهاتف" dir="ltr" /></div>
+              <div className="space-y-1"><Label>البريد الإلكتروني</Label><Input value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="example@gov.kw" dir="ltr" /></div>
+              <div className="space-y-1"><Label>العنوان</Label><Input value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="العنوان" /></div>
+            </div>
+            <div className="space-y-1 mb-4"><Label>ملاحظات</Label><Input value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="ملاحظات إضافية" /></div>
+            <div className="flex gap-2">
+              <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="gap-2"><Check className="h-4 w-4" />حفظ</Button>
+              <Button type="button" variant="ghost" onClick={closeForm} className="gap-2"><X className="h-4 w-4" />إلغاء</Button>
+            </div>
+          </form>
+        </Card>
+      )}
+
+      <div className="relative w-full md:w-72">
+        <Input placeholder="بحث..." value={search} onChange={e => setSearch(e.target.value)} className="pr-3" />
+      </div>
+
+      <Card className="overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-right">
+            <thead className="bg-muted/50 text-muted-foreground border-b">
+              <tr>
+                <th className="font-medium p-4">اسم الجهة</th>
+                <th className="font-medium p-4">النوع</th>
+                <th className="font-medium p-4">المسؤول</th>
+                <th className="font-medium p-4">الهاتف</th>
+                <th className="font-medium p-4">البريد</th>
+                <th className="font-medium p-4 text-left">إجراءات</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {isLoading ? (
+                [...Array(4)].map((_, i) => (
+                  <tr key={i} className="animate-pulse"><td className="p-4"><div className="h-4 bg-muted rounded w-32" /></td><td className="p-4"><div className="h-4 bg-muted rounded w-20" /></td><td className="p-4"><div className="h-4 bg-muted rounded w-24" /></td><td className="p-4"><div className="h-4 bg-muted rounded w-20" /></td><td className="p-4"><div className="h-4 bg-muted rounded w-24" /></td><td className="p-4" /></tr>
+                ))
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={6} className="p-12 text-center text-muted-foreground"><Building2 className="h-10 w-10 mx-auto mb-3 text-muted" /><p>لا توجد جهات حكومية مسجلة</p></td></tr>
+              ) : filtered.map((e: any) => (
+                <tr key={e.id} className="hover:bg-muted/30 transition-colors">
+                  <td className="p-4 font-medium text-foreground">{e.name}</td>
+                  <td className="p-4 text-muted-foreground">{e.type || "—"}</td>
+                  <td className="p-4 text-muted-foreground">{e.contactPerson || "—"}</td>
+                  <td className="p-4 text-muted-foreground" dir="ltr">{e.phone || "—"}</td>
+                  <td className="p-4 text-muted-foreground text-xs" dir="ltr">{e.email || "—"}</td>
+                  <td className="p-4 text-left">
+                    <div className="flex gap-2 justify-end">
+                      <Button variant="ghost" size="sm" onClick={() => handleEdit(e)}><Pencil className="h-3.5 w-3.5" /></Button>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => { if (confirm("هل تريد حذف هذه الجهة؟")) deleteMutation.mutate(e.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}

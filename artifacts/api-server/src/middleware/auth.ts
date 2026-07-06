@@ -21,6 +21,7 @@ declare module "express-session" {
     accessRfq: boolean;
     accessPo: boolean;
     accessTransportation: boolean;
+    accessFinance: boolean;
   }
 }
 
@@ -66,6 +67,7 @@ const MODULE_LABELS: Record<string, string> = {
   accessRfq:            "طلبات عروض الأسعار",
   accessPo:             "أوامر الشراء المباشر",
   accessTransportation: "النقل والتوزيع",
+  accessFinance:        "الإدارة المالية",
 };
 
 const MODULE_KEY_MAP: Record<string, string> = {
@@ -78,13 +80,14 @@ const MODULE_KEY_MAP: Record<string, string> = {
   accessRfq:            "rfq",
   accessPo:             "po",
   accessTransportation: "transportation",
+  accessFinance:        "finance",
 };
 
 // Factory: creates middleware that checks session access to a specific module.
 // Admins bypass all module restrictions. Blocked attempts are logged to activity_logs.
 export function requireModule(field: keyof Pick<Express.Request["session"],
   "accessTenders" | "accessEntities" | "accessSuppliers" | "accessProjects" |
-  "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo" | "accessTransportation"
+  "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo" | "accessTransportation" | "accessFinance"
 >) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.session?.userId) {

@@ -4,7 +4,7 @@ import {
   Building2, Users, ClipboardList, ShoppingCart,
   FolderOpen, ShieldCheck, FileSignature,
   Calendar, LogOut, Activity,
-  ChevronDown, Clock, Truck,
+  ChevronDown, Clock, Truck, Wallet,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/contexts/auth";
@@ -35,6 +35,7 @@ const buildNavLinks = (user: AuthUser | null) => {
     { href: "/rfq",            label: "عروض الأسعار",           icon: ClipboardList,   show: can("accessRfq") },
     { href: "/purchase-orders",   label: "أوامر الشراء",    icon: ShoppingCart,  show: can("accessPo") },
     { href: "/transportation",    label: "النقل والتوزيع",  icon: Truck,         show: can("accessTransportation") },
+    { href: "/finance",           label: "الإدارة المالية", icon: Wallet,        show: can("accessFinance") },
     { href: "/calendar",          label: "جدول الأعمال",    icon: Calendar,      show: true },
   ].filter(i => i.show);
 };

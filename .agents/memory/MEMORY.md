@@ -3,3 +3,4 @@
 - [Server-side permission enforcement](server-side-permissions.md) — requireEdit middleware must cover all POST/PATCH/DELETE routes; UI-only gating is insufficient.
 - [Per-module access + activity logging](module-access-activity-log.md) — 8 module columns on users table; activity_logs table; requireModule factory; activityLogger must be added to both main and adminRouter.
 - [Adding a new module — full checklist](new-module-checklist.md) — 11-file checklist for adding a module; lib/db needs tsc rebuild before api-server typecheck; admin.ts USER_SELECT + POST + PATCH all need updating.
+- [Finance module access control](finance-access-control.md) — employee_sales PATCH must verify ownership (employeeId === session.userId) before updating; totalContractAmount + profitAmount are admin-only masked fields.

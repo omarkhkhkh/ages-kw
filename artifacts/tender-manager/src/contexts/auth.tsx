@@ -22,6 +22,7 @@ export interface AuthUser {
   accessRfq: boolean;
   accessPo: boolean;
   accessTransportation: boolean;
+  accessFinance: boolean;
 }
 
 interface AuthContextValue {
@@ -112,7 +113,7 @@ export function useAuth() {
 /** Returns true if the current user has access to a given module */
 export function useModuleAccess(module: keyof Pick<AuthUser,
   "accessTenders" | "accessEntities" | "accessSuppliers" | "accessProjects" |
-  "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo" | "accessTransportation"
+  "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo" | "accessTransportation" | "accessFinance"
 >): boolean {
   const { user } = useAuth();
   if (!user) return false;

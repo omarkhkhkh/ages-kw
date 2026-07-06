@@ -11,3 +11,4 @@ export * from "./activity-logs";
 export * from "./transportation";
 export * from "./transport-teams";
 export * from "./transport-tasks";
+export * from "./finance";

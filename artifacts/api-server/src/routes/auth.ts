@@ -8,7 +8,7 @@ const router = Router();
 
 const MODULE_FIELDS = [
   "accessTenders", "accessEntities", "accessSuppliers", "accessProjects",
-  "accessGuarantees", "accessContracts", "accessRfq", "accessPo", "accessTransportation",
+  "accessGuarantees", "accessContracts", "accessRfq", "accessPo", "accessTransportation", "accessFinance",
 ] as const;
 
 function buildUserResponse(user: any) {
@@ -30,6 +30,7 @@ function buildUserResponse(user: any) {
     accessRfq: user.accessRfq,
     accessPo: user.accessPo,
     accessTransportation: user.accessTransportation,
+    accessFinance: user.accessFinance,
   };
 }
 
@@ -122,6 +123,7 @@ router.get("/me", (req, res) => {
     accessRfq: req.session.accessRfq ?? true,
     accessPo: req.session.accessPo ?? true,
     accessTransportation: req.session.accessTransportation ?? true,
+    accessFinance: req.session.accessFinance ?? true,
   });
 });
 

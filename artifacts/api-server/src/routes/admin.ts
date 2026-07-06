@@ -30,6 +30,7 @@ const USER_SELECT = {
   accessRfq: usersTable.accessRfq,
   accessPo: usersTable.accessPo,
   accessTransportation: usersTable.accessTransportation,
+  accessFinance: usersTable.accessFinance,
   isActive: usersTable.isActive,
   createdAt: usersTable.createdAt,
   lastLogin: usersTable.lastLogin,
@@ -47,7 +48,7 @@ router.post("/users", async (req, res) => {
     username, fullName, password, role,
     canView, canDownload, canUpload, canEdit,
     accessTenders, accessEntities, accessSuppliers, accessProjects,
-    accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation,
+    accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation, accessFinance,
   } = req.body as any;
 
   if (!username || !fullName || !password) {
@@ -79,6 +80,7 @@ router.post("/users", async (req, res) => {
       accessRfq: accessRfq ?? true,
       accessPo: accessPo ?? true,
       accessTransportation: accessTransportation ?? true,
+      accessFinance: accessFinance ?? true,
     })
     .returning(USER_SELECT);
 
@@ -92,7 +94,7 @@ router.patch("/users/:id", async (req, res) => {
     fullName, role, isActive, password,
     canView, canDownload, canUpload, canEdit,
     accessTenders, accessEntities, accessSuppliers, accessProjects,
-    accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation,
+    accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation, accessFinance,
   } = req.body as any;
 
   const updates: Partial<typeof usersTable.$inferInsert> = {};
@@ -112,6 +114,7 @@ router.patch("/users/:id", async (req, res) => {
   if (accessRfq !== undefined) updates.accessRfq = accessRfq;
   if (accessPo !== undefined) updates.accessPo = accessPo;
   if (accessTransportation !== undefined) updates.accessTransportation = accessTransportation;
+  if (accessFinance !== undefined) updates.accessFinance = accessFinance;
 
   if (password) {
     if (password.length < 6) {

@@ -1,3 +1,4 @@
 - [Session store with esbuild](session-store-esbuild.md) — connect-pg-simple reads table.sql dynamically; must be externalized from esbuild and session table pre-created via psql.
 - [CORS + session cookies](cors-session-security.md) — Never use cors({origin:true, credentials:true}); restrict to known origins; add sameSite/secure cookie settings.
 - [Server-side permission enforcement](server-side-permissions.md) — requireEdit middleware must cover all POST/PATCH/DELETE routes; UI-only gating is insufficient.
+- [Per-module access + activity logging](module-access-activity-log.md) — 8 module columns on users table; activity_logs table; requireModule factory; activityLogger must be added to both main and adminRouter.

@@ -7,3 +7,4 @@ export * from "./projects";
 export * from "./bank-guarantees";
 export * from "./contracts";
 export * from "./users";
+export * from "./activity-logs";

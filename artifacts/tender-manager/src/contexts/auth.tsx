@@ -6,10 +6,20 @@ export interface AuthUser {
   username: string;
   fullName: string;
   role: "admin" | "employee";
+  // Global permissions
   canView: boolean;
   canDownload: boolean;
   canUpload: boolean;
   canEdit: boolean;
+  // Per-module access
+  accessTenders: boolean;
+  accessEntities: boolean;
+  accessSuppliers: boolean;
+  accessProjects: boolean;
+  accessGuarantees: boolean;
+  accessContracts: boolean;
+  accessRfq: boolean;
+  accessPo: boolean;
 }
 
 interface AuthContextValue {
@@ -63,4 +73,15 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
   return ctx;
+}
+
+/** Returns true if the current user has access to a given module */
+export function useModuleAccess(module: keyof Pick<AuthUser,
+  "accessTenders" | "accessEntities" | "accessSuppliers" | "accessProjects" |
+  "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo"
+>): boolean {
+  const { user } = useAuth();
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  return user[module] ?? false;
 }

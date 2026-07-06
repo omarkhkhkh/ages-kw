@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import healthRouter from "./health";
 import authRouter from "./auth";
 import adminRouter from "./admin";
+import activityLogsRouter from "./activity-logs";
 import tendersRouter from "./tenders";
 import governmentEntitiesRouter from "./government-entities";
 import suppliersRouter from "./suppliers";
@@ -10,7 +11,8 @@ import directPurchaseOrdersRouter from "./direct-purchase-orders";
 import projectsRouter from "./projects";
 import bankGuaranteesRouter from "./bank-guarantees";
 import contractsRouter from "./contracts";
-import { requireAuth, requireEdit } from "../middleware/auth";
+import { requireAuth, requireEdit, requireModule } from "../middleware/auth";
+import { activityLogger } from "../middleware/activity-logger";
 
 const router: IRouter = Router();
 
@@ -18,13 +20,17 @@ const router: IRouter = Router();
 router.use(healthRouter);
 router.use("/auth", authRouter);
 
-// Admin routes (admin-only check is inside adminRouter)
+// Admin routes (admin-only check is inside adminRouter / activityLogsRouter)
 router.use("/admin", adminRouter);
+router.use("/admin/activity-logs", activityLogsRouter);
 
 // Protected routes — require valid session
 router.use(requireAuth);
 
-// For all mutation methods (POST/PUT/PATCH/DELETE) require canEdit or admin role
+// Log all successful mutations (create/update/delete) to activity_logs
+router.use(activityLogger);
+
+// Require canEdit for all mutation methods (POST/PUT/PATCH/DELETE)
 router.use((req, res, next) => {
   if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
     return requireEdit(req, res, next);
@@ -32,13 +38,14 @@ router.use((req, res, next) => {
   next();
 });
 
-router.use("/tenders", tendersRouter);
-router.use("/government-entities", governmentEntitiesRouter);
-router.use("/suppliers", suppliersRouter);
-router.use("/rfq-requests", rfqRequestsRouter);
-router.use("/direct-purchase-orders", directPurchaseOrdersRouter);
-router.use("/projects", projectsRouter);
-router.use("/bank-guarantees", bankGuaranteesRouter);
-router.use("/contracts", contractsRouter);
+// Per-module routes — each protected by its own module access guard
+router.use("/tenders", requireModule("accessTenders"), tendersRouter);
+router.use("/government-entities", requireModule("accessEntities"), governmentEntitiesRouter);
+router.use("/suppliers", requireModule("accessSuppliers"), suppliersRouter);
+router.use("/rfq-requests", requireModule("accessRfq"), rfqRequestsRouter);
+router.use("/direct-purchase-orders", requireModule("accessPo"), directPurchaseOrdersRouter);
+router.use("/projects", requireModule("accessProjects"), projectsRouter);
+router.use("/bank-guarantees", requireModule("accessGuarantees"), bankGuaranteesRouter);
+router.use("/contracts", requireModule("accessContracts"), contractsRouter);
 
 export default router;

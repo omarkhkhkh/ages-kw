@@ -19,6 +19,7 @@ import ContractsList from '@/pages/contracts-list';
 import Guide from '@/pages/guide';
 import AdminUsers from '@/pages/admin-users';
 import CalendarPage from '@/pages/calendar';
+import ActivityLog from '@/pages/activity-log';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient({
@@ -27,13 +28,25 @@ const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       staleTime: 1000 * 60 * 5,
       retry: (failureCount, error: any) => {
-        // Don't retry 401/403 errors
         if (error?.message?.includes('401') || error?.message?.includes('403')) return false;
         return failureCount < 2;
       },
     },
   },
 });
+
+function ModuleGuard({ access, children }: { access: boolean; children: React.ReactNode }) {
+  if (!access) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3">
+        <div className="text-4xl">🔒</div>
+        <p className="font-medium">ليس لديك صلاحية الوصول إلى هذه الوحدة</p>
+        <p className="text-sm">تواصل مع المدير لتفعيل الصلاحية</p>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
 
 function AppRouter() {
   const { user, loading } = useAuth();
@@ -49,27 +62,48 @@ function AppRouter() {
     );
   }
 
-  if (!user) {
-    return <Login />;
-  }
+  if (!user) return <Login />;
+
+  const isAdmin = user.role === "admin";
 
   return (
     <Layout>
       <Switch>
         <Route path="/" component={Dashboard} />
-        <Route path="/tenders" component={TendersList} />
-        <Route path="/tenders/new" component={TenderNew} />
-        <Route path="/tenders/:id" component={TenderDetail} />
-        <Route path="/entities" component={EntitiesList} />
-        <Route path="/suppliers" component={SuppliersList} />
-        <Route path="/rfq" component={RfqList} />
-        <Route path="/purchase-orders" component={PurchaseOrdersList} />
-        <Route path="/projects" component={ProjectsList} />
-        <Route path="/guarantees" component={GuaranteesList} />
-        <Route path="/contracts" component={ContractsList} />
+        <Route path="/tenders">
+          <ModuleGuard access={isAdmin || user.accessTenders}><TendersList /></ModuleGuard>
+        </Route>
+        <Route path="/tenders/new">
+          <ModuleGuard access={isAdmin || user.accessTenders}><TenderNew /></ModuleGuard>
+        </Route>
+        <Route path="/tenders/:id">
+          {(params) => <ModuleGuard access={isAdmin || user.accessTenders}><TenderDetail id={Number(params.id)} /></ModuleGuard>}
+        </Route>
+        <Route path="/entities">
+          <ModuleGuard access={isAdmin || user.accessEntities}><EntitiesList /></ModuleGuard>
+        </Route>
+        <Route path="/suppliers">
+          <ModuleGuard access={isAdmin || user.accessSuppliers}><SuppliersList /></ModuleGuard>
+        </Route>
+        <Route path="/rfq">
+          <ModuleGuard access={isAdmin || user.accessRfq}><RfqList /></ModuleGuard>
+        </Route>
+        <Route path="/purchase-orders">
+          <ModuleGuard access={isAdmin || user.accessPo}><PurchaseOrdersList /></ModuleGuard>
+        </Route>
+        <Route path="/projects">
+          <ModuleGuard access={isAdmin || user.accessProjects}><ProjectsList /></ModuleGuard>
+        </Route>
+        <Route path="/guarantees">
+          <ModuleGuard access={isAdmin || user.accessGuarantees}><GuaranteesList /></ModuleGuard>
+        </Route>
+        <Route path="/contracts">
+          <ModuleGuard access={isAdmin || user.accessContracts}><ContractsList /></ModuleGuard>
+        </Route>
         <Route path="/guide" component={Guide} />
-        <Route path="/admin/users" component={AdminUsers} />
         <Route path="/calendar" component={CalendarPage} />
+        <Route path="/admin/users" component={AdminUsers} />
+        <Route path="/admin/activity-log" component={ActivityLog} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

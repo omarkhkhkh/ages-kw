@@ -4,7 +4,7 @@ import {
   LayoutDashboard, FileText, Plus,
   Building2, Users, ClipboardList, ShoppingCart,
   FolderOpen, ShieldCheck, FileSignature, BookOpen,
-  ChevronDown, Calendar, Shield, LogOut, UserCircle,
+  ChevronDown, Calendar, Shield, LogOut, UserCircle, Activity,
 } from "lucide-react";
 import React, { useState } from "react";
 import { useAuth } from "@/contexts/auth";
@@ -58,7 +58,10 @@ function buildNavGroups(isAdmin: boolean): NavGroup[] {
       label: "أدوات",
       items: [
         { href: "/guide", label: "دليل Microsoft 365", icon: BookOpen },
-        ...(isAdmin ? [{ href: "/admin/users", label: "إدارة المستخدمين", icon: Shield }] : []),
+        ...(isAdmin ? [
+          { href: "/admin/users", label: "إدارة المستخدمين", icon: Shield },
+          { href: "/admin/activity-log", label: "سجل الحركات", icon: Activity },
+        ] : []),
       ],
     },
   ];

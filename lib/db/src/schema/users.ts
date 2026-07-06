@@ -8,11 +8,20 @@ export const usersTable = pgTable("users", {
   fullName: text("full_name").notNull(),
   password: text("password").notNull(), // bcrypt hashed
   role: text("role").notNull().default("employee"), // 'admin' | 'employee'
-  // Granular permissions
+  // Global permissions
   canView: boolean("can_view").notNull().default(true),
   canDownload: boolean("can_download").notNull().default(false),
   canUpload: boolean("can_upload").notNull().default(false),
   canEdit: boolean("can_edit").notNull().default(false),
+  // Per-module access (each module can be hidden per employee)
+  accessTenders: boolean("access_tenders").notNull().default(true),
+  accessEntities: boolean("access_entities").notNull().default(true),
+  accessSuppliers: boolean("access_suppliers").notNull().default(true),
+  accessProjects: boolean("access_projects").notNull().default(true),
+  accessGuarantees: boolean("access_guarantees").notNull().default(true),
+  accessContracts: boolean("access_contracts").notNull().default(true),
+  accessRfq: boolean("access_rfq").notNull().default(true),
+  accessPo: boolean("access_po").notNull().default(true),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastLogin: timestamp("last_login"),

@@ -220,18 +220,10 @@ export function Layout({ children }: LayoutProps) {
                 ? location === "/"
                 : location === link.href || location.startsWith(link.href + "/");
               return (
-                <Link key={link.href} href={link.href} style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  padding: "8px 13px", borderRadius: 10, cursor: "pointer",
-                  fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif",
-                  fontSize: 13, fontWeight: 700, textDecoration: "none",
-                  whiteSpace: "nowrap", flexShrink: 0, transition: "all 0.15s",
-                  background: isActive ? "rgba(212,165,52,0.18)" : "transparent",
-                  border: `1px solid ${isActive ? "rgba(212,165,52,0.35)" : "transparent"}`,
-                  color: isActive ? G : "rgba(255,255,255,0.78)",
-                }}
-                  onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.09)"; }}
-                  onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={isActive ? "nav-link nav-link-active" : "nav-link"}
                 >
                   <link.icon size={14} style={{ flexShrink: 0 }} />
                   {link.label}
@@ -245,19 +237,7 @@ export function Layout({ children }: LayoutProps) {
             <KuwaitClock />
 
             {(user?.role === "admin" || user?.canEdit) && (
-              <Link href="/tenders/new" style={{
-                display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "8px 16px", borderRadius: 10, cursor: "pointer",
-                fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif",
-                fontSize: 13, fontWeight: 700, textDecoration: "none",
-                background: `linear-gradient(135deg,${G},${GD})`,
-                color: "white", whiteSpace: "nowrap", flexShrink: 0,
-                boxShadow: `0 4px 14px rgba(212,165,52,0.4)`,
-                transition: "transform 0.1s, box-shadow 0.1s",
-              }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; (e.currentTarget as HTMLElement).style.boxShadow = `0 6px 20px rgba(212,165,52,0.55)`; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; (e.currentTarget as HTMLElement).style.boxShadow = `0 4px 14px rgba(212,165,52,0.4)`; }}
-              >
+              <Link href="/tenders/new" className="btn-new-tender">
                 <Plus size={14} />
                 مناقصة جديدة
               </Link>
@@ -311,6 +291,60 @@ export function Layout({ children }: LayoutProps) {
           to   { opacity: 1; transform: translateY(0); }
         }
         nav::-webkit-scrollbar { display: none; }
+
+        /* Nav links */
+        .nav-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 13px;
+          border-radius: 10px;
+          font-family: 'Cairo','IBM Plex Sans Arabic',sans-serif;
+          font-size: 13px;
+          font-weight: 700;
+          text-decoration: none;
+          white-space: nowrap;
+          flex-shrink: 0;
+          transition: background 0.15s, color 0.15s, border-color 0.15s;
+          background: transparent;
+          border: 1px solid transparent;
+          color: rgba(255,255,255,0.78);
+        }
+        .nav-link:hover {
+          background: rgba(255,255,255,0.1);
+          color: rgba(255,255,255,0.95);
+        }
+        .nav-link-active {
+          background: rgba(212,165,52,0.18) !important;
+          border-color: rgba(212,165,52,0.35) !important;
+          color: #D4A534 !important;
+        }
+        .nav-link-active:hover {
+          background: rgba(212,165,52,0.24) !important;
+        }
+
+        /* New tender button */
+        .btn-new-tender {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 16px;
+          border-radius: 10px;
+          font-family: 'Cairo','IBM Plex Sans Arabic',sans-serif;
+          font-size: 13px;
+          font-weight: 700;
+          text-decoration: none;
+          background: linear-gradient(135deg,#D4A534,#A87C20);
+          color: white;
+          white-space: nowrap;
+          flex-shrink: 0;
+          box-shadow: 0 4px 14px rgba(212,165,52,0.4);
+          transition: transform 0.1s, box-shadow 0.1s;
+        }
+        .btn-new-tender:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 6px 20px rgba(212,165,52,0.55);
+        }
       `}</style>
     </div>
   );

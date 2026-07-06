@@ -105,12 +105,12 @@ function NavSection({ group, location }: { group: NavGroup; location: string }) 
 function KuwaitClock() {
   const [time, setTime] = useState(() => {
     const now = nowKuwait();
-    return now.toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
   });
   React.useEffect(() => {
     const id = setInterval(() => {
       const now = nowKuwait();
-      setTime(now.toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+      setTime(now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }));
     }, 1000);
     return () => clearInterval(id);
   }, []);

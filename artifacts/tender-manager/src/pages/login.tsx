@@ -111,9 +111,6 @@ export default function Login() {
           <p style={{ color: GOLD_LIGHT, fontSize: 19, fontWeight: 700, margin: 0, letterSpacing: 0.3 }}>
             نظام إدارة المناقصات والعقود
           </p>
-          <p style={{ color: `rgba(212,165,52,0.45)`, fontSize: 13, marginTop: 10 }}>
-            الكويت — توقيت (UTC+3)
-          </p>
         </div>
 
         {/* Footer */}
@@ -295,9 +292,6 @@ export default function Login() {
             </form>
           </div>
 
-          <p style={{ textAlign: "center", color: "#a89060", fontSize: 12, marginTop: 20 }}>
-            الكويت — توقيت AST (UTC+3)
-          </p>
         </div>
       </div>
 

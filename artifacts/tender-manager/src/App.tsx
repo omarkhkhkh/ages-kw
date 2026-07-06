@@ -77,7 +77,7 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || user.accessTenders}><TenderNew /></ModuleGuard>
         </Route>
         <Route path="/tenders/:id">
-          {(params) => <ModuleGuard access={isAdmin || user.accessTenders}><TenderDetail id={Number(params.id)} /></ModuleGuard>}
+          <ModuleGuard access={isAdmin || user.accessTenders}><TenderDetail /></ModuleGuard>
         </Route>
         <Route path="/entities">
           <ModuleGuard access={isAdmin || user.accessEntities}><EntitiesList /></ModuleGuard>

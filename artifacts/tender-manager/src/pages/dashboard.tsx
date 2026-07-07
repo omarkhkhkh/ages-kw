@@ -1,5 +1,6 @@
 import { useGetTenderStats, useListTenders } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { Link, useLocation } from "wouter";
 import {
   FileText, AlertCircle, Trophy, Banknote, Percent,
@@ -12,6 +13,7 @@ import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
 import { useAuth } from "@/contexts/auth";
 import { contractsApi, apiFetch } from "@/lib/api";
+import { CalendarWidget, type CalendarEvent } from "@/components/calendar-widget";
 
 /* ─── brand palette ─── */
 const G  = "#D4A534";   // gold
@@ -68,9 +70,105 @@ export default function Dashboard() {
     queryFn: () => apiFetch("/api/tasks"),
     refetchInterval: 60000,
   });
-  const activeTasks   = myTasks.filter(t => t.status === "pending" || t.status === "in_progress");
-  const urgentTasks   = activeTasks.filter(t => t.priority === "urgent" || t.priority === "high");
-  const unreadNotes   = isAdmin ? myTasks.filter(t => !t.notesReadByAdmin && t.employeeNotes) : [];
+  const activeTasks = myTasks.filter(t => t.status === "pending" || t.status === "in_progress");
+  const urgentTasks = activeTasks.filter(t => t.priority === "urgent" || t.priority === "high");
+  const unreadNotes = isAdmin ? myTasks.filter(t => !t.notesReadByAdmin && t.employeeNotes) : [];
+
+  // ── Calendar data sources (gated by module access) ──
+  const { data: calContracts = [] } = useQuery<any[]>({
+    queryKey: ["cal-contracts"],
+    queryFn: () => apiFetch("/api/contracts"),
+    enabled: isAdmin || !!user?.accessContracts,
+    staleTime: 5 * 60_000,
+  });
+  const { data: calProjects = [] } = useQuery<any[]>({
+    queryKey: ["cal-projects"],
+    queryFn: () => apiFetch("/api/projects"),
+    enabled: isAdmin || !!user?.accessProjects,
+    staleTime: 5 * 60_000,
+  });
+  const { data: calGuarantees = [] } = useQuery<any[]>({
+    queryKey: ["cal-guarantees"],
+    queryFn: () => apiFetch("/api/bank-guarantees"),
+    enabled: isAdmin,
+    staleTime: 5 * 60_000,
+  });
+  const { data: calRfq = [] } = useQuery<any[]>({
+    queryKey: ["cal-rfq"],
+    queryFn: () => apiFetch("/api/rfq-requests"),
+    enabled: isAdmin,
+    staleTime: 5 * 60_000,
+  });
+  const { data: calPurchases = [] } = useQuery<any[]>({
+    queryKey: ["cal-purchases"],
+    queryFn: () => apiFetch("/api/direct-purchase-orders"),
+    enabled: isAdmin,
+    staleTime: 5 * 60_000,
+  });
+
+  // ── Build unified CalendarEvent[] ──
+  const calendarEvents = useMemo<CalendarEvent[]>(() => {
+    const evts: CalendarEvent[] = [];
+    const push = (
+      id: string, rawDate: string | null | undefined, type: CalendarEvent["type"],
+      title: string, subLabel: string,
+      extra?: Partial<CalendarEvent>
+    ) => {
+      if (!rawDate) return;
+      const d = new Date(rawDate);
+      if (isNaN(d.getTime())) return;
+      evts.push({ id, date: d, type, title, subLabel, ...extra });
+    };
+
+    // Tenders (admin or employee with access)
+    if (recentTenders) {
+      (recentTenders as any[]).forEach(t => {
+        push(`t-ann-${t.id}`, t.announcementDate, "tender", t.title, "تاريخ الإعلان", { status: t.status });
+        push(`t-dead-${t.id}`, t.deadline,        "tender", t.title, "الموعد النهائي", { status: t.status });
+      });
+    }
+
+    // Tasks
+    myTasks.forEach(t => {
+      push(`task-${t.id}`, t.dueDate, "task", t.title, "تاريخ الاستحقاق", {
+        priority: t.priority, status: t.status,
+        assigneeName: isAdmin ? t.assigneeName : undefined,
+      });
+    });
+
+    // Contracts
+    calContracts.forEach((c: any) => {
+      push(`c-sign-${c.id}`,  c.signDate,  "contract", c.title ?? c.contractNumber, "تاريخ التوقيع", { status: c.status });
+      push(`c-start-${c.id}`, c.startDate, "contract", c.title ?? c.contractNumber, "تاريخ البدء",   { status: c.status });
+      push(`c-end-${c.id}`,   c.endDate,   "contract", c.title ?? c.contractNumber, "تاريخ الانتهاء", { status: c.status });
+    });
+
+    // Projects
+    calProjects.forEach((p: any) => {
+      push(`p-start-${p.id}`, p.startDate, "project", p.name ?? p.title, "تاريخ البدء",   { status: p.status });
+      push(`p-end-${p.id}`,   p.endDate,   "project", p.name ?? p.title, "تاريخ الانتهاء", { status: p.status });
+    });
+
+    // Bank Guarantees (admin)
+    calGuarantees.forEach((g: any) => {
+      push(`g-issue-${g.id}`,  g.issueDate,  "guarantee", g.title ?? g.guaranteeNumber, "تاريخ الإصدار",  { status: g.status });
+      push(`g-expiry-${g.id}`, g.expiryDate, "guarantee", g.title ?? g.guaranteeNumber, "تاريخ الانتهاء", { status: g.status });
+    });
+
+    // RFQ Requests (admin)
+    calRfq.forEach((r: any) => {
+      push(`rfq-req-${r.id}`,  r.requestDate,      "rfq", r.title ?? r.subject, "تاريخ الطلب",       { status: r.status });
+      push(`rfq-dead-${r.id}`, r.responseDeadline, "rfq", r.title ?? r.subject, "الموعد النهائي للرد", { status: r.status });
+    });
+
+    // Direct Purchase Orders (admin)
+    calPurchases.forEach((o: any) => {
+      push(`po-ord-${o.id}`,  o.orderDate,    "purchase", o.title ?? o.orderNumber, "تاريخ الأمر",    { status: o.status });
+      push(`po-del-${o.id}`,  o.deliveryDate, "purchase", o.title ?? o.orderNumber, "تاريخ التسليم", { status: o.status });
+    });
+
+    return evts;
+  }, [recentTenders, myTasks, calContracts, calProjects, calGuarantees, calRfq, calPurchases, isAdmin]);
 
   const greeting = () => {
     const h = new Date().getHours();
@@ -171,6 +269,9 @@ export default function Dashboard() {
           <span style={{ color: GL, fontSize: 13, fontWeight: 700 }}>لوحة التحكم</span>
         </div>
       </div>
+
+      {/* ── Calendar ── */}
+      <CalendarWidget events={calendarEvents} />
 
       {/* ── Stat Cards ── */}
       {statsLoading ? (

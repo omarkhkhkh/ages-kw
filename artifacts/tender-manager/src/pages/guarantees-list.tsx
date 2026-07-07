@@ -44,10 +44,24 @@ const TYPE_TABS: TypeDef[] = [
 
 /* ─── FORM TYPES (all selectable) ─── */
 const GUARANTEE_TYPES = ["شيك مصدق", "ابتدائية", "نهائية", "دفعة مقدمة", "ضمان صيانة", "أخرى"];
+const LOCATION_OPTIONS = [
+  "لدى البنك",
+  "الخزينة الرئيسية",
+  "مع المحاسب",
+  "لدى المدير",
+  "لدى الموظف حسين",
+  "لدى الموظفة أنفال",
+  "لدى الموظفة فاطمة الحداد",
+  "لدى خالد رمضان",
+  "محاسبة التوريدات",
+  "لدى الجهة الحكومية",
+  "أخرى",
+];
+
 const emptyForm = {
   tenderId: "", guaranteeNumber: "", type: "",
   bankName: "", amount: "", issueDate: "", expiryDate: "",
-  status: "active", notes: "",
+  status: "active", location: "", notes: "",
 };
 
 /* ─── helpers ─── */
@@ -87,7 +101,7 @@ function GuaranteeTable({
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "right" }}>
           <thead style={{ background: typeDef.bg, borderBottom: `1.5px solid ${typeDef.border}` }}>
             <tr>
-              {["رقم الكفالة / الشيك", "الجهة / البنك", "الموضوع", "المبلغ (د.ك)", "تاريخ الإصدار", "تاريخ الانتهاء", "الحالة", ""].map(h => (
+              {["رقم الكفالة / الشيك", "الجهة / البنك", "الموضوع", "مكان الكفالة", "المبلغ (د.ك)", "تاريخ الإصدار", "تاريخ الانتهاء", "الحالة", ""].map(h => (
                 <th key={h} style={S.th}>{h}</th>
               ))}
             </tr>
@@ -138,8 +152,18 @@ function GuaranteeTable({
                         </div>
                       </td>
                       {/* notes/subject */}
-                      <td style={{ ...S.td, color: "#6b7280", fontSize: 11, maxWidth: 260 }}>
+                      <td style={{ ...S.td, color: "#6b7280", fontSize: 11, maxWidth: 220 }}>
                         <span title={g.notes || ""} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{notesShort}</span>
+                      </td>
+                      {/* location */}
+                      <td style={{ ...S.td, whiteSpace: "nowrap" }}>
+                        {g.location ? (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 10, fontSize: 11, fontWeight: 700, background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0" }}>
+                            📍 {g.location}
+                          </span>
+                        ) : (
+                          <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>
+                        )}
                       </td>
                       {/* amount */}
                       <td style={{ ...S.td, fontFamily: "monospace", fontWeight: 700, color: typeDef.color, whiteSpace: "nowrap" }}>
@@ -189,6 +213,7 @@ function GuaranteeTable({
                 <td colSpan={3} style={{ ...S.td, fontWeight: 800, color: "#374151", fontSize: 12 }}>
                   المجموع ({rows.length} سجل)
                 </td>
+                <td style={{ ...S.td, color: "#9ca3af", fontSize: 11 }}>—</td>
                 <td style={{ ...S.td, fontFamily: "monospace", fontWeight: 900, color: typeDef.color, whiteSpace: "nowrap" }}>
                   {formatCurrency(rows.reduce((s: number, g: any) => s + (Number(g.amount) || 0), 0))}
                 </td>
@@ -247,7 +272,7 @@ export default function GuaranteesList() {
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
   const openEdit  = (g: any) => {
     setEditId(g.id);
-    setForm({ tenderId: g.tenderId || "", guaranteeNumber: g.guaranteeNumber || "", type: g.type || "", bankName: g.bankName || "", amount: g.amount || "", issueDate: g.issueDate || "", expiryDate: g.expiryDate || "", status: g.status, notes: g.notes || "" });
+    setForm({ tenderId: g.tenderId || "", guaranteeNumber: g.guaranteeNumber || "", type: g.type || "", bankName: g.bankName || "", amount: g.amount || "", issueDate: g.issueDate || "", expiryDate: g.expiryDate || "", status: g.status, location: g.location || "", notes: g.notes || "" });
     setShowForm(true);
   };
   const openAdd = (preType?: string) => {
@@ -466,6 +491,33 @@ export default function GuaranteesList() {
                   <div>
                     <label style={S.label}>تاريخ الانتهاء</label>
                     <input style={{ ...S.input, direction: "ltr" }} type="date" value={form.expiryDate} onChange={e => setForm(p => ({ ...p, expiryDate: e.target.value }))} />
+                  </div>
+
+                  {/* location */}
+                  <div style={{ gridColumn: "1/-1" }}>
+                    <label style={S.label}>📍 مكان وجود الكفالة</label>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <select
+                        style={{ ...S.select, flex: 1 }}
+                        value={LOCATION_OPTIONS.includes(form.location) ? form.location : (form.location ? "أخرى" : "")}
+                        onChange={e => {
+                          if (e.target.value === "أخرى") setForm(p => ({ ...p, location: "" }));
+                          else setForm(p => ({ ...p, location: e.target.value }));
+                        }}
+                      >
+                        <option value="">— اختر المكان —</option>
+                        {LOCATION_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                      {/* free-text when "أخرى" selected or custom value */}
+                      {(!LOCATION_OPTIONS.slice(0, -1).includes(form.location)) && (
+                        <input
+                          style={{ ...S.input, flex: 1 }}
+                          value={form.location}
+                          onChange={e => setForm(p => ({ ...p, location: e.target.value }))}
+                          placeholder="اكتب المكان..."
+                        />
+                      )}
+                    </div>
                   </div>
 
                   {/* notes */}

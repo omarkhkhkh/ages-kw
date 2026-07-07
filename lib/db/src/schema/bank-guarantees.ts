@@ -13,6 +13,7 @@ export const bankGuaranteesTable = pgTable("bank_guarantees", {
   issueDate: date("issue_date"),
   expiryDate: date("expiry_date"),
   status: text("status").notNull().default("active"), // active, expired, released
+  location: text("location"), // مكان وجود الكفالة (البنك / الخزينة / لدى موظف...)
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

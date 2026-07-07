@@ -14,6 +14,7 @@ import contractsRouter from "./contracts";
 import transportationRouter from "./transportation";
 import financeRouter from "./finance";
 import tasksRouter from "./tasks";
+import practicesRouter from "./practices";
 import { requireAuth, requireEdit, requireModule } from "../middleware/auth";
 import { activityLogger } from "../middleware/activity-logger";
 
@@ -72,5 +73,6 @@ router.use("/bank-guarantees", requireModule("accessGuarantees"), bankGuarantees
 router.use("/contracts", requireModule("accessContracts"), contractsRouter);
 router.use("/transportation", requireModule("accessTransportation"), transportationRouter);
 router.use("/finance", requireModule("accessFinance"), financeRouter);
+router.use("/practices", requireModule("accessTenders"), practicesRouter);
 
 export default router;

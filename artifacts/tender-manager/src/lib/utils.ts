@@ -9,7 +9,9 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatCurrency(value: number | null | undefined): string {
   if (value === null || value === undefined) return "—";
-  return new Intl.NumberFormat('ar-SA', { style: 'currency', currency: 'SAR', maximumFractionDigits: 0 }).format(value);
+  const n = Number(value);
+  if (isNaN(n)) return "—";
+  return n.toLocaleString("en-KW", { minimumFractionDigits: 3, maximumFractionDigits: 3 }) + " د.ك";
 }
 
 export function formatDate(dateStr: string | null | undefined): string {

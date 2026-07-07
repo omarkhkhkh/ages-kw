@@ -4,7 +4,7 @@ import {
   Building2, Users, ClipboardList, ShoppingCart,
   FolderOpen, ShieldCheck, FileSignature,
   Calendar, LogOut, Activity,
-  ChevronDown, Clock, Truck, Wallet, ListChecks,
+  ChevronDown, Clock, Truck, Wallet, ListChecks, ClipboardCheck,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -21,11 +21,12 @@ async function apiFetch<T = any>(url: string): Promise<T> {
 }
 
 /* ── hook: count guarantees expiring within 30 days ── */
-function useExpiringCount() {
+function useExpiringCount(hasAccess: boolean) {
   const { data } = useQuery<any[]>({
     queryKey: ["guarantees-expiring-badge"],
     queryFn: () => apiFetch("/api/bank-guarantees"),
-    refetchInterval: 5 * 60 * 1000, // refresh every 5 min
+    enabled: hasAccess,
+    refetchInterval: hasAccess ? 5 * 60 * 1000 : false,
     staleTime: 2 * 60 * 1000,
   });
   if (!data) return 0;
@@ -52,6 +53,7 @@ const buildNavLinks = (user: AuthUser | null) => {
   return [
     { href: "/",               label: "الرئيسية",               icon: LayoutDashboard, show: true },
     { href: "/tenders",        label: "المناقصات",              icon: FileText,        show: can("accessTenders") },
+    { href: "/practices",      label: "الممارسات",              icon: ClipboardCheck,  show: can("accessTenders") },
     { href: "/entities",       label: "الجهات الحكومية",        icon: Building2,       show: can("accessEntities") },
     { href: "/suppliers",      label: "الموردون",               icon: Users,           show: can("accessSuppliers") },
     { href: "/projects",       label: "المشاريع",               icon: FolderOpen,      show: can("accessProjects") },
@@ -192,7 +194,8 @@ export function Layout({ children }: LayoutProps) {
   const [location, navigate] = useLocation();
   const { user, logout } = useAuth();
   const navLinks = buildNavLinks(user ?? null);
-  const expiringCount = useExpiringCount();
+  const canSeeGuarantees = user?.role === "admin" || !!user?.accessGuarantees;
+  const expiringCount = useExpiringCount(canSeeGuarantees);
 
   return (
     <div style={{ minHeight: "100vh", background: "#f5f0e8", fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif" }} dir="rtl">
@@ -302,7 +305,7 @@ export function Layout({ children }: LayoutProps) {
             <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.55)" }}>
               {(() => {
                 const PAGE_NAMES: Record<string, string> = {
-                  "/tenders": "سجل المناقصات", "/entities": "الجهات الحكومية",
+                  "/tenders": "سجل المناقصات", "/practices": "الممارسات", "/entities": "الجهات الحكومية",
                   "/suppliers": "الموردون", "/projects": "المشاريع",
                   "/guarantees": "الكفالات البنكية", "/contracts": "العقود",
                   "/rfq": "طلبات عروض الأسعار", "/purchase-orders": "أوامر الشراء المباشر",

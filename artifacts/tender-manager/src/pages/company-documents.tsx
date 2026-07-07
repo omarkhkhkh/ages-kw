@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   FileCheck, Plus, Search, Pencil, Trash2, X,
   CheckCircle2, AlertTriangle, Clock, AlertCircle, ExternalLink,
   FileText, Calendar, User, Building2, Hash, Bell, Paperclip,
+  Upload, Loader2,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import FileUpload, { objectPathToUrl } from "@/components/file-upload";
+import { useUpload } from "@workspace/object-storage-web";
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -46,6 +48,67 @@ const S = {
   select: { width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #e5e7eb", fontSize: 13, fontFamily: "inherit", outline: "none", background: "white", boxSizing: "border-box", cursor: "pointer" } as any,
   td: { padding: "12px 16px", borderBottom: "1px solid #f3f4f6", fontSize: 13, verticalAlign: "middle", textAlign: "right" } as any,
 };
+
+/* ── Inline quick-upload button for table rows ── */
+function QuickUpload({ id, fileUrl, apiPath, queryKeys }: {
+  id: number; fileUrl: string | null; apiPath: string; queryKeys: string[][];
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
+
+  const patch = useMutation({
+    mutationFn: (path: string) => fetch(`${apiPath}/${id}`, {
+      method: "PATCH", credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileUrl: path }),
+    }).then(r => r.ok ? r.json() : Promise.reject()),
+    onSuccess: () => queryKeys.forEach(k => qc.invalidateQueries({ queryKey: k })),
+  });
+
+  const { uploadFile, isUploading, progress } = useUpload({
+    onSuccess: (res: { objectPath: string }) => patch.mutate(res.objectPath),
+  });
+
+  const viewUrl = objectPathToUrl(fileUrl);
+
+  if (isUploading) return (
+    <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", borderRadius: 7, background: "#fdf8ec", border: "1px solid #f0e4b0", minWidth: 80 }}>
+      <Loader2 size={11} color={G} style={{ animation: "spin 1s linear infinite", flexShrink: 0 }} />
+      <div style={{ flex: 1, height: 4, borderRadius: 2, background: "#e5e7eb", overflow: "hidden" }}>
+        <div style={{ height: "100%", borderRadius: 2, background: G, width: `${progress}%`, transition: "width 0.3s" }} />
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+      {viewUrl && (
+        <a href={viewUrl} target="_blank" rel="noreferrer"
+          title="عرض الملف"
+          style={{ padding: "5px 8px", borderRadius: 7, border: "1.5px solid #bfdbfe", background: "#eff6ff", color: "#2563eb", display: "flex", alignItems: "center", cursor: "pointer" }}>
+          <ExternalLink size={12} />
+        </a>
+      )}
+      <button type="button" title={fileUrl ? "استبدال الملف" : "رفع ملف"}
+        onClick={() => inputRef.current?.click()}
+        style={{
+          padding: "5px 9px", borderRadius: 7, cursor: "pointer", fontFamily: "inherit",
+          border: `1.5px solid ${fileUrl ? "#e5e7eb" : "rgba(212,165,52,0.5)"}`,
+          background: fileUrl ? "white" : "rgba(212,165,52,0.08)",
+          color: fileUrl ? "#6b7280" : G,
+          display: "flex", alignItems: "center", gap: 4, fontSize: 12,
+        }}>
+        {fileUrl ? <Upload size={12} /> : <Paperclip size={12} />}
+        {fileUrl ? "" : "إرفاق"}
+      </button>
+      <input ref={inputRef} type="file"
+        accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx"
+        style={{ display: "none" }}
+        onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
+      />
+    </div>
+  );
+}
 
 export default function CompanyDocuments() {
   const { user } = useAuth();
@@ -233,13 +296,13 @@ export default function CompanyDocuments() {
                       ) : "—"}
                     </td>
                     <td style={{ ...S.td, whiteSpace: "nowrap" }} >
-                      <div style={{ display: "flex", gap: 5 }}>
-                        {d.fileUrl && (
-                          <a href={d.fileUrl} target="_blank" rel="noreferrer"
-                            style={{ padding: "5px 8px", borderRadius: 7, border: "1.5px solid #e5e7eb", background: "white", cursor: "pointer", color: "#2563eb", display: "flex", alignItems: "center" }}>
-                            <ExternalLink size={12} />
-                          </a>
-                        )}
+                      <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                        <QuickUpload
+                          id={d.id}
+                          fileUrl={d.fileUrl || null}
+                          apiPath="/api/company-documents"
+                          queryKeys={[["company-docs"], ["company-docs-stats"]]}
+                        />
                         {canEdit && (
                           <>
                             <button onClick={() => openEdit(d)} style={{ padding: "5px 10px", borderRadius: 7, border: "1.5px solid #e5e7eb", background: "white", cursor: "pointer", color: "#374151", display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontFamily: "inherit" }}>

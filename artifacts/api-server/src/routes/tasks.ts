@@ -76,7 +76,7 @@ router.get("/unread-notes", async (req: Request, res: Response) => {
 });
 
 const VALID_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
-const VALID_STATUSES   = ["pending", "in_progress", "completed", "cancelled"] as const;
+const VALID_STATUSES   = ["pending", "in_progress", "pending_approval", "completed", "cancelled"] as const;
 
 /* ─── POST /tasks ─── admin only ── */
 router.post("/", async (req: Request, res: Response) => {
@@ -157,7 +157,19 @@ router.patch("/:id", async (req: Request, res: Response) => {
         updates.notesUpdatedAt   = now;
         updates.notesReadByAdmin = false;   // mark unread for admin
       }
-      if (status !== undefined && ["pending", "in_progress"].includes(status)) {
+      if (status !== undefined) {
+        // Finite-state machine for employees — prevents pulling tasks out of approval/completed
+        const EMPLOYEE_TRANSITIONS: Record<string, string[]> = {
+          pending:          ["in_progress", "pending_approval"],
+          in_progress:      ["pending",     "pending_approval"],
+          pending_approval: [],   // locked — employee cannot change once submitted
+          completed:        [],   // locked — admin-only finalized state
+          cancelled:        [],   // locked
+        };
+        const allowed = EMPLOYEE_TRANSITIONS[existing.status] ?? [];
+        if (!allowed.includes(status)) {
+          return res.status(400).json({ error: "تغيير الحالة غير مسموح به في الوقت الحالي" });
+        }
         updates.status = status;
       }
       const [updated] = await db.update(tasksTable).set(updates).where(eq(tasksTable.id, id)).returning(TASK_SELECT);

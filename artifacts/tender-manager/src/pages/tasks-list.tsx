@@ -5,8 +5,8 @@ import { useAuth } from "@/contexts/auth";
 import {
   ClipboardList, Plus, Pencil, Trash2, X, Save,
   CheckCircle2, Clock, AlertCircle, AlertTriangle,
-  MessageSquare, Eye, User, Calendar, Loader2,
-  ChevronDown,
+  MessageSquare, User, Calendar, Loader2,
+  ChevronDown, ThumbsUp, Flag,
 } from "lucide-react";
 
 /* ── Brand ── */
@@ -27,10 +27,11 @@ const PRIORITY_MAP: Record<string, { label: string; color: string; bg: string; i
   urgent: { label: "عاجلة",   color: "#7c3aed", bg: "#f5f3ff",  icon: AlertTriangle },
 };
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
-  pending:     { label: "قيد الانتظار", color: "#d97706", bg: "#fffbeb" },
-  in_progress: { label: "جارٍ التنفيذ", color: "#2563eb", bg: "#eff6ff" },
-  completed:   { label: "مكتملة",       color: "#16a34a", bg: "#f0fdf4" },
-  cancelled:   { label: "ملغاة",        color: "#6b7280", bg: "#f9fafb" },
+  pending:          { label: "قيد الانتظار",       color: "#d97706", bg: "#fffbeb" },
+  in_progress:      { label: "جارٍ التنفيذ",       color: "#2563eb", bg: "#eff6ff" },
+  pending_approval: { label: "في انتظار الموافقة", color: "#7c3aed", bg: "#f5f3ff" },
+  completed:        { label: "مكتملة ✓",            color: "#16a34a", bg: "#f0fdf4" },
+  cancelled:        { label: "ملغاة",               color: "#6b7280", bg: "#f9fafb" },
 };
 
 interface Task {
@@ -286,9 +287,10 @@ function NotesModal({ task, onClose, isAdmin }: { task: Task; onClose: () => voi
 /* ════════════════════════════════
    TASK CARD
 ════════════════════════════════ */
-function TaskCard({ task, isAdmin, onEdit, onDelete, onNotes }: {
+function TaskCard({ task, isAdmin, onEdit, onDelete, onNotes, onMarkDone, onApprove }: {
   task: Task; isAdmin: boolean;
   onEdit: () => void; onDelete: () => void; onNotes: () => void;
+  onMarkDone: () => void; onApprove: () => void;
 }) {
   const pri = PRIORITY_MAP[task.priority] ?? PRIORITY_MAP.medium;
   const sta = STATUS_MAP[task.status]     ?? STATUS_MAP.pending;
@@ -297,13 +299,20 @@ function TaskCard({ task, isAdmin, onEdit, onDelete, onNotes }: {
   const isOverdue = task.dueDate && task.status !== "completed" && task.status !== "cancelled"
     && new Date(task.dueDate) < new Date();
 
-  return (
-    <div style={{ background: "white", borderRadius: 16, border: `1.5px solid ${isOverdue ? "#fecaca" : "#f0ead8"}`, boxShadow: isOverdue ? "0 2px 14px rgba(220,38,38,0.08)" : "0 2px 10px rgba(0,0,0,0.05)", overflow: "hidden", transition: "transform 0.12s, box-shadow 0.12s" }}
-      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 24px rgba(0,0,0,0.1)"; }}
-      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; (e.currentTarget as HTMLElement).style.boxShadow = isOverdue ? "0 2px 14px rgba(220,38,38,0.08)" : "0 2px 10px rgba(0,0,0,0.05)"; }}>
+  const isPendingApproval = task.status === "pending_approval";
+  const isActive = task.status === "pending" || task.status === "in_progress";
+  const isCompleted = task.status === "completed";
 
-      {/* Priority stripe */}
-      <div style={{ height: 4, background: `linear-gradient(90deg,${pri.color},${pri.color}44)` }} />
+  const borderColor = isPendingApproval ? "#c4b5fd" : isOverdue ? "#fecaca" : isCompleted ? "#bbf7d0" : "#f0ead8";
+  const shadowColor = isPendingApproval ? "rgba(124,58,237,0.10)" : isOverdue ? "rgba(220,38,38,0.08)" : "rgba(0,0,0,0.05)";
+
+  return (
+    <div style={{ background: isCompleted ? "#fafffe" : isPendingApproval ? "#fdfcff" : "white", borderRadius: 16, border: `1.5px solid ${borderColor}`, boxShadow: `0 2px 14px ${shadowColor}`, overflow: "hidden", transition: "transform 0.12s, box-shadow 0.12s" }}
+      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 24px rgba(0,0,0,0.1)"; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; (e.currentTarget as HTMLElement).style.boxShadow = `0 2px 14px ${shadowColor}`; }}>
+
+      {/* Priority stripe — purple for pending_approval, green for completed */}
+      <div style={{ height: 4, background: isPendingApproval ? "linear-gradient(90deg,#7c3aed,#c4b5fd)" : isCompleted ? "linear-gradient(90deg,#16a34a,#86efac)" : `linear-gradient(90deg,${pri.color},${pri.color}44)` }} />
 
       <div style={{ padding: "16px 18px" }}>
         {/* Top row */}
@@ -311,6 +320,12 @@ function TaskCard({ task, isAdmin, onEdit, onDelete, onNotes }: {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
               <span style={{ fontSize: 14, fontWeight: 800, color: GR }}>{task.title}</span>
+              {/* Pending approval badge */}
+              {isPendingApproval && (
+                <span style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 8, background: "#f5f3ff", color: "#7c3aed", fontSize: 11, fontWeight: 700, border: "1px solid #ddd6fe" }}>
+                  <Flag size={10} /> في انتظار الموافقة
+                </span>
+              )}
               {/* Unread notes badge */}
               {isAdmin && !task.notesReadByAdmin && task.employeeNotes && (
                 <span style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 8, background: "#fef9c3", color: "#b45309", fontSize: 11, fontWeight: 700, border: "1px solid #fde68a" }}>
@@ -328,11 +343,28 @@ function TaskCard({ task, isAdmin, onEdit, onDelete, onNotes }: {
           </div>
 
           {/* Actions */}
-          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
             <button onClick={onNotes} title={isAdmin ? "عرض الملاحظات" : "ملاحظاتي"}
               style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: (!task.notesReadByAdmin && task.employeeNotes && isAdmin) ? "#fef9c3" : "#f8fafc", color: (!task.notesReadByAdmin && task.employeeNotes && isAdmin) ? "#b45309" : "#64748b", border: `1px solid ${(!task.notesReadByAdmin && task.employeeNotes && isAdmin) ? "#fde68a" : "#e2e8f0"}`, cursor: "pointer", fontFamily: "inherit" }}>
-              <MessageSquare size={12} /> {isAdmin ? "ملاحظة" : "أضف ملاحظة"}
+              <MessageSquare size={12} /> {isAdmin ? "ملاحظة" : "ملاحظة"}
             </button>
+
+            {/* ── Employee: "أنهيت المهمة" button ── */}
+            {!isAdmin && isActive && (
+              <button onClick={onMarkDone}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 800, background: "linear-gradient(135deg,#7c3aed,#6d28d9)", border: "none", color: "white", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 2px 8px rgba(124,58,237,0.3)" }}>
+                <CheckCircle2 size={12} /> أنهيت المهمة
+              </button>
+            )}
+
+            {/* ── Admin: "موافقة على الإنجاز" button ── */}
+            {isAdmin && isPendingApproval && (
+              <button onClick={onApprove}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 800, background: "linear-gradient(135deg,#16a34a,#15803d)", border: "none", color: "white", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 2px 8px rgba(22,163,74,0.3)" }}>
+                <ThumbsUp size={12} /> موافقة على الإنجاز
+              </button>
+            )}
+
             {isAdmin && (
               <>
                 <button onClick={onEdit} style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", cursor: "pointer", fontFamily: "inherit" }}><Pencil size={12} /></button>
@@ -357,9 +389,14 @@ function TaskCard({ task, isAdmin, onEdit, onDelete, onNotes }: {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 11, color: "#9ca3af" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <Clock size={11} /> تاريخ الطلب: {fmtDate(task.createdAt)}
+              <Clock size={11} /> {fmtDate(task.createdAt)}
             </span>
-            {task.dueDate && (
+            {isCompleted && task.completedAt && (
+              <span style={{ display: "flex", alignItems: "center", gap: 4, color: "#16a34a", fontWeight: 700 }}>
+                <CheckCircle2 size={11} /> أُنجزت: {fmtDate(task.completedAt)}
+              </span>
+            )}
+            {!isCompleted && task.dueDate && (
               <span style={{ display: "flex", alignItems: "center", gap: 4, color: isOverdue ? "#dc2626" : "#9ca3af", fontWeight: isOverdue ? 700 : 400 }}>
                 <Calendar size={11} /> {isOverdue ? "متأخرة!" : "يستحق:"} {fmtDate(task.dueDate)}
               </span>
@@ -379,7 +416,7 @@ export default function TasksList() {
   const isAdminUser = user?.role === "admin";
   const qc = useQueryClient();
 
-  const [tab,        setTab]        = useState<"all"|"pending"|"notes">("all");
+  const [tab,        setTab]        = useState<"all"|"pending"|"approval"|"completed"|"notes">("all");
   const [showForm,   setShowForm]   = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [notesTask,  setNotesTask]  = useState<Task | null>(null);
@@ -409,26 +446,40 @@ export default function TasksList() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
   });
 
+  const patchStatusMut = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) =>
+      apiFetch(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["tasks-unread"] });
+    },
+  });
+
   const filteredTasks = tasks.filter(t => {
-    if (tab === "pending")  return t.status === "pending" || t.status === "in_progress";
-    if (tab === "notes")    return isAdminUser && t.employeeNotes && t.employeeNotes.trim() !== "";
-    if (filterPri !== "all") return t.priority === filterPri;
+    if (tab === "pending")   return t.status === "pending" || t.status === "in_progress";
+    if (tab === "approval")  return t.status === "pending_approval";
+    if (tab === "completed") return t.status === "completed";
+    if (tab === "notes")     return isAdminUser && t.employeeNotes && t.employeeNotes.trim() !== "";
     return true;
-  }).filter(t => filterPri === "all" || tab === "notes" || t.priority === filterPri);
+  }).filter(t => filterPri === "all" || tab === "notes" || tab === "completed" || t.priority === filterPri);
 
   const unreadCount = unreadData?.count ?? 0;
 
+  const approvalCount  = tasks.filter(t => t.status === "pending_approval").length;
+  const completedCount = tasks.filter(t => t.status === "completed").length;
+
   const statCards = isAdminUser ? [
-    { label: "إجمالي المهام",    value: tasks.length,                                          color: "#374151", bg: "#f9fafb" },
-    { label: "قيد الانتظار",    value: tasks.filter(t => t.status === "pending").length,       color: "#d97706", bg: "#fffbeb" },
-    { label: "جارٍ التنفيذ",    value: tasks.filter(t => t.status === "in_progress").length,   color: "#2563eb", bg: "#eff6ff" },
-    { label: "مكتملة",           value: tasks.filter(t => t.status === "completed").length,    color: "#16a34a", bg: "#f0fdf4" },
-    { label: "ملاحظات جديدة",   value: unreadCount,                                            color: "#b45309", bg: "#fef9c3" },
+    { label: "إجمالي المهام",        value: tasks.length,                                        color: "#374151", bg: "#f9fafb" },
+    { label: "قيد الانتظار",        value: tasks.filter(t => t.status === "pending").length,     color: "#d97706", bg: "#fffbeb" },
+    { label: "جارٍ التنفيذ",        value: tasks.filter(t => t.status === "in_progress").length, color: "#2563eb", bg: "#eff6ff" },
+    { label: "تنتظر الموافقة",      value: approvalCount,                                        color: "#7c3aed", bg: "#f5f3ff" },
+    { label: "مكتملة",               value: completedCount,                                       color: "#16a34a", bg: "#f0fdf4" },
+    { label: "ملاحظات جديدة",       value: unreadCount,                                          color: "#b45309", bg: "#fef9c3" },
   ] : [
-    { label: "مهامي",             value: tasks.length,                                          color: "#374151", bg: "#f9fafb" },
-    { label: "قيد الانتظار",    value: tasks.filter(t => t.status === "pending").length,       color: "#d97706", bg: "#fffbeb" },
-    { label: "جارٍ التنفيذ",    value: tasks.filter(t => t.status === "in_progress").length,   color: "#2563eb", bg: "#eff6ff" },
-    { label: "مكتملة",           value: tasks.filter(t => t.status === "completed").length,    color: "#16a34a", bg: "#f0fdf4" },
+    { label: "مهامي",                value: tasks.length,                                        color: "#374151", bg: "#f9fafb" },
+    { label: "قيد الانتظار",        value: tasks.filter(t => t.status === "pending").length,     color: "#d97706", bg: "#fffbeb" },
+    { label: "جارٍ التنفيذ",        value: tasks.filter(t => t.status === "in_progress").length, color: "#2563eb", bg: "#eff6ff" },
+    { label: "مكتملة",               value: completedCount,                                       color: "#16a34a", bg: "#f0fdf4" },
   ];
 
   return (
@@ -476,22 +527,33 @@ export default function TasksList() {
 
       {/* Tabs + filter */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", gap: 4, background: "white", borderRadius: 12, border: "1.5px solid #f0ead8", padding: 4 }}>
+        <div style={{ display: "flex", gap: 4, background: "white", borderRadius: 12, border: "1.5px solid #f0ead8", padding: 4, flexWrap: "wrap" }}>
           {[
-            { key: "all",     label: "الكل",          count: tasks.length },
-            { key: "pending", label: "النشطة",         count: tasks.filter(t => t.status === "pending" || t.status === "in_progress").length },
-            ...(isAdminUser ? [{ key: "notes", label: "الملاحظات", count: unreadCount }] : []),
-          ].map(t => (
-            <button key={t.key} onClick={() => setTab(t.key as any)}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none", background: tab === t.key ? `linear-gradient(135deg,${G},${GD})` : "transparent", color: tab === t.key ? "white" : "#6b7280", transition: "all 0.15s" }}>
-              {t.label}
-              {t.count > 0 && (
-                <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: tab === t.key ? "rgba(255,255,255,0.25)" : "#f3f4f6", color: tab === t.key ? "white" : "#374151", fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
-                  {t.count}
-                </span>
-              )}
-            </button>
-          ))}
+            { key: "all",       label: "الكل",              count: tasks.length,                                                                    accent: G },
+            { key: "pending",   label: "النشطة",             count: tasks.filter(t => t.status === "pending" || t.status === "in_progress").length,  accent: G },
+            ...(isAdminUser ? [{ key: "approval", label: "تنتظر الموافقة", count: approvalCount,  accent: "#7c3aed" }] : []),
+            { key: "completed", label: "المنجز",             count: completedCount,                                                                  accent: "#16a34a" },
+            ...(isAdminUser ? [{ key: "notes",    label: "الملاحظات",       count: unreadCount,    accent: "#b45309" }] : []),
+          ].map(t => {
+            const isActive = tab === t.key;
+            const bg = isActive
+              ? t.accent === "#7c3aed" ? "linear-gradient(135deg,#7c3aed,#6d28d9)"
+              : t.accent === "#16a34a" ? "linear-gradient(135deg,#16a34a,#15803d)"
+              : t.accent === "#b45309" ? "linear-gradient(135deg,#b45309,#92400e)"
+              : `linear-gradient(135deg,${G},${GD})`
+              : "transparent";
+            return (
+              <button key={t.key} onClick={() => setTab(t.key as any)}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none", background: bg, color: isActive ? "white" : "#6b7280", transition: "all 0.15s" }}>
+                {t.label}
+                {t.count > 0 && (
+                  <span style={{ minWidth: 18, height: 18, borderRadius: 9, background: isActive ? "rgba(255,255,255,0.25)" : "#f3f4f6", color: isActive ? "white" : "#374151", fontSize: 11, fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
+                    {t.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
         <select value={filterPri} onChange={e => setFilterPri(e.target.value)}
           style={{ padding: "8px 12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 12, fontWeight: 600, background: "white", color: "#374151", fontFamily: "inherit", cursor: "pointer" }}>
@@ -523,7 +585,15 @@ export default function TasksList() {
             <TaskCard key={t.id} task={t} isAdmin={isAdminUser}
               onEdit={() => { setEditingTask(t); setShowForm(false); }}
               onDelete={() => { if (confirm(`حذف "${t.title}"؟`)) deleteMut.mutate(t.id); }}
-              onNotes={() => setNotesTask(t)} />
+              onNotes={() => setNotesTask(t)}
+              onMarkDone={() => {
+                if (confirm("هل أنهيت هذه المهمة؟ سيتم إرسالها للمدير للموافقة."))
+                  patchStatusMut.mutate({ id: t.id, status: "pending_approval" });
+              }}
+              onApprove={() => {
+                if (confirm(`الموافقة على إنجاز مهمة "${t.title}"؟`))
+                  patchStatusMut.mutate({ id: t.id, status: "completed" });
+              }} />
           ))}
         </div>
       )}

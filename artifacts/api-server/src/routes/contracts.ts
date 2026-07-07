@@ -111,6 +111,10 @@ router.post("/", async (req: Request, res: Response) => {
 router.patch("/:id", async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
+    const userId  = req.session.userId!;
+    const isAdmin = req.session.role === "admin";
+    if (!await canAccessContract(id, userId, isAdmin))
+      return res.status(403).json({ error: "لا تملك صلاحية تعديل هذا العقد" });
     const data = updateContractSchema.parse(req.body);
     const [contract] = await db
       .update(contractsTable)
@@ -128,6 +132,10 @@ router.patch("/:id", async (req: Request, res: Response) => {
 router.delete("/:id", async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
+    const userId  = req.session.userId!;
+    const isAdmin = req.session.role === "admin";
+    if (!await canAccessContract(id, userId, isAdmin))
+      return res.status(403).json({ error: "لا تملك صلاحية حذف هذا العقد" });
     await db.delete(contractsTable).where(eq(contractsTable.id, id));
     return res.status(204).send();
   } catch {

@@ -106,3 +106,17 @@ export const contractsApi = {
   // Dashboard badge
   unreadCommentsCount: () => apiFetch<{ count: number }>("/api/contracts/meta/unread-comments"),
 };
+
+// ── Record-level permissions (admin) ──────────────────────────────────────
+export const permissionsApi = {
+  /** Get all tenders + contracts with can_view flag for a specific employee */
+  getRecord: (userId: number) =>
+    apiFetch<{ tenders: any[]; contracts: any[] }>(`/api/admin/users/${userId}/record-permissions`),
+
+  /** Set can_view for a single tender or contract */
+  setRecord: (userId: number, type: "tender" | "contract", recordId: number, canView: boolean) =>
+    apiFetch<{ ok: boolean }>(`/api/admin/users/${userId}/record-permissions`, {
+      method: "PUT",
+      body: JSON.stringify({ type, recordId, canView }),
+    }),
+};

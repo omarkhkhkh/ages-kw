@@ -219,6 +219,106 @@ router.get("/users/:id/profile", async (req, res) => {
   res.json({ user, tenders, contracts, projects, income, sales });
 });
 
+/* ══════════════════════════════════════════════════
+   PER-RECORD PERMISSIONS  (tenders + contracts)
+══════════════════════════════════════════════════ */
+
+// GET /api/admin/users/:id/record-permissions
+// Returns every tender and contract with that employee's can_view flag
+router.get("/users/:id/record-permissions", async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId) || userId <= 0)
+    return res.status(400).json({ error: "معرّف غير صالح" });
+
+  try {
+    const { rows: tenders } = await pool.query(`
+      SELECT t.id,
+             t.tender_number       AS "tenderNumber",
+             t.project_name        AS "projectName",
+             t.government_entity   AS "governmentEntity",
+             t.status,
+             COALESCE(tp.can_view, true) AS "canView"
+      FROM tenders t
+      LEFT JOIN tender_permissions tp
+             ON tp.tender_id = t.id AND tp.user_id = $1
+      ORDER BY t.created_at DESC
+    `, [userId]);
+
+    const { rows: contracts } = await pool.query(`
+      SELECT c.id,
+             c.contract_number AS "contractNumber",
+             ge.name           AS "governmentEntity",
+             c.status,
+             COALESCE(cp.can_view, true) AS "canView"
+      FROM contracts c
+      LEFT JOIN government_entities ge ON ge.id = c.government_entity_id
+      LEFT JOIN contract_permissions cp
+             ON cp.contract_id = c.id AND cp.user_id = $1
+      ORDER BY c.created_at DESC
+    `, [userId]);
+
+    return res.json({ tenders, contracts });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في جلب الصلاحيات" });
+  }
+});
+
+// PUT /api/admin/users/:id/record-permissions
+// Body: { type: "tender"|"contract", recordId: number, canView: boolean }
+router.put("/users/:id/record-permissions", async (req, res) => {
+  const userId = Number(req.params.id);
+  const { type, recordId, canView } = req.body as any;
+
+  if (!Number.isInteger(userId) || userId <= 0)
+    return res.status(400).json({ error: "معرّف مستخدم غير صالح" });
+  if (!Number.isInteger(Number(recordId)) || Number(recordId) <= 0)
+    return res.status(400).json({ error: "معرّف السجل غير صالح" });
+  if (typeof canView !== "boolean")
+    return res.status(400).json({ error: "قيمة canView يجب أن تكون boolean" });
+  if (type !== "tender" && type !== "contract")
+    return res.status(400).json({ error: "النوع غير صالح — يجب tender أو contract" });
+
+  try {
+    // Validate user exists and is an employee
+    const { rows: users } = await pool.query(
+      `SELECT id, role FROM users WHERE id = $1`, [userId]
+    );
+    if (users.length === 0) return res.status(404).json({ error: "المستخدم غير موجود" });
+    if (users[0].role === "admin") return res.status(400).json({ error: "لا يمكن تقييد صلاحيات المدير" });
+
+    // Validate record exists
+    const rid = Number(recordId);
+    if (type === "tender") {
+      const { rows: rec } = await pool.query(`SELECT id FROM tenders WHERE id=$1`, [rid]);
+      if (rec.length === 0) return res.status(404).json({ error: "المناقصة غير موجودة" });
+    } else {
+      const { rows: rec } = await pool.query(`SELECT id FROM contracts WHERE id=$1`, [rid]);
+      if (rec.length === 0) return res.status(404).json({ error: "العقد غير موجود" });
+    }
+
+    if (type === "tender") {
+      await pool.query(`
+        INSERT INTO tender_permissions (tender_id, user_id, can_view)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (tender_id, user_id) DO UPDATE SET can_view = EXCLUDED.can_view
+      `, [Number(recordId), userId, canView]);
+    } else if (type === "contract") {
+      await pool.query(`
+        INSERT INTO contract_permissions (contract_id, user_id, can_view)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (contract_id, user_id) DO UPDATE SET can_view = EXCLUDED.can_view
+      `, [Number(recordId), userId, canView]);
+    } else {
+      return res.status(400).json({ error: "النوع غير صالح — يجب tender أو contract" });
+    }
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في تحديث الصلاحية" });
+  }
+});
+
 // DELETE /api/admin/users/:id
 router.delete("/users/:id", async (req, res) => {
   const id = Number(req.params.id);

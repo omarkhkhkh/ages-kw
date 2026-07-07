@@ -13,3 +13,4 @@ export * from "./transport-teams";
 export * from "./transport-tasks";
 export * from "./finance";
 export * from "./tasks";
+export * from "./tender-permissions";

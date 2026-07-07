@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { eq, ilike, or, sql, and } from "drizzle-orm";
-import { db, tendersTable } from "@workspace/db";
+import { db, tendersTable, pool } from "@workspace/db";
 
 const router = Router();
 
@@ -46,8 +46,22 @@ const VALID_STATUSES = [
 // GET /api/tenders
 router.get("/", async (req: Request, res: Response): Promise<void> => {
   const { status, entity, urgent, won, engineer, search } = req.query;
+  const userId  = req.session.userId!;
+  const isAdmin = req.session.role === "admin";
 
   const conditions: ReturnType<typeof eq>[] = [];
+
+  // Employees: hide tenders where the admin has set can_view = false
+  if (!isAdmin) {
+    conditions.push(
+      sql`NOT EXISTS (
+        SELECT 1 FROM tender_permissions tp
+        WHERE tp.tender_id = ${tendersTable.id}
+          AND tp.user_id   = ${userId}
+          AND tp.can_view  = false
+      )` as ReturnType<typeof eq>
+    );
+  }
 
   if (status && typeof status === "string") {
     conditions.push(eq(tendersTable.status, status));
@@ -80,23 +94,17 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
     conditions.push(
       or(
         ilike(tendersTable.tenderNumber, `%${search}%`),
-        ilike(tendersTable.projectName, `%${search}%`),
+        ilike(tendersTable.projectName,  `%${search}%`),
         ilike(tendersTable.governmentEntity, `%${search}%`)
       ) as ReturnType<typeof eq>
     );
   }
 
-  const rows =
-    conditions.length > 0
-      ? await db
-          .select()
-          .from(tendersTable)
-          .where(and(...conditions))
-          .orderBy(sql`${tendersTable.createdAt} DESC`)
-      : await db
-          .select()
-          .from(tendersTable)
-          .orderBy(sql`${tendersTable.createdAt} DESC`);
+  const rows = await db
+    .select()
+    .from(tendersTable)
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(sql`${tendersTable.createdAt} DESC`);
 
   res.json(rows.map(formatTender));
 });
@@ -160,6 +168,18 @@ router.get("/:id", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
+  // Employees: check if this tender is explicitly blocked
+  if (req.session.role !== "admin") {
+    const { rows: blocked } = await pool.query(
+      `SELECT 1 FROM tender_permissions WHERE tender_id=$1 AND user_id=$2 AND can_view=false`,
+      [id, req.session.userId]
+    );
+    if (blocked.length > 0) {
+      res.status(403).json({ error: "لا تملك صلاحية الوصول إلى هذه المناقصة" });
+      return;
+    }
+  }
+
   const rows = await db
     .select()
     .from(tendersTable)
@@ -219,6 +239,18 @@ router.patch("/:id", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
+  // Employees must not mutate blocked records
+  if (req.session.role !== "admin") {
+    const { rows: blocked } = await pool.query(
+      `SELECT 1 FROM tender_permissions WHERE tender_id=$1 AND user_id=$2 AND can_view=false`,
+      [id, req.session.userId]
+    );
+    if (blocked.length > 0) {
+      res.status(403).json({ error: "لا تملك صلاحية تعديل هذه المناقصة" });
+      return;
+    }
+  }
+
   const body = req.body as Record<string, unknown>;
   const updates: Record<string, unknown> = { updatedAt: new Date() };
 
@@ -265,6 +297,18 @@ router.delete("/:id", async (req: Request, res: Response): Promise<void> => {
   if (isNaN(id)) {
     res.status(400).json({ error: "Invalid ID" });
     return;
+  }
+
+  // Employees must not delete blocked records
+  if (req.session.role !== "admin") {
+    const { rows: blocked } = await pool.query(
+      `SELECT 1 FROM tender_permissions WHERE tender_id=$1 AND user_id=$2 AND can_view=false`,
+      [id, req.session.userId]
+    );
+    if (blocked.length > 0) {
+      res.status(403).json({ error: "لا تملك صلاحية حذف هذه المناقصة" });
+      return;
+    }
   }
 
   const rows = await db

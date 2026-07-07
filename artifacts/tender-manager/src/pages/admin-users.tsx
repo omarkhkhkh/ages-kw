@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, permissionsApi } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import { Link } from "wouter";
 import {
@@ -9,6 +9,7 @@ import {
   Users, KeyRound, LayoutGrid, Lock, Unlock,
   FileText, FolderOpen, FileSignature, TrendingUp, BarChart3,
   Loader2, DollarSign, Calendar, Building2,
+  ShieldAlert, Search, EyeOff, ChevronDown,
 } from "lucide-react";
 import { formatKuwaitDateTime } from "@/lib/timezone";
 
@@ -565,8 +566,228 @@ function EmployeeProfileModal({ userId, onClose }: { userId: number; onClose: ()
   );
 }
 
+/* ════════════════════════════════════════════════════
+   RECORD PERMISSIONS MODAL
+════════════════════════════════════════════════════ */
+const TENDER_STATUS_AR: Record<string, { label: string; color: string }> = {
+  new:                  { label: "جديدة",            color: "#2563eb" },
+  studying:             { label: "قيد الدراسة",      color: "#7c3aed" },
+  requesting_quotes:    { label: "طلب عروض",         color: "#d97706" },
+  preparing_technical:  { label: "إعداد تقني",       color: "#0891b2" },
+  preparing_financial:  { label: "إعداد مالي",       color: "#0891b2" },
+  management_review:    { label: "مراجعة الإدارة",  color: "#6b7280" },
+  ready_to_submit:      { label: "جاهزة للتقديم",   color: "#16a34a" },
+  submitted:            { label: "مقدّمة",            color: "#16a34a" },
+  under_evaluation:     { label: "قيد التقييم",      color: "#d97706" },
+  won:                  { label: "رست علينا",         color: "#16a34a" },
+  lost:                 { label: "خسرناها",           color: "#dc2626" },
+  cancelled:            { label: "ملغاة",             color: "#6b7280" },
+};
+
+function PermissionsModal({ user, onClose }: { user: UserRow; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<"tenders" | "contracts">("tenders");
+  const [search, setSearch] = useState("");
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["record-permissions", user.id],
+    queryFn: () => permissionsApi.getRecord(user.id),
+    staleTime: 0,
+  });
+
+  /* optimistic toggle state — starts from server data */
+  const [overrides, setOverrides] = useState<Record<string, boolean>>({});
+
+  const key = (type: "t" | "c", id: number) => `${type}:${id}`;
+
+  const setMut = useMutation({
+    mutationFn: ({ type, recordId, canView }: { type: "tender" | "contract"; recordId: number; canView: boolean }) =>
+      permissionsApi.setRecord(user.id, type, recordId, canView),
+    onMutate: ({ type, recordId, canView }) => {
+      // Optimistic update
+      const k = key(type === "tender" ? "t" : "c", recordId);
+      setOverrides(prev => ({ ...prev, [k]: canView }));
+      return { k, prev: overrides[k] };
+    },
+    onError: (_err, _vars, ctx: any) => {
+      // Roll back on failure
+      if (ctx?.k !== undefined) {
+        setOverrides(prev => {
+          const next = { ...prev };
+          if (ctx.prev === undefined) delete next[ctx.k];
+          else next[ctx.k] = ctx.prev;
+          return next;
+        });
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["record-permissions", user.id] }),
+  });
+
+  function toggle(type: "tender" | "contract", recordId: number, current: boolean) {
+    setMut.mutate({ type, recordId, canView: !current });
+  }
+
+  function getCanView(type: "t" | "c", id: number, serverVal: boolean): boolean {
+    const k = key(type, id);
+    return k in overrides ? overrides[k] : serverVal;
+  }
+
+  const tenders   = useMemo(() => (data?.tenders ?? []).filter((t: any) => !search || t.tenderNumber?.includes(search) || t.projectName?.toLowerCase().includes(search.toLowerCase()) || t.governmentEntity?.includes(search)), [data, search]);
+  const contracts = useMemo(() => (data?.contracts ?? []).filter((c: any) => !search || c.contractNumber?.includes(search) || c.governmentEntity?.includes(search)), [data, search]);
+
+  const visibleTenders   = tenders.filter((t: any) => getCanView("t", t.id, t.canView));
+  const blockedTenders   = tenders.filter((t: any) => !getCanView("t", t.id, t.canView));
+  const visibleContracts = contracts.filter((c: any) => getCanView("c", c.id, c.canView));
+  const blockedContracts = contracts.filter((c: any) => !getCanView("c", c.id, c.canView));
+
+  const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "9px 38px 9px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 13, background: "#fafaf8", fontFamily: "inherit", outline: "none", color: "#132a18" };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(11,26,16,0.62)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20, backdropFilter: "blur(6px)", animation: "fadeIn 0.2s ease" }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 820, background: "white", borderRadius: 24, boxShadow: "0 40px 100px rgba(0,0,0,0.35)", overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "90vh", animation: "slideUp 0.25s ease" }}>
+
+        {/* Header */}
+        <div style={{ padding: "18px 24px", background: `linear-gradient(135deg,${GR},#1e4028)`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 42, height: 42, borderRadius: 12, background: "rgba(212,165,52,0.2)", border: "1px solid rgba(212,165,52,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <ShieldAlert size={20} color={G} />
+            </div>
+            <div>
+              <h2 style={{ color: "white", fontSize: 16, fontWeight: 800, margin: 0 }}>صلاحيات السجلات — {user.fullName}</h2>
+              <p style={{ color: "rgba(212,165,52,0.55)", fontSize: 12, margin: "2px 0 0" }}>حدّد المناقصات والعقود التي يمكن للموظف الاطلاع عليها</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {/* Summary pills */}
+            {data && (
+              <div style={{ display: "flex", gap: 8 }}>
+                <span style={{ padding: "3px 12px", borderRadius: 20, background: "#f0fdf4", color: "#16a34a", fontSize: 11, fontWeight: 800 }}>
+                  ✓ {visibleTenders.length + visibleContracts.length} مرئي
+                </span>
+                <span style={{ padding: "3px 12px", borderRadius: 20, background: "#fff1f2", color: "#dc2626", fontSize: 11, fontWeight: 800 }}>
+                  ✕ {blockedTenders.length + blockedContracts.length} محجوب
+                </span>
+              </div>
+            )}
+            <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.18)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.7)" }}>
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs + Search */}
+        <div style={{ display: "flex", alignItems: "center", gap: 0, padding: "10px 20px 0", background: "#f9f7f2", borderBottom: "1.5px solid #f0ead8", flexShrink: 0, flexWrap: "wrap" }}>
+          {[
+            { key: "tenders",   label: "المناقصات",  icon: FileText,      visible: visibleTenders.length,   blocked: blockedTenders.length },
+            { key: "contracts", label: "العقود",      icon: FileSignature, visible: visibleContracts.length, blocked: blockedContracts.length },
+          ].map(t => (
+            <button key={t.key} onClick={() => { setTab(t.key as any); setSearch(""); }}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: "10px 10px 0 0", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none", background: tab === t.key ? "white" : "transparent", color: tab === t.key ? GR : "#6b7280", borderBottom: tab === t.key ? `2px solid ${G}` : "2px solid transparent", whiteSpace: "nowrap" }}>
+              <t.icon size={14} color={tab === t.key ? G : "#9ca3af"} />
+              {t.label}
+              {t.visible > 0 && <span style={{ padding: "1px 7px", borderRadius: 8, background: "#f0fdf4", color: "#16a34a", fontSize: 10, fontWeight: 800 }}>{t.visible}</span>}
+              {t.blocked > 0 && <span style={{ padding: "1px 7px", borderRadius: 8, background: "#fff1f2", color: "#dc2626", fontSize: 10, fontWeight: 800 }}>محجوب {t.blocked}</span>}
+            </button>
+          ))}
+          {/* Search */}
+          <div style={{ marginRight: "auto", position: "relative", marginBottom: 6 }}>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="بحث..." style={{ ...inp, width: 200, paddingRight: 34 }} />
+            <Search size={14} color="#9ca3af" style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {isLoading ? (
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: 60 }}>
+              <Loader2 size={28} color="#94a3b8" style={{ animation: "spin 1s linear infinite" }} />
+            </div>
+          ) : isError ? (
+            <div style={{ padding: 48, textAlign: "center" }}>
+              <p style={{ color: "#dc2626", fontWeight: 700 }}>تعذّر تحميل البيانات</p>
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#fdf8ec", borderBottom: "2px solid #f0ead8" }}>
+                  {tab === "tenders"
+                    ? ["رقم المناقصة", "المشروع", "الجهة", "الحالة", "الوصول"].map(h => <th key={h} style={{ padding: "11px 16px", textAlign: "right", fontSize: 11, fontWeight: 800, color: "#6b7280", whiteSpace: "nowrap" }}>{h}</th>)
+                    : ["رقم العقد", "الجهة", "الحالة", "الوصول"].map(h => <th key={h} style={{ padding: "11px 16px", textAlign: "right", fontSize: 11, fontWeight: 800, color: "#6b7280" }}>{h}</th>)
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                {tab === "tenders" && tenders.map((t: any) => {
+                  const canView = getCanView("t", t.id, t.canView);
+                  const st = TENDER_STATUS_AR[t.status] ?? { label: t.status, color: "#6b7280" };
+                  return (
+                    <tr key={t.id} style={{ borderBottom: "1px solid #f5f0e6", background: canView ? "white" : "#fef2f2", opacity: setMut.isPending ? 0.85 : 1 }}>
+                      <td style={{ padding: "11px 16px", fontSize: 12, fontWeight: 700, color: "#132a18", whiteSpace: "nowrap" }}>{t.tenderNumber ?? "—"}</td>
+                      <td style={{ padding: "11px 16px", fontSize: 12, color: "#374151", maxWidth: 200 }}>
+                        <span style={{ display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{t.projectName ?? "—"}</span>
+                      </td>
+                      <td style={{ padding: "11px 16px", fontSize: 12, color: "#6b7280", whiteSpace: "nowrap" }}>{t.governmentEntity ?? "—"}</td>
+                      <td style={{ padding: "11px 16px" }}>
+                        <span style={{ padding: "2px 10px", borderRadius: 10, background: `${st.color}12`, color: st.color, fontSize: 10, fontWeight: 700 }}>{st.label}</span>
+                      </td>
+                      <td style={{ padding: "11px 16px" }}>
+                        <button onClick={() => toggle("tender", t.id, canView)}
+                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700, transition: "all 0.15s", background: canView ? "#f0fdf4" : "#fff1f2", color: canView ? "#16a34a" : "#dc2626" }}>
+                          {canView ? <Eye size={13} /> : <EyeOff size={13} />}
+                          {canView ? "يطلع" : "محجوب"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {tab === "contracts" && contracts.map((c: any) => {
+                  const canView = getCanView("c", c.id, c.canView);
+                  return (
+                    <tr key={c.id} style={{ borderBottom: "1px solid #f5f0e6", background: canView ? "white" : "#fef2f2", opacity: setMut.isPending ? 0.85 : 1 }}>
+                      <td style={{ padding: "11px 16px", fontSize: 12, fontWeight: 700, color: "#132a18", whiteSpace: "nowrap" }}>{c.contractNumber ?? "—"}</td>
+                      <td style={{ padding: "11px 16px", fontSize: 12, color: "#6b7280" }}>{c.governmentEntity ?? "—"}</td>
+                      <td style={{ padding: "11px 16px" }}>
+                        <span style={{ padding: "2px 10px", borderRadius: 10, background: "#f1f5f9", color: "#475569", fontSize: 10, fontWeight: 700 }}>{c.status ?? "—"}</span>
+                      </td>
+                      <td style={{ padding: "11px 16px" }}>
+                        <button onClick={() => toggle("contract", c.id, canView)}
+                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 700, transition: "all 0.15s", background: canView ? "#f0fdf4" : "#fff1f2", color: canView ? "#16a34a" : "#dc2626" }}>
+                          {canView ? <Eye size={13} /> : <EyeOff size={13} />}
+                          {canView ? "يطلع" : "محجوب"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {((tab === "tenders" && tenders.length === 0) || (tab === "contracts" && contracts.length === 0)) && (
+                  <tr><td colSpan={5} style={{ padding: 48, textAlign: "center", color: "#d1d5db", fontSize: 13 }}>
+                    {search ? "لا نتائج للبحث" : tab === "tenders" ? "لا توجد مناقصات" : "لا توجد عقود"}
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "12px 24px", borderTop: "1px solid #f0ead8", background: "#fafaf8", display: "flex", alignItems: "center", gap: 12, flexShrink: 0, direction: "rtl" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#16a34a", display: "block" }} />
+            <span style={{ fontSize: 11, color: "#6b7280" }}>يطلع — الموظف يرى هذا السجل</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#dc2626", display: "block" }} />
+            <span style={{ fontSize: 11, color: "#6b7280" }}>محجوب — الموظف لا يرى هذا السجل</span>
+          </div>
+          <span style={{ marginRight: "auto", fontSize: 11, color: "#d1d5db" }}>الإعداد الافتراضي: يطلع على الجميع</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── User Card ── */
-function UserCard({ u, me, onEdit, onDelete, onViewProfile }: { u: UserRow; me: any; onEdit: () => void; onDelete: () => void; onViewProfile: () => void }) {
+function UserCard({ u, me, onEdit, onDelete, onViewProfile, onViewPermissions }: { u: UserRow; me: any; onEdit: () => void; onDelete: () => void; onViewProfile: () => void; onViewPermissions: () => void }) {
   const isAdmin = u.role === "admin";
 
   return (
@@ -604,6 +825,14 @@ function UserCard({ u, me, onEdit, onDelete, onViewProfile }: { u: UserRow; me: 
             onMouseLeave={e => (e.currentTarget.style.background = "#fffbeb")}>
             <Eye size={13} /> الملف
           </button>
+          {u.role !== "admin" && (
+            <button onClick={onViewPermissions} title="صلاحيات السجلات"
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#f5f3ff", color: "#7c3aed", border: "1px solid #ddd6fe", cursor: "pointer", fontFamily: "inherit" }}
+              onMouseEnter={e => (e.currentTarget.style.background = "#ede9fe")}
+              onMouseLeave={e => (e.currentTarget.style.background = "#f5f3ff")}>
+              <ShieldAlert size={13} /> الصلاحيات
+            </button>
+          )}
           <Link href={`/admin/activity-log?userId=${u.id}`}>
             <button title="سجل الحركات"
               style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#f8fafc", color: "#64748b", border: "1px solid #e2e8f0", cursor: "pointer", fontFamily: "inherit" }}>
@@ -674,7 +903,8 @@ export default function AdminUsers() {
   const [editing,       setEditing]       = useState<UserRow | null>(null);
   const [form,          setForm]          = useState({ ...defaultForm });
   const [newPass,       setNewPass]       = useState("");
-  const [profileUserId, setProfileUserId] = useState<number | null>(null);
+  const [profileUserId,     setProfileUserId]     = useState<number | null>(null);
+  const [permissionsUser,   setPermissionsUser]   = useState<UserRow | null>(null);
 
   const { data: users = [], isLoading } = useQuery<UserRow[]>({
     queryKey: ["admin-users"],
@@ -737,6 +967,11 @@ export default function AdminUsers() {
       {/* Employee profile modal */}
       {profileUserId !== null && (
         <EmployeeProfileModal userId={profileUserId} onClose={() => setProfileUserId(null)} />
+      )}
+
+      {/* Record permissions modal */}
+      {permissionsUser !== null && (
+        <PermissionsModal user={permissionsUser} onClose={() => setPermissionsUser(null)} />
       )}
 
       {/* User form modal */}
@@ -812,6 +1047,7 @@ export default function AdminUsers() {
               onEdit={() => { closeAll(); setEditing({ ...u }); }}
               onDelete={() => { if (confirm(`حذف ${u.fullName}؟`)) deleteMut.mutate(u.id); }}
               onViewProfile={() => setProfileUserId(u.id)}
+              onViewPermissions={() => setPermissionsUser(u)}
             />
           ))}
         </div>

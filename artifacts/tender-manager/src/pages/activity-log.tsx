@@ -6,8 +6,8 @@ import { useLocation } from "wouter";
 import { formatKuwaitDateTime } from "@/lib/timezone";
 import {
   Activity, LogIn, LogOut, Plus, Pencil, Trash2,
-  Download, Filter, Users, ChevronRight, ChevronLeft,
-  Search, Clock, Shield, AlertTriangle,
+  Download, ChevronRight, ChevronLeft,
+  Clock, Shield, AlertTriangle,
 } from "lucide-react";
 
 /* ─── Brand palette ─── */
@@ -114,7 +114,6 @@ export default function ActivityLog() {
   const [filterAction, setFilterAction] = useState("");
   const [filterModule, setFilterModule] = useState("");
   const [filterPeriod, setFilterPeriod] = useState("week");
-  const [search,       setSearch]       = useState("");
   const [page,         setPage]         = useState(0);
 
   /* Sync userId from URL on navigation */
@@ -123,7 +122,7 @@ export default function ActivityLog() {
     setFilterUserId(uid);
   }, [location]);
 
-  useEffect(() => { setPage(0); }, [filterUserId, filterAction, filterModule, filterPeriod, search]);
+  useEffect(() => { setPage(0); }, [filterUserId, filterAction, filterModule, filterPeriod]);
 
   /* ── Queries ── */
   const { from, to } = getDateRange(filterPeriod);
@@ -133,12 +132,11 @@ export default function ActivityLog() {
   if (filterModule) qs.set("module", filterModule);
   if (from) qs.set("from", from);
   if (to)   qs.set("to",   to);
-  if (search) qs.set("search", search);
   qs.set("limit",  String(PAGE_SIZE));
   qs.set("offset", String(page * PAGE_SIZE));
 
   const { data: logsData, isLoading } = useQuery<{ logs: LogRow[]; total: number }>({
-    queryKey: ["activity-logs", filterUserId, filterAction, filterModule, filterPeriod, search, page],
+    queryKey: ["activity-logs", filterUserId, filterAction, filterModule, filterPeriod, page],
     queryFn: () => apiFetch(`/api/admin/activity-logs?${qs.toString()}`),
     placeholderData: prev => prev,
   });
@@ -241,14 +239,7 @@ export default function ActivityLog() {
         </div>
 
         {/* Filter controls */}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 12 }}>
-          {/* Search */}
-          <div style={{ position: "relative" }}>
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="بحث في الاسم أو التفاصيل..."
-              style={{ ...inp, paddingRight: 38 }} />
-            <Search size={14} color="#9ca3af" style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
-          </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           {/* Employee */}
           <div>
             <select value={filterUserId} onChange={e => setFilterUserId(e.target.value)} style={inp}>
@@ -273,14 +264,13 @@ export default function ActivityLog() {
         </div>
 
         {/* Active filters strip */}
-        {(filterUserId || filterAction || filterModule || search) && (
+        {(filterUserId || filterAction || filterModule) && (
           <div style={{ marginTop: 12, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600 }}>فعّال:</span>
             {selectedUser && <FilterPill label={`موظف: ${selectedUser.fullName}`} onRemove={() => setFilterUserId("")} />}
             {filterAction && <FilterPill label={`إجراء: ${ACTION_META[filterAction]?.label}`} onRemove={() => setFilterAction("")} />}
             {filterModule && <FilterPill label={`وحدة: ${MODULE_LABELS[filterModule] ?? filterModule}`} onRemove={() => setFilterModule("")} />}
-            {search && <FilterPill label={`بحث: ${search}`} onRemove={() => setSearch("")} />}
-            <button onClick={() => { setFilterUserId(""); setFilterAction(""); setFilterModule(""); setSearch(""); }}
+            <button onClick={() => { setFilterUserId(""); setFilterAction(""); setFilterModule(""); }}
               style={{ fontSize: 11, color: "#dc2626", fontWeight: 700, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", marginRight: 4 }}>
               مسح الكل ×
             </button>

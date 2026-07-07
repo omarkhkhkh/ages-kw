@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  FileCheck, Plus, Search, Download, Pencil, Trash2, X,
+  FileCheck, Plus, Search, Pencil, Trash2, X,
   CheckCircle2, AlertTriangle, Clock, AlertCircle, ExternalLink,
-  FileText, Calendar, User, Building2, Hash, Bell,
+  FileText, Calendar, User, Building2, Hash, Bell, Paperclip,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
+import FileUpload, { objectPathToUrl } from "@/components/file-upload";
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -316,9 +317,13 @@ export default function CompanyDocuments() {
                 <label style={S.label}><User size={10} style={{ display: "inline" }} /> الموظف المسؤول</label>
                 <input style={S.input} value={form.responsibleEmployee} onChange={e => setForm(p => ({ ...p, responsibleEmployee: e.target.value }))} placeholder="اسم الموظف" />
               </div>
-              <div>
-                <label style={S.label}><ExternalLink size={10} style={{ display: "inline" }} /> رابط الملف (PDF)</label>
-                <input type="url" style={S.input} value={form.fileUrl} onChange={e => setForm(p => ({ ...p, fileUrl: e.target.value }))} placeholder="https://..." />
+              <div style={{ gridColumn: "1/-1" }}>
+                <label style={S.label}><Paperclip size={10} style={{ display: "inline" }} /> الملف المرفق</label>
+                <FileUpload
+                  objectPath={form.fileUrl || null}
+                  onChange={path => setForm(p => ({ ...p, fileUrl: path ?? "" }))}
+                  disabled={upsert.isPending}
+                />
               </div>
               <div style={{ gridColumn: "1/-1" }}>
                 <label style={S.label}>ملاحظات</label>

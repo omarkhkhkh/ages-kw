@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import storageRouter from "./storage";
 import authRouter from "./auth";
 import adminRouter from "./admin";
 import activityLogsRouter from "./activity-logs";
@@ -24,6 +25,7 @@ const router: IRouter = Router();
 
 // Public routes
 router.use(healthRouter);
+router.use(storageRouter);
 router.use("/auth", authRouter);
 
 // Admin routes (admin-only check is inside adminRouter / activityLogsRouter)

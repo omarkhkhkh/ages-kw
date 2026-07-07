@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './errorEnvelope';
 export * from './errorResponse';
 export * from './healthStatus';
 export * from './listTendersParams';
@@ -17,3 +18,5 @@ export * from './tenderStats';
 export * from './tenderStatus';
 export * from './tenderUpdate';
 export * from './tenderUpdateStatus';
+export * from './uploadUrlRequest';
+export * from './uploadUrlResponse';

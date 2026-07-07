@@ -6,3 +6,4 @@
 - [Finance module access control](finance-access-control.md) — employee_sales PATCH must verify ownership (employeeId === session.userId) before updating; totalContractAmount + profitAmount are admin-only masked fields.
 - [Task management ownership rules](task-management.md) — tasks PATCH: admin updates all fields; employee updates own notes + status only; requireEdit is bypassed for /tasks via route placement after the requireEdit block.
 - [Company docs & gov registrations modules](company-docs-gov-reg.md) — both use requireModule("accessTenders") + ModuleGuard; nav show: isAdmin || can("accessTenders"); DELETE uses .returning() to detect missing records.
+- [Object Storage / file upload setup](object-storage-setup.md) — lib/object-storage-web needs composite:true in tsconfig; storageRouter mounted before requireAuth; upload endpoint uses hasAuthenticatedSession (checks req.isAuthenticated); fileUrl column stores objectPath.

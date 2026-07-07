@@ -374,6 +374,174 @@ router.post("/import/expenses", upload.single("file"), async (req: Request, res:
 });
 
 /* ══════════════════════════════════════
+   EXPENSES BY CATEGORY (admin only)
+══════════════════════════════════════ */
+router.get("/expenses/by-category", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        category,
+        COUNT(*)::int                                                          AS count,
+        COALESCE(SUM(amount),0)::numeric                                      AS total,
+        COALESCE(SUM(CASE WHEN status='paid'    THEN amount ELSE 0 END),0)::numeric AS paid,
+        COALESCE(SUM(CASE WHEN status='pending' THEN amount ELSE 0 END),0)::numeric AS pending,
+        COALESCE(SUM(CASE WHEN status='overdue' THEN amount ELSE 0 END),0)::numeric AS overdue
+      FROM finance_expenses
+      GROUP BY category
+      ORDER BY total DESC
+    `);
+    const grandTotal = rows.reduce((s: number, r: any) => s + Number(r.total), 0);
+    const data = rows.map((r: any) => ({
+      ...r,
+      pct: grandTotal > 0 ? ((Number(r.total) / grandTotal) * 100).toFixed(1) : "0.0",
+    }));
+    return res.json({ rows: data, grandTotal });
+  } catch {
+    return res.status(500).json({ error: "فشل في جلب التصنيفات" });
+  }
+});
+
+/* ══════════════════════════════════════
+   FILTERED EXPENSES EXPORT (admin only)
+══════════════════════════════════════ */
+router.get("/export/expenses-filtered", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    const { category, status, dateFrom, dateTo } = req.query as Record<string, string>;
+    const conditions: string[] = [];
+    const params: any[] = [];
+    if (category && category !== "all") { params.push(category); conditions.push(`category = ${params.length}`); }
+    if (status   && status   !== "all") { params.push(status);   conditions.push(`status = ${params.length}`); }
+    if (dateFrom) { params.push(dateFrom); conditions.push(`due_date >= ${params.length}`); }
+    if (dateTo)   { params.push(dateTo);   conditions.push(`due_date <= ${params.length}`); }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    const { rows } = await pool.query(`
+      SELECT description AS "الوصف", amount AS "المبلغ (د.ك)",
+             due_date AS "تاريخ الاستحقاق", paid_date AS "تاريخ الدفع",
+             status AS "الحالة", category AS "الفئة", vendor AS "المورد/الجهة",
+             notes AS "الملاحظات"
+      FROM finance_expenses ${where}
+      ORDER BY COALESCE(due_date,'9999-12-31'::date) ASC
+    `, params);
+
+    // Translate status/category to Arabic
+    const AR_STATUS: Record<string,string> = { pending: "قيد الانتظار", paid: "مدفوعة", overdue: "متأخرة" };
+    const AR_CAT: Record<string,string> = { general:"عام",salary:"رواتب",rent:"إيجار",utilities:"مرافق",maintenance:"صيانة",tax:"ضرائب",other:"أخرى" };
+    const translated = rows.map((r: any) => ({
+      ...r,
+      "الحالة": AR_STATUS[r["الحالة"]] ?? r["الحالة"],
+      "الفئة":  AR_CAT[r["الفئة"]]    ?? r["الفئة"],
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(translated), "الفواتير");
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    res.setHeader("Content-Disposition", 'attachment; filename="expenses-filtered.xlsx"');
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    return res.send(buf);
+  } catch {
+    return res.status(500).json({ error: "فشل في التصدير" });
+  }
+});
+
+/* ══════════════════════════════════════
+   INCOME STATEMENT EXPORT (admin only)
+   Multi-sheet: P&L summary + by-category + pending + overdue
+══════════════════════════════════════ */
+router.get("/export/income-statement", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    // 1. Top-level summary
+    const { rows: [summary] } = await pool.query(`
+      SELECT
+        (SELECT COALESCE(SUM(amount),0) FROM finance_income)::numeric        AS total_income,
+        (SELECT COALESCE(SUM(amount),0) FROM finance_expenses)::numeric       AS total_expenses,
+        (SELECT COALESCE(SUM(amount),0) FROM finance_expenses WHERE status='paid')::numeric    AS paid_expenses,
+        (SELECT COALESCE(SUM(amount),0) FROM finance_expenses WHERE status='pending')::numeric AS pending_expenses,
+        (SELECT COALESCE(SUM(amount),0) FROM finance_expenses WHERE status='overdue')::numeric AS overdue_expenses
+    `);
+    const netProfit = Number(summary.total_income) - Number(summary.paid_expenses);
+
+    const plRows = [
+      { "البند": "إجمالي الإيرادات",     "المبلغ (د.ك)": Number(summary.total_income).toFixed(3) },
+      { "البند": "إجمالي المصروفات",     "المبلغ (د.ك)": Number(summary.total_expenses).toFixed(3) },
+      { "البند": "— منها مدفوعة",        "المبلغ (د.ك)": Number(summary.paid_expenses).toFixed(3) },
+      { "البند": "— منها قيد الانتظار", "المبلغ (د.ك)": Number(summary.pending_expenses).toFixed(3) },
+      { "البند": "— منها متأخرة",        "المبلغ (د.ك)": Number(summary.overdue_expenses).toFixed(3) },
+      { "البند": "صافي الربح (الإيرادات - المدفوع)", "المبلغ (د.ك)": netProfit.toFixed(3) },
+    ];
+
+    // 2. Income by category
+    const { rows: incCat } = await pool.query(`
+      SELECT category AS "الفئة", COUNT(*)::int AS "العدد",
+             COALESCE(SUM(amount),0)::numeric AS "الإجمالي (د.ك)"
+      FROM finance_income GROUP BY category ORDER BY "الإجمالي (د.ك)" DESC
+    `);
+    const AR_ICAT: Record<string,string> = { contract:"عقد",other:"أخرى",bonus:"مكافأة",penalty:"غرامة" };
+    const incCatAr = incCat.map((r: any) => ({ ...r, "الفئة": AR_ICAT[r["الفئة"]] ?? r["الفئة"] }));
+
+    // 3. Expenses by category with percentages
+    const { rows: expCat } = await pool.query(`
+      SELECT category AS "الفئة",
+             COUNT(*)::int AS "العدد",
+             COALESCE(SUM(amount),0)::numeric AS "الإجمالي (د.ك)",
+             COALESCE(SUM(CASE WHEN status='paid'    THEN amount ELSE 0 END),0)::numeric AS "المدفوع (د.ك)",
+             COALESCE(SUM(CASE WHEN status='pending' THEN amount ELSE 0 END),0)::numeric AS "الانتظار (د.ك)",
+             COALESCE(SUM(CASE WHEN status='overdue' THEN amount ELSE 0 END),0)::numeric AS "المتأخر (د.ك)"
+      FROM finance_expenses GROUP BY category ORDER BY "الإجمالي (د.ك)" DESC
+    `);
+    const AR_ECAT: Record<string,string> = { general:"عام",salary:"رواتب",rent:"إيجار",utilities:"مرافق",maintenance:"صيانة",tax:"ضرائب",other:"أخرى" };
+    const grandExpTotal = expCat.reduce((s: number, r: any) => s + Number(r["الإجمالي (د.ك)"]), 0);
+    const expCatAr = expCat.map((r: any) => ({
+      "الفئة": AR_ECAT[r["الفئة"]] ?? r["الفئة"],
+      "العدد": r["العدد"],
+      "الإجمالي (د.ك)": Number(r["الإجمالي (د.ك)"]).toFixed(3),
+      "المدفوع (د.ك)":  Number(r["المدفوع (د.ك)"]).toFixed(3),
+      "الانتظار (د.ك)": Number(r["الانتظار (د.ك)"]).toFixed(3),
+      "المتأخر (د.ك)":  Number(r["المتأخر (د.ك)"]).toFixed(3),
+      "النسبة %": grandExpTotal > 0 ? ((Number(r["الإجمالي (د.ك)"]) / grandExpTotal) * 100).toFixed(1) + "%" : "0%",
+    }));
+
+    // 4. Pending invoices
+    const { rows: pending } = await pool.query(`
+      SELECT description AS "الوصف", amount AS "المبلغ (د.ك)",
+             due_date AS "تاريخ الاستحقاق", vendor AS "المورد/الجهة",
+             category AS "الفئة"
+      FROM finance_expenses WHERE status='pending'
+      ORDER BY COALESCE(due_date,'9999-12-31'::date) ASC
+    `);
+    const pendingAr = pending.map((r: any) => ({ ...r, "الفئة": AR_ECAT[r["الفئة"]] ?? r["الفئة"] }));
+
+    // 5. Overdue invoices
+    const { rows: overdue } = await pool.query(`
+      SELECT description AS "الوصف", amount AS "المبلغ (د.ك)",
+             due_date AS "تاريخ الاستحقاق", vendor AS "المورد/الجهة",
+             category AS "الفئة"
+      FROM finance_expenses WHERE status='overdue'
+      ORDER BY due_date ASC
+    `);
+    const overdueAr = overdue.map((r: any) => ({ ...r, "الفئة": AR_ECAT[r["الفئة"]] ?? r["الفئة"] }));
+
+    // Build workbook
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(plRows),     "قائمة الدخل");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(incCatAr),   "الإيرادات بالتصنيف");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expCatAr),   "المصروفات بالتصنيف");
+    if (pendingAr.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pendingAr), "الفواتير المستحقة");
+    if (overdueAr.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(overdueAr), "الفواتير المتأخرة");
+
+    const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+    const filename = `income-statement-${new Date().toISOString().slice(0,10)}.xlsx`;
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    return res.send(buf);
+  } catch (err: any) {
+    return res.status(500).json({ error: `فشل في إنشاء قائمة الدخل: ${err.message}` });
+  }
+});
+
+/* ══════════════════════════════════════
    EXCEL EXPORT (admin only)
 ══════════════════════════════════════ */
 router.get("/export/income", async (req: Request, res: Response) => {

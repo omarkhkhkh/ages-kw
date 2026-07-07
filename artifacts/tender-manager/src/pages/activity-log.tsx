@@ -57,7 +57,26 @@ function avatarColor(name: string) {
   return AVATAR_COLORS[i];
 }
 
+/* ─── Relative time helper ─── */
+function timeAgo(dateStr: string | null): string {
+  if (!dateStr) return "لم يسجّل دخول";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return "الآن";
+  if (m < 60) return `قبل ${m} دقيقة`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `قبل ${h} ساعة`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `قبل ${d} يوم`;
+  return new Date(dateStr).toLocaleDateString("ar-KW", { day: "numeric", month: "short" });
+}
+
 /* ─── Types ─── */
+interface UserStatus {
+  id: number; fullName: string; username: string; role: string;
+  lastActivity: string | null; lastLogin: string | null; isOnline: boolean;
+}
+
 interface LogRow {
   id: number; userId: number; username: string; fullName: string;
   action: string; module: string | null; resourceId: number | null;
@@ -146,6 +165,12 @@ export default function ActivityLog() {
     queryFn: () => apiFetch("/api/admin/activity-logs/users"),
   });
 
+  const { data: usersStatus = [] } = useQuery<UserStatus[]>({
+    queryKey: ["activity-log-users-status"],
+    queryFn: () => apiFetch("/api/admin/activity-logs/users-status"),
+    refetchInterval: 30_000, // refresh every 30s
+  });
+
   const logs       = logsData?.logs ?? [];
   const total      = logsData?.total ?? 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -221,6 +246,75 @@ export default function ActivityLog() {
           ))}
         </div>
       </div>
+
+      {/* ── Employee Status Panel ── */}
+      {usersStatus.length > 0 && (
+        <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "14px 20px", boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>
+          {/* Panel header */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#16a34a", boxShadow: "0 0 0 2px #bbf7d0", animation: "pulse 2s infinite" }} />
+              <span style={{ fontSize: 12, fontWeight: 800, color: "#132a18" }}>حالة الموظفين</span>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginRight: "auto" }}>
+              <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 700, background: "#f0fdf4", padding: "2px 10px", borderRadius: 12, border: "1px solid #bbf7d0" }}>
+                متصل {usersStatus.filter(u => u.isOnline).length}
+              </span>
+              <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700, background: "#f8fafc", padding: "2px 10px", borderRadius: 12, border: "1px solid #e2e8f0" }}>
+                غير متصل {usersStatus.filter(u => !u.isOnline).length}
+              </span>
+            </div>
+          </div>
+
+          {/* Scrollable cards row */}
+          <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+            {usersStatus.map(u => {
+              const isSelected = filterUserId === String(u.id);
+              const av = avatarColor(u.fullName);
+              return (
+                <button key={u.id}
+                  onClick={() => setFilterUserId(isSelected ? "" : String(u.id))}
+                  style={{
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 6,
+                    padding: "12px 16px", borderRadius: 14, flexShrink: 0, cursor: "pointer",
+                    fontFamily: "inherit", transition: "all 0.15s",
+                    border: `1.5px solid ${isSelected ? G : u.isOnline ? "#bbf7d0" : "#e5e7eb"}`,
+                    background: isSelected ? `${G}12` : u.isOnline ? "#f0fdf4" : "white",
+                    minWidth: 110,
+                  }}>
+                  {/* Avatar with online dot */}
+                  <div style={{ position: "relative" }}>
+                    <div style={{ width: 44, height: 44, borderRadius: "50%", background: av.bg, border: `2.5px solid ${isSelected ? G : av.color + "44"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 900, color: av.color }}>
+                      {u.fullName.charAt(0)}
+                    </div>
+                    {/* Online/offline dot */}
+                    <div style={{ position: "absolute", bottom: 1, left: 1, width: 12, height: 12, borderRadius: "50%", background: u.isOnline ? "#16a34a" : "#cbd5e1", border: "2px solid white" }} />
+                  </div>
+
+                  {/* Name */}
+                  <span style={{ fontSize: 12, fontWeight: 800, color: isSelected ? GD : "#132a18", whiteSpace: "nowrap", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {u.fullName}
+                  </span>
+
+                  {/* Status label */}
+                  {u.isOnline ? (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#16a34a" }}>● متصل الآن</span>
+                  ) : (
+                    <span style={{ fontSize: 10, color: "#94a3b8", textAlign: "center", lineHeight: 1.4 }}>
+                      {timeAgo(u.lastLogin)}
+                    </span>
+                  )}
+
+                  {/* Role badge */}
+                  {u.role === "admin" && (
+                    <span style={{ fontSize: 9, fontWeight: 800, color: GD, background: `${G}18`, padding: "1px 8px", borderRadius: 8 }}>مدير</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ── Filters ── */}
       <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "18px 20px", boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>

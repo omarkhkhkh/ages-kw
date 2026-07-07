@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, activityLogsTable, usersTable } from "@workspace/db";
+import { db, activityLogsTable, usersTable, pool } from "@workspace/db";
 import { eq, desc, and, gte, lte, SQL } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth";
 
@@ -74,6 +74,31 @@ router.get("/users", async (_req, res) => {
     .from(usersTable)
     .orderBy(usersTable.fullName);
   res.json(users);
+});
+
+// GET /api/admin/activity-logs/users-status
+// Returns every user with lastActivity, lastLogin, and isOnline flag
+router.get("/users-status", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        u.id,
+        u.full_name          AS "fullName",
+        u.username,
+        u.role,
+        MAX(al.created_at)   AS "lastActivity",
+        MAX(al.created_at) FILTER (WHERE al.action = 'login') AS "lastLogin",
+        (MAX(al.created_at) > NOW() - INTERVAL '15 minutes')  AS "isOnline"
+      FROM users u
+      LEFT JOIN activity_logs al ON al.user_id = u.id
+      GROUP BY u.id, u.full_name, u.username, u.role
+      ORDER BY MAX(al.created_at) DESC NULLS LAST
+    `);
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في جلب حالة الموظفين" });
+  }
 });
 
 export default router;

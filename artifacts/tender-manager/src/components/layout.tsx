@@ -5,6 +5,7 @@ import {
   FolderOpen, ShieldCheck, FileSignature,
   Calendar, LogOut, Activity,
   ChevronDown, Clock, Truck, Wallet, ListChecks, ClipboardCheck,
+  FileCheck, Landmark,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -54,6 +55,8 @@ const buildNavLinks = (user: AuthUser | null) => {
     { href: "/",               label: "الرئيسية",               icon: LayoutDashboard, show: true },
     { href: "/tenders",        label: "المناقصات",              icon: FileText,        show: can("accessTenders") },
     { href: "/practices",      label: "الممارسات",              icon: ClipboardCheck,  show: can("accessTenders") },
+    { href: "/company-docs",      label: "وثائق الشركة",       icon: FileCheck,  show: isAdmin || can("accessTenders") },
+    { href: "/gov-registrations", label: "تسجيلات الجهات",    icon: Landmark,   show: isAdmin || can("accessTenders") },
     { href: "/entities",       label: "الجهات الحكومية",        icon: Building2,       show: can("accessEntities") },
     { href: "/suppliers",      label: "الموردون",               icon: Users,           show: can("accessSuppliers") },
     { href: "/projects",       label: "المشاريع",               icon: FolderOpen,      show: can("accessProjects") },
@@ -305,7 +308,9 @@ export function Layout({ children }: LayoutProps) {
             <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.55)" }}>
               {(() => {
                 const PAGE_NAMES: Record<string, string> = {
-                  "/tenders": "سجل المناقصات", "/practices": "الممارسات", "/entities": "الجهات الحكومية",
+                  "/tenders": "سجل المناقصات", "/practices": "الممارسات",
+                  "/company-docs": "وثائق الشركة الرسمية", "/gov-registrations": "تسجيلات الجهات الحكومية",
+                  "/entities": "الجهات الحكومية",
                   "/suppliers": "الموردون", "/projects": "المشاريع",
                   "/guarantees": "الكفالات البنكية", "/contracts": "العقود",
                   "/rfq": "طلبات عروض الأسعار", "/purchase-orders": "أوامر الشراء المباشر",

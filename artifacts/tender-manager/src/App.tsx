@@ -24,6 +24,8 @@ import TransportationList from '@/pages/transportation-list';
 import FinancesList from '@/pages/finances-list';
 import TasksList from '@/pages/tasks-list';
 import PracticesList from '@/pages/practices-list';
+import CompanyDocuments from '@/pages/company-documents';
+import GovernmentRegistrations from '@/pages/government-registrations';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient({
@@ -112,6 +114,12 @@ function AppRouter() {
         </Route>
         <Route path="/practices">
           <ModuleGuard access={isAdmin || user.accessTenders}><PracticesList /></ModuleGuard>
+        </Route>
+        <Route path="/company-docs">
+          <ModuleGuard access={isAdmin || user.accessTenders}><CompanyDocuments /></ModuleGuard>
+        </Route>
+        <Route path="/gov-registrations">
+          <ModuleGuard access={isAdmin || user.accessTenders}><GovernmentRegistrations /></ModuleGuard>
         </Route>
         <Route path="/tasks" component={TasksList} />
         <Route path="/guide" component={Guide} />

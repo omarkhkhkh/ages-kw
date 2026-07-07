@@ -8,6 +8,7 @@ import {
   FolderOpen, ShieldCheck, FileSignature, Calendar,
   ArrowLeftCircle, TrendingUp, MessageSquare,
   ListChecks, Clock, ChevronDown, AlertTriangle, CheckCircle2,
+  FileCheck, Landmark, Bell,
 } from "lucide-react";
 import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
@@ -37,15 +38,17 @@ const STATUS_COLORS_TASK: Record<string, { color: string; bg: string; label: str
 
 /* ─── module shortcuts ─── */
 const MODULES = [
-  { href: "/tenders",        label: "سجل المناقصات",          icon: FileText,      accent: "#D4A534", bg: "#fdf8ec" },
-  { href: "/entities",       label: "الجهات الحكومية",        icon: Building2,     accent: "#1a7a3a", bg: "#edf7f0" },
-  { href: "/suppliers",      label: "الموردون",               icon: Users,         accent: "#2563eb", bg: "#eff6ff" },
-  { href: "/projects",       label: "المشاريع",               icon: FolderOpen,    accent: "#7c3aed", bg: "#f5f3ff" },
-  { href: "/guarantees",     label: "الكفالات البنكية",       icon: ShieldCheck,   accent: "#dc2626", bg: "#fff1f2" },
-  { href: "/contracts",      label: "العقود",                 icon: FileSignature, accent: "#0891b2", bg: "#ecfeff" },
-  { href: "/rfq",            label: "طلبات عروض الأسعار",    icon: ClipboardList, accent: "#d97706", bg: "#fffbeb" },
-  { href: "/purchase-orders",label: "أوامر الشراء المباشر",  icon: ShoppingCart,  accent: "#16a34a", bg: "#f0fdf4" },
-  { href: "/calendar",       label: "جدول الأعمال",           icon: Calendar,      accent: "#9333ea", bg: "#faf5ff" },
+  { href: "/tenders",           label: "سجل المناقصات",        icon: FileText,      accent: "#D4A534", bg: "#fdf8ec" },
+  { href: "/entities",          label: "الجهات الحكومية",      icon: Building2,     accent: "#1a7a3a", bg: "#edf7f0" },
+  { href: "/suppliers",         label: "الموردون",             icon: Users,         accent: "#2563eb", bg: "#eff6ff" },
+  { href: "/projects",          label: "المشاريع",             icon: FolderOpen,    accent: "#7c3aed", bg: "#f5f3ff" },
+  { href: "/guarantees",        label: "الكفالات البنكية",     icon: ShieldCheck,   accent: "#dc2626", bg: "#fff1f2" },
+  { href: "/contracts",         label: "العقود",               icon: FileSignature, accent: "#0891b2", bg: "#ecfeff" },
+  { href: "/rfq",               label: "طلبات عروض الأسعار",  icon: ClipboardList, accent: "#d97706", bg: "#fffbeb" },
+  { href: "/purchase-orders",   label: "أوامر الشراء المباشر",icon: ShoppingCart,  accent: "#16a34a", bg: "#f0fdf4" },
+  { href: "/company-docs",      label: "وثائق الشركة",         icon: FileCheck,     accent: "#0891b2", bg: "#ecfeff" },
+  { href: "/gov-registrations", label: "تسجيلات الجهات",       icon: Landmark,      accent: "#7c3aed", bg: "#f5f3ff" },
+  { href: "/calendar",          label: "جدول الأعمال",         icon: Calendar,      accent: "#9333ea", bg: "#faf5ff" },
 ];
 
 export default function Dashboard() {
@@ -54,6 +57,22 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const isAdmin = user?.role === "admin";
+
+  // Company documents stats
+  const { data: docStats } = useQuery<any>({
+    queryKey: ["company-docs-stats-dash"],
+    queryFn: () => apiFetch("/api/company-documents/stats"),
+    refetchInterval: 5 * 60_000,
+    staleTime: 2 * 60_000,
+  });
+
+  // Government registrations stats
+  const { data: regStats } = useQuery<any>({
+    queryKey: ["gov-reg-stats-dash"],
+    queryFn: () => apiFetch("/api/government-registrations/stats"),
+    refetchInterval: 5 * 60_000,
+    staleTime: 2 * 60_000,
+  });
 
   // Unread contract comments count — employees only
   const { data: unreadData } = useQuery({
@@ -322,6 +341,50 @@ export default function Dashboard() {
               <div style={{ height: 3, borderRadius: 2, background: `linear-gradient(90deg, ${s.accent}, transparent)` }} />
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Documents & Registrations Alert Strip ── */}
+      {((docStats?.expiring30 ?? 0) + (docStats?.expired ?? 0) + (regStats?.expiring30 ?? 0) + (regStats?.expired ?? 0)) > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          {/* Company docs */}
+          {((docStats?.expiring30 ?? 0) + (docStats?.expired ?? 0)) > 0 && (
+            <a href="/company-docs" onClick={e => { e.preventDefault(); navigate("/company-docs"); }}
+              style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderRadius: 14, background: "#fffbeb", border: "1.5px solid #fde68a", textDecoration: "none", cursor: "pointer", transition: "box-shadow 0.12s" }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 4px 16px rgba(217,119,6,0.15)")}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = "none")}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Bell size={20} color="#d97706" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#92400e" }}>وثائق الشركة</div>
+                <div style={{ fontSize: 12, color: "#a16207", marginTop: 2 }}>
+                  {docStats?.expired > 0 && <span style={{ color: "#dc2626", fontWeight: 700 }}>{docStats.expired} منتهية • </span>}
+                  {docStats?.expiring30 > 0 && <span style={{ color: "#ea580c" }}>{docStats.expiring30} تنتهي خلال 30 يوم</span>}
+                </div>
+              </div>
+              <FileCheck size={16} color="#d97706" />
+            </a>
+          )}
+          {/* Gov registrations */}
+          {((regStats?.expiring30 ?? 0) + (regStats?.expired ?? 0)) > 0 && (
+            <a href="/gov-registrations" onClick={e => { e.preventDefault(); navigate("/gov-registrations"); }}
+              style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderRadius: 14, background: "#fff7ed", border: "1.5px solid #fed7aa", textDecoration: "none", cursor: "pointer", transition: "box-shadow 0.12s" }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 4px 16px rgba(234,88,12,0.15)")}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = "none")}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: "#ffedd5", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Bell size={20} color="#ea580c" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#9a3412" }}>تسجيلات الجهات</div>
+                <div style={{ fontSize: 12, color: "#c2410c", marginTop: 2 }}>
+                  {regStats?.expired > 0 && <span style={{ color: "#dc2626", fontWeight: 700 }}>{regStats.expired} منتهية • </span>}
+                  {regStats?.expiring30 > 0 && <span style={{ color: "#ea580c" }}>{regStats.expiring30} تنتهي خلال 30 يوم</span>}
+                </div>
+              </div>
+              <Landmark size={16} color="#ea580c" />
+            </a>
+          )}
         </div>
       )}
 

@@ -7,10 +7,35 @@ import {
   ChevronDown, Clock, Truck, Wallet, ListChecks,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/auth";
 import type { AuthUser } from "@/contexts/auth";
 import logoImg from "@/assets/logo.png";
 import { nowKuwait } from "@/lib/timezone";
+
+/* ── fetch helper ── */
+async function apiFetch<T = any>(url: string): Promise<T> {
+  const r = await fetch(url, { credentials: "include" });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+/* ── hook: count guarantees expiring within 30 days ── */
+function useExpiringCount() {
+  const { data } = useQuery<any[]>({
+    queryKey: ["guarantees-expiring-badge"],
+    queryFn: () => apiFetch("/api/bank-guarantees"),
+    refetchInterval: 5 * 60 * 1000, // refresh every 5 min
+    staleTime: 2 * 60 * 1000,
+  });
+  if (!data) return 0;
+  const now = Date.now();
+  return data.filter(g => {
+    if (g.status !== "active" || !g.expiryDate) return false;
+    const diff = Math.round((new Date(g.expiryDate).getTime() - now) / 86400000);
+    return diff >= 0 && diff <= 30;
+  }).length;
+}
 
 interface LayoutProps { children: React.ReactNode; }
 
@@ -167,6 +192,7 @@ export function Layout({ children }: LayoutProps) {
   const [location, navigate] = useLocation();
   const { user, logout } = useAuth();
   const navLinks = buildNavLinks(user ?? null);
+  const expiringCount = useExpiringCount();
 
   return (
     <div style={{ minHeight: "100vh", background: "#f5f0e8", fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif" }} dir="rtl">
@@ -203,14 +229,39 @@ export function Layout({ children }: LayoutProps) {
               const isActive = link.href === "/"
                 ? location === "/"
                 : location === link.href || location.startsWith(link.href + "/");
+              const isGuarantees = link.href === "/guarantees";
+              const showBadge = isGuarantees && expiringCount > 0;
               return (
                 <a
                   key={link.href}
                   href={link.href}
                   onClick={e => { e.preventDefault(); navigate(link.href); }}
                   className={isActive ? "nav-link nav-link-active" : "nav-link"}
+                  title={showBadge ? `${expiringCount} كفالة تنتهي خلال 30 يوماً` : undefined}
                 >
-                  <link.icon size={14} style={{ flexShrink: 0 }} />
+                  {/* Icon wrapper — badge overlaid when needed */}
+                  <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+                    <link.icon size={14} />
+                    {showBadge && (
+                      <span style={{
+                        position: "absolute",
+                        top: -6, left: -6,
+                        minWidth: 15, height: 15,
+                        borderRadius: 8,
+                        background: "#ef4444",
+                        border: "1.5px solid #0b1a10",
+                        color: "white",
+                        fontSize: 9,
+                        fontWeight: 800,
+                        lineHeight: "12px",
+                        padding: "0 3px",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        animation: "badge-pulse 2s ease-in-out infinite",
+                      }}>
+                        {expiringCount > 9 ? "9+" : expiringCount}
+                      </span>
+                    )}
+                  </span>
                   {link.label}
                 </a>
               );
@@ -276,6 +327,10 @@ export function Layout({ children }: LayoutProps) {
         @keyframes dropDown {
           from { opacity: 0; transform: translateY(-8px); }
           to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes badge-pulse {
+          0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239,68,68,0.6); }
+          50%       { transform: scale(1.12); box-shadow: 0 0 0 4px rgba(239,68,68,0); }
         }
         nav::-webkit-scrollbar { display: none; }
 

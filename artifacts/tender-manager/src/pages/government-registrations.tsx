@@ -9,6 +9,7 @@ import {
 import { useAuth } from "@/contexts/auth";
 import FileUpload, { objectPathToUrl } from "@/components/file-upload";
 import { useUpload } from "@workspace/object-storage-web";
+import { useToast } from "@/hooks/use-toast";
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -58,23 +59,26 @@ const S = {
 };
 
 /* ── Inline quick-upload button for table rows ── */
-function QuickUpload({ id, fileUrl, apiPath, queryKeys }: {
-  id: number; fileUrl: string | null; apiPath: string; queryKeys: string[][];
+function QuickUpload({ id, fileUrl, apiPath, queryKeys, canEdit }: {
+  id: number; fileUrl: string | null; apiPath: string; queryKeys: string[][]; canEdit: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
+  const { toast } = useToast();
 
   const patch = useMutation({
     mutationFn: (path: string) => fetch(`${apiPath}/${id}`, {
       method: "PATCH", credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fileUrl: path }),
-    }).then(r => r.ok ? r.json() : Promise.reject()),
+    }).then(r => r.ok ? r.json() : r.text().then(t => Promise.reject(new Error(t)))),
     onSuccess: () => queryKeys.forEach(k => qc.invalidateQueries({ queryKey: k })),
+    onError: () => toast({ title: "فشل حفظ الملف", description: "تعذّر تحديث السجل، حاول مجدداً.", variant: "destructive" }),
   });
 
   const { uploadFile, isUploading, progress } = useUpload({
     onSuccess: (res: { objectPath: string }) => patch.mutate(res.objectPath),
+    onError: () => toast({ title: "فشل رفع الملف", description: "تحقق من حجم الملف (20MB كحد أقصى) ونوعه.", variant: "destructive" }),
   });
 
   const viewUrl = objectPathToUrl(fileUrl);
@@ -97,23 +101,27 @@ function QuickUpload({ id, fileUrl, apiPath, queryKeys }: {
           <ExternalLink size={12} />
         </a>
       )}
-      <button type="button" title={fileUrl ? "استبدال الملف" : "رفع ملف"}
-        onClick={() => inputRef.current?.click()}
-        style={{
-          padding: "5px 9px", borderRadius: 7, cursor: "pointer", fontFamily: "inherit",
-          border: `1.5px solid ${fileUrl ? "#e5e7eb" : "rgba(212,165,52,0.5)"}`,
-          background: fileUrl ? "white" : "rgba(212,165,52,0.08)",
-          color: fileUrl ? "#6b7280" : G,
-          display: "flex", alignItems: "center", gap: 4, fontSize: 12,
-        }}>
-        {fileUrl ? <Upload size={12} /> : <Paperclip size={12} />}
-        {fileUrl ? "" : "إرفاق"}
-      </button>
-      <input ref={inputRef} type="file"
-        accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx"
-        style={{ display: "none" }}
-        onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
-      />
+      {canEdit && (
+        <>
+          <button type="button" title={fileUrl ? "استبدال الملف" : "رفع ملف"}
+            onClick={() => inputRef.current?.click()}
+            style={{
+              padding: "5px 9px", borderRadius: 7, cursor: "pointer", fontFamily: "inherit",
+              border: `1.5px solid ${fileUrl ? "#e5e7eb" : "rgba(212,165,52,0.5)"}`,
+              background: fileUrl ? "white" : "rgba(212,165,52,0.08)",
+              color: fileUrl ? "#6b7280" : G,
+              display: "flex", alignItems: "center", gap: 4, fontSize: 12,
+            }}>
+            {fileUrl ? <Upload size={12} /> : <Paperclip size={12} />}
+            {fileUrl ? "" : "إرفاق"}
+          </button>
+          <input ref={inputRef} type="file"
+            accept="application/pdf,image/*,.doc,.docx,.xls,.xlsx"
+            style={{ display: "none" }}
+            onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -310,6 +318,7 @@ export default function GovernmentRegistrations() {
                           fileUrl={r.fileUrl || null}
                           apiPath="/api/government-registrations"
                           queryKeys={[["gov-regs"], ["gov-reg-stats"]]}
+                          canEdit={canEdit}
                         />
                         {canEdit && (
                           <>

@@ -9,6 +9,7 @@ export const governmentEntitiesTable = pgTable("government_entities", {
   contactPerson: text("contact_person"),
   phone: text("phone"),
   email: text("email"),
+  website: text("website"),
   address: text("address"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

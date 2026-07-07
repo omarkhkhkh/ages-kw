@@ -10,7 +10,23 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Main query pool — large enough for 80+ concurrent requests
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 80,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 5_000,
+});
+
+// Dedicated pool for express-session so session reads/writes never
+// starve application queries under heavy concurrent load (50+ employees).
+export const sessionPool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis: 5_000,
+});
+
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";

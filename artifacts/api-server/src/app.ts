@@ -3,7 +3,7 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
-import { pool } from "@workspace/db";
+import { pool, sessionPool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
@@ -56,7 +56,7 @@ const PgSession = connectPgSimple(session);
 app.use(
   session({
     store: new PgSession({
-      pool,
+      pool: sessionPool,
       tableName: "session",
       createTableIfMissing: false,
     }),

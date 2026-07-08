@@ -3,14 +3,14 @@ import {
   useListTenders, useGetTenderStats, useUpdateTender,
   getListTendersQueryKey, getGetTenderStatsQueryKey,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
 import {
   Search, Plus, Download, AlertCircle, FileText,
   Clock, CheckCircle2, Loader2, Trophy, Eye,
-  Building2, User2, Banknote, LayoutGrid, ChevronDown,
+  Building2, User2, Banknote, LayoutGrid, ChevronDown, UserCog,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { exportTendersToExcel } from "@/lib/export";
@@ -52,6 +52,83 @@ const STATUS_HEX: Record<string, { color: string; bg: string; border: string }> 
   [TenderStatus.cancelled]:          { color: "#525252", bg: "#f5f5f5", border: "#e5e5e5" },
 };
 
+/* ═══════════════════════════════════════════════════
+   Engineer picker — admin only, inline in table row
+   ═══════════════════════════════════════════════════ */
+function EngineerDropdown({ tenderId, currentEngineer }: { tenderId: number; currentEngineer: string | null }) {
+  const [open, setOpen]   = useState(false);
+  const [busy, setBusy]   = useState(false);
+  const ref               = useRef<HTMLDivElement>(null);
+  const qc                = useQueryClient();
+  const updateTender      = useUpdateTender();
+  const { toast }         = useToast();
+
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ["admin-users"],
+    queryFn: () => fetch("/api/admin/users", { credentials: "include" }).then(r => r.json()),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const handleSelect = async (fullName: string) => {
+    if (busy || fullName === currentEngineer) { setOpen(false); return; }
+    setOpen(false);
+    setBusy(true);
+    try {
+      await updateTender.mutateAsync({ id: tenderId, data: { responsibleEngineer: fullName } as any });
+      qc.invalidateQueries({ queryKey: getListTendersQueryKey() });
+      toast({ title: "✅ تم تغيير المسؤول", description: fullName });
+    } catch (err: any) {
+      toast({ title: "فشل تغيير المسؤول", description: err?.message ?? "حاول مجدداً.", variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span style={{ fontSize: 12, color: "#374151" }}>{currentEngineer || "—"}</span>
+      <button onClick={() => !busy && setOpen(o => !o)} title="تغيير المسؤول"
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 6, border: "1.5px solid #e5e7eb", background: "white", cursor: busy ? "wait" : "pointer", color: "#6b7280", padding: 0 }}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#D4A534"; (e.currentTarget as HTMLButtonElement).style.color = "#D4A534"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "#e5e7eb"; (e.currentTarget as HTMLButtonElement).style.color = "#6b7280"; }}>
+        {busy ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> : <UserCog size={11} />}
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 9999, background: "white", borderRadius: 12, border: "1.5px solid #e5e7eb", boxShadow: "0 8px 32px rgba(0,0,0,0.13)", padding: 6, minWidth: 180, display: "flex", flexDirection: "column", gap: 2 }}>
+          {(users as any[]).filter((u: any) => u.isActive !== false).map((u: any) => {
+            const active = u.fullName === currentEngineer;
+            return (
+              <button key={u.id} onClick={() => handleSelect(u.fullName)}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 8, border: "none", cursor: "pointer", background: active ? "#fdf8ec" : "transparent", color: active ? "#A87C20" : "#374151", fontFamily: "inherit", fontSize: 12, fontWeight: active ? 700 : 500, textAlign: "right", transition: "background 0.1s" }}
+                onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "#f9fafb"; }}
+                onMouseLeave={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
+                <div style={{ width: 26, height: 26, borderRadius: "50%", background: active ? "#D4A53420" : "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <User2 size={12} color={active ? "#A87C20" : "#9ca3af"} />
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontWeight: active ? 700 : 600 }}>{u.fullName}</div>
+                  <div style={{ fontSize: 10, color: "#9ca3af" }}>{u.role === "admin" ? "مدير" : "موظف"}</div>
+                </div>
+                {active && <span style={{ marginRight: "auto", color: "#D4A534" }}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   Status dropdown
+   ═══════════════════════════════════════════════════ */
 function StatusDropdown({ tenderId, currentStatus }: { tenderId: number; currentStatus: TenderStatus }) {
   const [open, setOpen]     = useState(false);
   const [busy, setBusy]     = useState(false);
@@ -389,11 +466,14 @@ export default function TendersList() {
                         </div>
                       </td>
                       <td style={{ padding: "14px 16px", color: "#6b7280", fontSize: 12 }}>
-                        {tender.responsibleEngineer || "—"}
+                        {user?.role === "admin"
+                          ? <EngineerDropdown tenderId={tender.id} currentEngineer={tender.responsibleEngineer ?? null} />
+                          : <span>{tender.responsibleEngineer || "—"}</span>
+                        }
                       </td>
                       <td style={{ padding: "14px 16px" }}>
-                        {(user?.role === "admin" || user?.canEdit)
-                          ? <StatusDropdown tenderId={tender.id} currentStatus={tender.status} />
+                        {(user?.role === "admin" || user?.fullName === tender.responsibleEngineer)
+                          ? <StatusDropdown tenderId={tender.id} currentStatus={tender.status as TenderStatus} />
                           : <span className={cn("px-2.5 py-1 text-xs font-semibold rounded-full border inline-flex items-center gap-1", STATUS_COLORS[tender.status])}>
                               {STATUS_ARABIC[tender.status] || tender.status}
                             </span>

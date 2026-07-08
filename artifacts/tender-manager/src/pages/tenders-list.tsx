@@ -1,16 +1,155 @@
-import { useState } from "react";
-import { useListTenders, useGetTenderStats } from "@workspace/api-client-react";
+import { useState, useRef, useEffect } from "react";
+import {
+  useListTenders, useGetTenderStats, useUpdateTender,
+  getListTendersQueryKey, getGetTenderStatsQueryKey,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
 import {
   Search, Plus, Download, AlertCircle, FileText,
   Clock, CheckCircle2, Loader2, Trophy, Eye,
-  Building2, User2, Banknote, LayoutGrid,
+  Building2, User2, Banknote, LayoutGrid, ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { exportTendersToExcel } from "@/lib/export";
-import { TenderStatus } from "@workspace/api-client-react";
+import { TenderStatus, TenderUpdateStatus } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
+
+/* ═══════════════════════════════════════════════════
+   Inline status dropdown — appears when clicking the
+   status badge in the tenders table (canEdit only)
+   ═══════════════════════════════════════════════════ */
+const ALL_STATUSES = [
+  TenderStatus.new,
+  TenderStatus.studying,
+  TenderStatus.requesting_quotes,
+  TenderStatus.preparing_technical,
+  TenderStatus.preparing_financial,
+  TenderStatus.management_review,
+  TenderStatus.ready_to_submit,
+  TenderStatus.submitted,
+  TenderStatus.under_evaluation,
+  TenderStatus.won,
+  TenderStatus.lost,
+  TenderStatus.cancelled,
+];
+
+/* colour map from Tailwind classes → raw hex for the dropdown */
+const STATUS_HEX: Record<string, { color: string; bg: string; border: string }> = {
+  [TenderStatus.new]:                { color: "#475569", bg: "#f1f5f9", border: "#cbd5e1" },
+  [TenderStatus.studying]:           { color: "#1d4ed8", bg: "#eff6ff", border: "#bfdbfe" },
+  [TenderStatus.requesting_quotes]:  { color: "#4338ca", bg: "#eef2ff", border: "#c7d2fe" },
+  [TenderStatus.preparing_technical]:{ color: "#6d28d9", bg: "#f5f3ff", border: "#ddd6fe" },
+  [TenderStatus.preparing_financial]:{ color: "#7e22ce", bg: "#faf5ff", border: "#e9d5ff" },
+  [TenderStatus.management_review]:  { color: "#c2410c", bg: "#fff7ed", border: "#fed7aa" },
+  [TenderStatus.ready_to_submit]:    { color: "#a16207", bg: "#fefce8", border: "#fef08a" },
+  [TenderStatus.submitted]:          { color: "#0e7490", bg: "#ecfeff", border: "#a5f3fc" },
+  [TenderStatus.under_evaluation]:   { color: "#b45309", bg: "#fffbeb", border: "#fde68a" },
+  [TenderStatus.won]:                { color: "#15803d", bg: "#f0fdf4", border: "#bbf7d0" },
+  [TenderStatus.lost]:               { color: "#b91c1c", bg: "#fff1f2", border: "#fecaca" },
+  [TenderStatus.cancelled]:          { color: "#525252", bg: "#f5f5f5", border: "#e5e5e5" },
+};
+
+function StatusDropdown({ tenderId, currentStatus }: { tenderId: number; currentStatus: TenderStatus }) {
+  const [open, setOpen]     = useState(false);
+  const [busy, setBusy]     = useState(false);
+  const ref                 = useRef<HTMLDivElement>(null);
+  const qc                  = useQueryClient();
+  const updateTender        = useUpdateTender();
+  const { toast }           = useToast();
+
+  /* close on outside click */
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const handleSelect = async (status: TenderStatus) => {
+    if (busy || status === currentStatus) { setOpen(false); return; }   // in-flight guard
+    setOpen(false);
+    setBusy(true);
+    try {
+      await updateTender.mutateAsync({ id: tenderId, data: { status: status as TenderUpdateStatus } });
+      qc.invalidateQueries({ queryKey: getListTendersQueryKey() });
+      qc.invalidateQueries({ queryKey: getGetTenderStatsQueryKey() });
+      toast({ title: "✅ تم تحديث الحالة", description: `${STATUS_ARABIC[currentStatus]} ← ${STATUS_ARABIC[status]}` });
+    } catch (err: any) {
+      const detail = err?.message || err?.response?.data?.error;
+      toast({ title: "فشل تحديث الحالة", description: detail ?? "حاول مجدداً.", variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const style = STATUS_HEX[currentStatus] ?? STATUS_HEX[TenderStatus.new];
+
+  return (
+    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
+      <button
+        onClick={() => !busy && setOpen(o => !o)}
+        title="تغيير الحالة"
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 5,
+          padding: "4px 10px 4px 8px", borderRadius: 20, cursor: busy ? "wait" : "pointer",
+          fontSize: 11, fontWeight: 700, fontFamily: "inherit",
+          background: style.bg, color: style.color,
+          border: `1.5px solid ${open ? style.color : style.border}`,
+          transition: "border-color 0.15s, box-shadow 0.15s",
+          boxShadow: open ? `0 0 0 3px ${style.color}22` : "none",
+          whiteSpace: "nowrap",
+        }}
+        onMouseEnter={e => { if (!busy) (e.currentTarget.style.borderColor = style.color); }}
+        onMouseLeave={e => { if (!open) (e.currentTarget.style.borderColor = style.border); }}
+      >
+        {busy
+          ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} />
+          : <span style={{ width: 6, height: 6, borderRadius: "50%", background: style.color, flexShrink: 0 }} />
+        }
+        {STATUS_ARABIC[currentStatus] || currentStatus}
+        {!busy && <ChevronDown size={10} style={{ opacity: 0.6, transform: open ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.15s" }} />}
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 9999,
+          background: "white", borderRadius: 12, border: "1.5px solid #e5e7eb",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.13)", padding: 6, minWidth: 200,
+          display: "flex", flexDirection: "column", gap: 2,
+        }}>
+          {ALL_STATUSES.map(s => {
+            const st = STATUS_HEX[s] ?? STATUS_HEX[TenderStatus.new];
+            const active = s === currentStatus;
+            return (
+              <button key={s} onClick={() => handleSelect(s)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 9,
+                  padding: "8px 12px", borderRadius: 8, border: "none", cursor: "pointer",
+                  background: active ? st.bg : "transparent",
+                  color: active ? st.color : "#374151",
+                  fontFamily: "inherit", fontSize: 12, fontWeight: active ? 700 : 500,
+                  textAlign: "right",
+                  transition: "background 0.1s",
+                }}
+                onMouseEnter={e => { if (!active) (e.currentTarget.style.background = "#f9fafb"); }}
+                onMouseLeave={e => { if (!active) (e.currentTarget.style.background = "transparent"); }}
+              >
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: st.color, flexShrink: 0 }} />
+                {STATUS_ARABIC[s] || s}
+                {active && <span style={{ marginRight: "auto", fontSize: 14 }}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -253,9 +392,12 @@ export default function TendersList() {
                         {tender.responsibleEngineer || "—"}
                       </td>
                       <td style={{ padding: "14px 16px" }}>
-                        <span className={cn("px-2.5 py-1 text-xs font-semibold rounded-full border inline-flex items-center gap-1", STATUS_COLORS[tender.status])}>
-                          {STATUS_ARABIC[tender.status] || tender.status}
-                        </span>
+                        {(user?.role === "admin" || user?.canEdit)
+                          ? <StatusDropdown tenderId={tender.id} currentStatus={tender.status} />
+                          : <span className={cn("px-2.5 py-1 text-xs font-semibold rounded-full border inline-flex items-center gap-1", STATUS_COLORS[tender.status])}>
+                              {STATUS_ARABIC[tender.status] || tender.status}
+                            </span>
+                        }
                       </td>
                       <td style={{ padding: "14px 16px", whiteSpace: "nowrap" }}>
                         {urgent ? (

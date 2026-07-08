@@ -284,7 +284,16 @@ export default function GuaranteesList() {
   const handleSubmit = (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!form.type) return;
-    const data = { ...form, tenderId: form.tenderId ? Number(form.tenderId) : null, amount: form.amount ? Number(form.amount) : null };
+    const data = {
+      ...form,
+      // integer FK must be a number; empty = null
+      tenderId:  form.tenderId  ? Number(form.tenderId)  : null,
+      // numeric column — Drizzle-Zod expects string, not JS number
+      amount:    form.amount    ? String(form.amount)    : null,
+      // date columns — keep as string (YYYY-MM-DD) or null
+      issueDate:  form.issueDate  || null,
+      expiryDate: form.expiryDate || null,
+    };
     editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data);
   };
 

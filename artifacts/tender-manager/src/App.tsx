@@ -26,6 +26,9 @@ import TasksList from '@/pages/tasks-list';
 import PracticesList from '@/pages/practices-list';
 import CompanyDocuments from '@/pages/company-documents';
 import GovernmentRegistrations from '@/pages/government-registrations';
+import CompetitorIntelligence from '@/pages/competitor-intelligence/index';
+import CompetitorDetail from '@/pages/competitor-intelligence/competitor-detail';
+import PredictPage from '@/pages/competitor-intelligence/predict';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient({
@@ -122,6 +125,15 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || user.accessTenders}><GovernmentRegistrations /></ModuleGuard>
         </Route>
         <Route path="/tasks" component={TasksList} />
+        <Route path="/competitor-intelligence/c/:id">
+          <ModuleGuard access={isAdmin || user.accessTenders}><CompetitorDetail /></ModuleGuard>
+        </Route>
+        <Route path="/competitor-intelligence/predict">
+          <ModuleGuard access={isAdmin || user.accessTenders}><PredictPage /></ModuleGuard>
+        </Route>
+        <Route path="/competitor-intelligence">
+          <ModuleGuard access={isAdmin || user.accessTenders}><CompetitorIntelligence /></ModuleGuard>
+        </Route>
         <Route path="/guide" component={Guide} />
         <Route path="/calendar" component={CalendarPage} />
         <Route path="/admin/users" component={AdminUsers} />

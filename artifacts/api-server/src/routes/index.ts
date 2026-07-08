@@ -18,6 +18,9 @@ import tasksRouter from "./tasks";
 import practicesRouter from "./practices";
 import companyDocumentsRouter from "./company-documents";
 import governmentRegistrationsRouter from "./government-registrations";
+import competitorsRouter from "./competitors";
+import bidResultsRouter from "./bid-results";
+import competitorAnalyticsRouter from "./competitor-analytics";
 import { requireAuth, requireEdit, requireModule } from "../middleware/auth";
 import { activityLogger } from "../middleware/activity-logger";
 
@@ -84,5 +87,8 @@ router.use("/transportation", requireModule("accessTransportation"), transportat
 router.use("/finance", requireModule("accessFinance"), financeRouter);
 router.use("/company-documents", requireModule("accessTenders"), companyDocumentsRouter);
 router.use("/government-registrations", requireModule("accessTenders"), governmentRegistrationsRouter);
+router.use("/competitors", requireModule("accessTenders"), competitorsRouter);
+router.use("/bid-results", requireModule("accessTenders"), bidResultsRouter);
+router.use("/analytics/competitors", requireModule("accessTenders"), competitorAnalyticsRouter);
 
 export default router;

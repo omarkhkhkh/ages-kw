@@ -4,7 +4,7 @@ import {
   FolderOpen, ShieldCheck, FileSignature, Calendar, LogOut, Activity,
   ChevronDown, Clock, Truck, Wallet, ListChecks, ClipboardCheck,
   FileCheck, Landmark, Settings, Bell, HelpCircle, Headphones,
-  MapPin, BarChart3, Plus, X, Menu,
+  MapPin, BarChart3, Plus, X, Menu, Trophy, Sparkles,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -127,6 +127,14 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number): NavGroup[
         { href: "/tasks",    label: "المهام",       show: true },
         { href: "/calendar", label: "جدول الأعمال", show: true },
       ],
+    },
+    {
+      id: "competitor-intelligence", label: "ذكاء المنافسين", icon: Trophy,
+      show: can("accessTenders"),
+      items: [
+        { href: "/competitor-intelligence",         label: "لوحة المنافسين",  show: can("accessTenders") },
+        { href: "/competitor-intelligence/predict", label: "تنبؤ المنافسين",  show: can("accessTenders") },
+      ].filter(i => i.show),
     },
     {
       id: "analytics", label: "التقارير والتحليلات", icon: BarChart3,

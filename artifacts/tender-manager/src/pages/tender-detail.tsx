@@ -23,7 +23,10 @@ import {
   BookOpen, Calculator, Users, Package,
 } from "lucide-react";
 import FileUpload from "@/components/file-upload";
+import BidResultPanel from "@/components/bid-result-panel";
+import TenderCompetitorAnalysis from "@/components/tender-competitor-analysis";
 import { useAuth } from "@/contexts/auth";
+import { Trophy, TrendingUp } from "lucide-react";
 
 export default function TenderDetail() {
   const params = useParams();
@@ -155,6 +158,7 @@ export default function TenderDetail() {
 
   const urgent = isUrgent(tender.deadline, tender.status);
   const canEdit = user?.role === "admin" || user?.canEdit || user?.fullName === tender.responsibleEngineer;
+  const [activeTab, setActiveTab] = useState<"details"|"bid"|"analysis">("details");
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12">
@@ -229,6 +233,37 @@ export default function TenderDetail() {
         </div>
       </div>
 
+      {/* Tab bar */}
+      <div style={{ display: "flex", borderBottom: "2px solid #e5e7eb", gap: 0, fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif" }}>
+        {([
+          ["details", "تفاصيل المناقصة", null],
+          ["bid",     "فض العطاء",       Trophy],
+          ["analysis","تحليل المنافسة",  TrendingUp],
+        ] as const).map(([t, l, Icon]) => (
+          <button key={t} onClick={() => setActiveTab(t as any)}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer", background: "none", border: "none", fontFamily: "inherit", color: activeTab === t ? "#D4A534" : "#6b7280", borderBottom: `2px solid ${activeTab === t ? "#D4A534" : "transparent"}`, marginBottom: -2, transition: "color 0.15s" }}>
+            {Icon && <Icon size={14} />}{l}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "bid" && (
+        <div style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif" }}>
+          <BidResultPanel
+            sourceType="tender"
+            sourceId={id}
+            ourPrice={(tender as any).offerValue}
+          />
+        </div>
+      )}
+
+      {activeTab === "analysis" && (
+        <div style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif" }}>
+          <TenderCompetitorAnalysis tenderId={id} />
+        </div>
+      )}
+
+      {activeTab === "details" && (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
         {/* Main Content Area */}
@@ -498,6 +533,7 @@ export default function TenderDetail() {
 
         </div>
       </div>
+      )}
     </div>
   );
 }

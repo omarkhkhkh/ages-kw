@@ -10,6 +10,7 @@ import {
 import { useAuth } from "@/contexts/auth";
 import { formatCurrency } from "@/lib/utils";
 import FileUpload from "@/components/file-upload";
+import BidResultPanel from "@/components/bid-result-panel";
 import { useToast } from "@/hooks/use-toast";
 
 /* ─── colours ─── */
@@ -261,7 +262,7 @@ function PracticeEmployeeDropdown({ practiceId, currentEmployee, onUpdated }: {
 }
 
 /* ═══════════════════════════════════════════════════
-   Expanded row — details + file uploads
+   Expanded row — details + file uploads + bid result
    ═══════════════════════════════════════════════════ */
 function PracticeExpandedRow({ practice, canEdit, onUpdated }: {
   practice: any;
@@ -269,6 +270,7 @@ function PracticeExpandedRow({ practice, canEdit, onUpdated }: {
   onUpdated: () => void;
 }) {
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<"docs"|"bid">("docs");
   const [files, setFiles] = useState({
     fileConditions: practice.fileConditions ?? null,
     filePricing:    practice.filePricing    ?? null,
@@ -309,7 +311,26 @@ function PracticeExpandedRow({ practice, canEdit, onUpdated }: {
   ];
 
   return (
-    <div style={{ padding: "16px 24px", background: "#f8fafc", borderBottom: "2px solid #e5e7eb" }}>
+    <div style={{ background: "#f8fafc", borderBottom: "2px solid #e5e7eb" }}>
+      {/* Tab bar */}
+      <div style={{ display: "flex", borderBottom: "1.5px solid #e5e7eb", padding: "0 24px", background: "white" }}>
+        {([["docs","المستندات"],["bid","فض العطاء"]] as const).map(([t,l]) => (
+          <button key={t} onClick={() => setActiveTab(t)}
+            style={{ padding: "10px 18px", fontSize: 12, fontWeight: 700, cursor: "pointer", background: "none", border: "none", fontFamily: "inherit", color: activeTab === t ? G : "#6b7280", borderBottom: `2px solid ${activeTab === t ? G : "transparent"}`, marginBottom: -1 }}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ padding: "16px 24px" }}>
+      {activeTab === "bid" ? (
+        <BidResultPanel
+          sourceType="practice"
+          sourceId={practice.id}
+          ourPrice={practice.contractValue ?? practice.expectedValue}
+        />
+      ) : (
+      <>
       {/* existing info */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 14, marginBottom: 20 }}>
         {isFuture(practice.status) && practice.finalBondValue && (
@@ -359,6 +380,9 @@ function PracticeExpandedRow({ practice, canEdit, onUpdated }: {
             );
           })}
         </div>
+      </div>
+      </>
+      )}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { sql, eq, and, gte, lte, isNotNull, isNull, ne } from "drizzle-orm";
-import { db, bidResultsTable, bidEntriesTable, bidItemsTable, bidItemPricesTable, competitorsTable, tendersTable } from "@workspace/db";
+import { db, bidResultsTable, bidEntriesTable, bidItemsTable, bidItemPricesTable, competitorsTable, tendersTable, practicesTable } from "@workspace/db";
 
 const router = Router();
 
@@ -228,52 +228,87 @@ router.get("/predict", async (req: Request, res: Response) => {
     const { source_type, source_id } = req.query as Record<string, string>;
     if (!source_id) return res.status(400).json({ error: "يجب تحديد source_id" });
 
-    const id = Number(source_id);
-    let entityId: number | null = null;
-    let tenderType: string | null = null;
-    let refValue: number = 0;
+    const id      = Number(source_id);
+    const srcType = source_type === "practice" ? "practice" : "tender";
 
-    if (source_type === "tender" || !source_type) {
+    let entityId:   number | null = null;
+    let entityText: string | null = null;
+    let tenderType: string | null = null;
+    let refValue:   number        = 0;
+    let sourceName: string        = "";
+
+    /* ── load source record ── */
+    if (srcType === "practice") {
+      const [p] = await db.select().from(practicesTable).where(eq(practicesTable.id, id));
+      if (!p) return res.status(404).json({ error: "الممارسة غير موجودة" });
+      entityText = p.governmentEntity ?? null;
+      refValue   = Number(p.expectedValue ?? p.contractValue ?? 0);
+      sourceName = `${p.practiceNumber} — ${p.projectName}`;
+    } else {
       const [t] = await db.select().from(tendersTable).where(eq(tendersTable.id, id));
       if (!t) return res.status(404).json({ error: "المناقصة غير موجودة" });
-      entityId  = t.governmentEntityId ?? null;
-      tenderType = t.tenderType ?? null;
-      refValue  = Number(t.offerValue ?? t.estimatedCost ?? 0);
+      entityId   = t.governmentEntityId ?? null;
+      tenderType = t.tenderType         ?? null;
+      refValue   = Number(t.offerValue  ?? t.estimatedCost ?? 0);
+      sourceName = `${t.tenderNumber} — ${t.projectName}`;
     }
 
     const minVal = refValue * 0.6;
     const maxVal = refValue > 0 ? refValue * 1.4 : 999999999999;
 
-    // Find similar sessions
-    const similar = await db.execute(sql`
-      WITH us_prices AS (
-        SELECT be_us.bid_result_id, be_us.total_price::numeric AS our_price
-        FROM bid_entries be_us WHERE be_us.is_us = true
-      )
-      SELECT
-        br.id AS bid_result_id,
-        be.competitor_id, be.company_name, be.total_price::numeric AS price,
-        br.opening_date, up.our_price
-      FROM bid_results br
-      JOIN bid_entries be ON be.bid_result_id = br.id AND be.is_us = false AND be.competitor_id IS NOT NULL
-      JOIN tenders t ON t.id = br.tender_id
-      LEFT JOIN us_prices up ON up.bid_result_id = br.id
-      WHERE br.source_type = 'tender'
-        ${entityId ? sql`AND t.government_entity_id = ${entityId}` : sql``}
-        ${tenderType ? sql`AND t.tender_type = ${tenderType}` : sql``}
-        ${refValue > 0 ? sql`AND up.our_price BETWEEN ${minVal} AND ${maxVal}` : sql``}
-        AND br.opening_date >= NOW() - INTERVAL '4 years'
-      ORDER BY br.opening_date DESC
-    `);
+    /* ── find similar sessions ── */
+    const similar = srcType === "practice"
+      ? await db.execute(sql`
+          WITH us_prices AS (
+            SELECT be_us.bid_result_id, be_us.total_price::numeric AS our_price
+            FROM bid_entries be_us WHERE be_us.is_us = true
+          )
+          SELECT
+            br.id AS bid_result_id,
+            be.competitor_id, be.company_name, be.total_price::numeric AS price,
+            br.opening_date, up.our_price,
+            p.government_entity AS entity_label
+          FROM bid_results br
+          JOIN bid_entries be  ON be.bid_result_id = br.id
+                               AND be.is_us = false AND be.competitor_id IS NOT NULL
+          JOIN practices p     ON p.id = br.practice_id
+          LEFT JOIN us_prices up ON up.bid_result_id = br.id
+          WHERE br.source_type = 'practice'
+            ${entityText ? sql`AND p.government_entity = ${entityText}` : sql``}
+            ${refValue > 0 ? sql`AND up.our_price BETWEEN ${minVal} AND ${maxVal}` : sql``}
+            AND br.opening_date >= NOW() - INTERVAL '4 years'
+          ORDER BY br.opening_date DESC
+        `)
+      : await db.execute(sql`
+          WITH us_prices AS (
+            SELECT be_us.bid_result_id, be_us.total_price::numeric AS our_price
+            FROM bid_entries be_us WHERE be_us.is_us = true
+          )
+          SELECT
+            br.id AS bid_result_id,
+            be.competitor_id, be.company_name, be.total_price::numeric AS price,
+            br.opening_date, up.our_price,
+            t.tender_type AS entity_label
+          FROM bid_results br
+          JOIN bid_entries be ON be.bid_result_id = br.id
+                              AND be.is_us = false AND be.competitor_id IS NOT NULL
+          JOIN tenders t       ON t.id = br.tender_id
+          LEFT JOIN us_prices up ON up.bid_result_id = br.id
+          WHERE br.source_type = 'tender'
+            ${entityId   ? sql`AND t.government_entity_id = ${entityId}`   : sql``}
+            ${tenderType ? sql`AND t.tender_type          = ${tenderType}` : sql``}
+            ${refValue > 0 ? sql`AND up.our_price BETWEEN ${minVal} AND ${maxVal}` : sql``}
+            AND br.opening_date >= NOW() - INTERVAL '4 years'
+          ORDER BY br.opening_date DESC
+        `);
 
-    // also select br.id for counting unique sessions
+    /* ── count unique sessions ── */
     const sessionIds = new Set<number>();
     for (const r of similar.rows as any[]) {
-      // Extract session count from a separate map
       if (r.bid_result_id) sessionIds.add(r.bid_result_id);
     }
 
-    // Group by competitor and compute stats
+    /* ── group by competitor and compute stats ── */
     const compMap = new Map<number, { name: string; prices: number[] }>();
     for (const r of similar.rows as any[]) {
       if (!compMap.has(r.competitor_id)) {
@@ -300,11 +335,11 @@ router.get("/predict", async (req: Request, res: Response) => {
       })
       .sort((a, b) => b.appearances - a.appearances);
 
-    const totalSimilar = sessionIds.size;
-
     return res.json({
-      similar_sessions: totalSimilar,
-      can_use_ai:       totalSimilar >= 10,
+      source_name:      sourceName,
+      source_type:      srcType,
+      similar_sessions: sessionIds.size,
+      can_use_ai:       sessionIds.size >= 10,
       predictions,
       ref_value:        refValue,
     });

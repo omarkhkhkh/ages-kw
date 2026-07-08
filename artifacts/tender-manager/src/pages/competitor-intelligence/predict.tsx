@@ -394,27 +394,49 @@ export default function PredictPage() {
           {prediction && !predLoading && (
             <>
               {/* Context banner */}
-              <div style={{ ...S.card, background: "#fffbeb", border: `1.5px solid ${G}50`, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-                <div>
-                  <p style={{ margin: "0 0 2px", fontSize: 13, color: "#92400e", fontWeight: 700 }}>
-                    مبني على <strong style={{ color: GR }}>{prediction.similar_sessions}</strong> جلسة مشابهة
-                  </p>
-                  {refValue > 0 && (
-                    <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
-                      سعرنا المرجعي: <strong style={{ fontFamily: "monospace", color: GD }}>{formatCurrency(refValue)}</strong>
+              <div style={{ ...S.card, background: "#fffbeb", border: `1.5px solid ${G}50` }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                  <div>
+                    {prediction.source_name && (
+                      <p style={{ margin: "0 0 4px", fontSize: 12, color: "#92400e", display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ background: sourceType === "practice" ? "#dbeafe" : "#f0fdf4", color: sourceType === "practice" ? "#1e40af" : "#166534", padding: "1px 8px", borderRadius: 10, fontWeight: 700, fontSize: 11 }}>
+                          {sourceType === "practice" ? "ممارسة" : "مناقصة"}
+                        </span>
+                        <span style={{ fontWeight: 700, color: GR }}>{prediction.source_name}</span>
+                      </p>
+                    )}
+                    <p style={{ margin: "0 0 2px", fontSize: 13, color: "#92400e", fontWeight: 700 }}>
+                      مبني على <strong style={{ color: GR }}>{prediction.similar_sessions}</strong> جلسة مشابهة
+                      {prediction.similar_sessions === 0 && (
+                        <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400, marginRight: 6 }}>
+                          — لم يُسجَّل فضوض مشابهة لهذه {sourceType === "practice" ? "الممارسة" : "المناقصة"} بعد
+                        </span>
+                      )}
                     </p>
-                  )}
+                    {refValue > 0 && (
+                      <p style={{ margin: 0, fontSize: 12, color: "#6b7280" }}>
+                        سعرنا المرجعي: <strong style={{ fontFamily: "monospace", color: GD }}>{formatCurrency(refValue)}</strong>
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    {prediction.similar_sessions >= 5 && (
+                      <span style={{ fontSize: 11, background: "#dcfce7", color: "#15803d", padding: "4px 12px", borderRadius: 20, fontWeight: 700 }}>
+                        ✓ بيانات كافية للتحليل
+                      </span>
+                    )}
+                    {prediction.similar_sessions > 0 && prediction.similar_sessions < 5 && (
+                      <span style={{ fontSize: 11, background: "#fef9c3", color: "#92400e", padding: "4px 12px", borderRadius: 20, fontWeight: 700 }}>
+                        ⚠ بيانات محدودة — دقة منخفضة
+                      </span>
+                    )}
+                    {prediction.similar_sessions === 0 && (
+                      <span style={{ fontSize: 11, background: "#fee2e2", color: "#dc2626", padding: "4px 12px", borderRadius: 20, fontWeight: 700 }}>
+                        ✗ لا بيانات كافية
+                      </span>
+                    )}
+                  </div>
                 </div>
-                {prediction.similar_sessions >= 5 && (
-                  <span style={{ fontSize: 11, background: "#dcfce7", color: "#15803d", padding: "4px 12px", borderRadius: 20, fontWeight: 700 }}>
-                    ✓ بيانات كافية للتحليل
-                  </span>
-                )}
-                {prediction.similar_sessions > 0 && prediction.similar_sessions < 5 && (
-                  <span style={{ fontSize: 11, background: "#fef9c3", color: "#92400e", padding: "4px 12px", borderRadius: 20, fontWeight: 700 }}>
-                    ⚠ بيانات محدودة — دقة منخفضة
-                  </span>
-                )}
               </div>
 
               {prediction.predictions?.length === 0 && (

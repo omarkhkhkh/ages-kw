@@ -19,6 +19,13 @@ export const practicesTable = pgTable("practices", {
   expectedValue:        numeric("expected_value", { precision: 15, scale: 3 }),
   finalBondValue:       numeric("final_bond_value", { precision: 15, scale: 3 }),
   notes:                text("notes"),
+  // Assigned team member
+  responsibleEmployee:  text("responsible_employee"),
+  // Attached documents
+  fileConditions:       text("file_conditions"),  // الشروط الخاصة
+  filePricing:          text("file_pricing"),      // التسعير
+  fileSuppliers:        text("file_suppliers"),    // الموردين
+  fileOpening:          text("file_opening"),      // فض الظروف
   createdAt:            timestamp("created_at").notNull().defaultNow(),
   updatedAt:            timestamp("updated_at").notNull().defaultNow(),
 });

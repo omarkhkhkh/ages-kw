@@ -81,10 +81,39 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 /* ── UPDATE ── */
+// Fields a responsible employee (without canEdit) is allowed to patch on their own practice.
+const OWNER_ALLOWED_FIELDS = new Set([
+  "status", "fileConditions", "filePricing", "fileSuppliers", "fileOpening",
+]);
+
 router.patch("/:id", async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
+
+  const session = req.session as any;
+  const isAdmin = session.role === "admin";
+  const hasCanEdit = !!session.canEdit;
+
   try {
+    // Fetch current record to validate ownership before applying changes
+    const [existing] = await db.select().from(practicesTable).where(eq(practicesTable.id, id));
+    if (!existing) return res.status(404).json({ error: "الممارسة غير موجودة" });
+
+    const isOwner = session.fullName && existing.responsibleEmployee === session.fullName;
+
+    // Authorization: admin and canEdit users can update anything.
+    // Responsible employee (owner) can only update status and file fields.
+    if (!isAdmin && !hasCanEdit) {
+      if (!isOwner) {
+        return res.status(403).json({ error: "ليس لديك صلاحية تعديل هذه الممارسة." });
+      }
+      const requestedFields = Object.keys(req.body);
+      const forbidden = requestedFields.filter(f => !OWNER_ALLOWED_FIELDS.has(f));
+      if (forbidden.length > 0) {
+        return res.status(403).json({ error: `الموظف المسؤول لا يملك صلاحية تعديل: ${forbidden.join(", ")}` });
+      }
+    }
+
     const data = updatePracticeSchema.parse(req.body);
     const [row] = await db.update(practicesTable)
       .set({ ...data, updatedAt: new Date() })

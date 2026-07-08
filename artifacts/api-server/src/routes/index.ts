@@ -58,6 +58,11 @@ router.use(activityLogger);
 // enforces its own ownership checks internally.
 router.use("/tasks", tasksRouter);
 
+// Practices — mounted BEFORE requireEdit so responsible employees can change
+// status and upload files for their own practices. The practicesRouter
+// enforces its own ownership checks on PATCH internally.
+router.use("/practices", requireModule("accessTenders"), practicesRouter);
+
 // Require canEdit for all mutation methods (POST/PUT/PATCH/DELETE)
 router.use((req, res, next) => {
   if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
@@ -77,7 +82,6 @@ router.use("/bank-guarantees", requireModule("accessGuarantees"), bankGuarantees
 router.use("/contracts", requireModule("accessContracts"), contractsRouter);
 router.use("/transportation", requireModule("accessTransportation"), transportationRouter);
 router.use("/finance", requireModule("accessFinance"), financeRouter);
-router.use("/practices", requireModule("accessTenders"), practicesRouter);
 router.use("/company-documents", requireModule("accessTenders"), companyDocumentsRouter);
 router.use("/government-registrations", requireModule("accessTenders"), governmentRegistrationsRouter);
 

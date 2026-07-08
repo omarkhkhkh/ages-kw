@@ -36,13 +36,16 @@ function diffLabel(pct: number | null) {
   return `${sign}${pct.toFixed(1)}%`;
 }
 
-/* ── Competitor autocomplete ── */
+/* ── Competitor autocomplete with inline-add ── */
 function CompetitorInput({
   value, onChange,
 }: { value: string; onChange: (name: string, id?: number | null) => void }) {
   const [q, setQ] = useState(value);
   const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
+
   const { data: results = [] } = useQuery<any[]>({
     queryKey: ["competitors-search", q],
     queryFn: () => apiFetch(`/api/competitors?q=${encodeURIComponent(q)}`),
@@ -58,6 +61,36 @@ function CompetitorInput({
     return () => document.removeEventListener("mousedown", h);
   }, []);
 
+  // Show "add new" only when trimmed query doesn't exactly match any result
+  const trimmed = q.trim();
+  const exactMatch = results.some(c => c.name.toLowerCase() === trimmed.toLowerCase());
+  const showAddNew = trimmed.length >= 2 && !exactMatch;
+
+  async function handleAddNew() {
+    if (!trimmed || adding) return;
+    setAdding(true);
+    try {
+      const newComp = await apiFetch("/api/competitors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      // refresh search cache so it appears next time
+      qc.invalidateQueries({ queryKey: ["competitors-search"] });
+      setQ(newComp.name);
+      onChange(newComp.name, newComp.id);
+      setOpen(false);
+    } catch {
+      // name conflict or server error — still accept as free-text
+      onChange(trimmed, null);
+      setOpen(false);
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  const hasDropdown = open && (results.length > 0 || showAddNew);
+
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <input
@@ -68,8 +101,8 @@ function CompetitorInput({
         placeholder="اسم الشركة..."
         dir="rtl"
       />
-      {open && results.length > 0 && (
-        <div style={{ position: "absolute", top: "100%", right: 0, left: 0, background: "white", border: "1.5px solid #e5e7eb", borderRadius: 8, zIndex: 100, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", maxHeight: 200, overflowY: "auto" }}>
+      {hasDropdown && (
+        <div style={{ position: "absolute", top: "100%", right: 0, left: 0, background: "white", border: "1.5px solid #e5e7eb", borderRadius: 8, zIndex: 100, boxShadow: "0 4px 16px rgba(0,0,0,0.1)", maxHeight: 220, overflowY: "auto" }}>
           {results.map((c: any) => (
             <div key={c.id}
               style={{ padding: "8px 12px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f3f4f6" }}
@@ -80,6 +113,23 @@ function CompetitorInput({
               {c.shortName && <span style={{ color: "#9ca3af", fontSize: 11, marginRight: 8 }}>{c.shortName}</span>}
             </div>
           ))}
+          {showAddNew && (
+            <div
+              onMouseDown={handleAddNew}
+              style={{
+                padding: "8px 12px", cursor: adding ? "default" : "pointer", fontSize: 13,
+                display: "flex", alignItems: "center", gap: 7,
+                borderTop: results.length > 0 ? "1.5px dashed #e5e7eb" : "none",
+                color: "#A87C20", fontWeight: 700, background: "#fffbeb",
+              }}
+              onMouseEnter={e => { if (!adding) e.currentTarget.style.background = "#fef3c7"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "#fffbeb"; }}>
+              {adding
+                ? <><Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> جاري الإضافة...</>
+                : <><Plus size={13} /> إضافة &ldquo;{trimmed}&rdquo; كشركة جديدة</>
+              }
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -75,10 +75,8 @@ export default function CompetitorIntelligence() {
           </div>
           <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>تحليل أداء المنافسين عبر جميع المناقصات والممارسات</p>
         </div>
-        <Link href="/competitor-intelligence/predict">
-          <a style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 20px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", fontFamily: "inherit", textDecoration: "none" }}>
-            <Target size={15} /> تنبؤ المنافسين
-          </a>
+        <Link href="/competitor-intelligence/predict" style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 20px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", background: `linear-gradient(135deg,${G},${GD})`, color: "white", fontFamily: "inherit", textDecoration: "none" }}>
+          <Target size={15} /> تنبؤ المنافسين
         </Link>
       </div>
 
@@ -213,10 +211,8 @@ export default function CompetitorIntelligence() {
                       {c.last_seen ? new Date(c.last_seen).toLocaleDateString("ar-KW") : "—"}
                     </td>
                     <td style={S.td}>
-                      <Link href={`/competitor-intelligence/c/${c.competitor_id}`}>
-                        <a style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: G, fontWeight: 700, textDecoration: "none" }}>
-                          تفاصيل <ChevronLeft size={12} />
-                        </a>
+                      <Link href={`/competitor-intelligence/c/${c.competitor_id}`} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: G, fontWeight: 700, textDecoration: "none" }}>
+                        تفاصيل <ChevronLeft size={12} />
                       </Link>
                     </td>
                   </tr>

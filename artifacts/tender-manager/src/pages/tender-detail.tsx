@@ -45,6 +45,7 @@ export default function TenderDetail() {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [savingFields, setSavingFields] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<"details"|"bid"|"analysis">("details");
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -158,7 +159,6 @@ export default function TenderDetail() {
 
   const urgent = isUrgent(tender.deadline, tender.status);
   const canEdit = user?.role === "admin" || user?.canEdit || user?.fullName === tender.responsibleEngineer;
-  const [activeTab, setActiveTab] = useState<"details"|"bid"|"analysis">("details");
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12">

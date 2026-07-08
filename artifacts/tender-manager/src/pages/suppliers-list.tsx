@@ -146,7 +146,7 @@ export default function SuppliersList() {
           <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: 13, textAlign: "right" as const }}>
             <thead style={S.thead}>
               <tr>
-                {["اسم المورد", "النوع", "التخصص", "المسؤول", "الهاتف", ""].map(h => (
+                {["اسم المورد", "النوع", "التخصص", "المسؤول", "الهاتف", "الإيميل", ""].map(h => (
                   <th key={h} style={S.th}>{h}</th>
                 ))}
               </tr>
@@ -186,6 +186,15 @@ export default function SuppliersList() {
                     <td style={{ ...S.td, color: "#4b5563" }}>{s.contactPerson || <span style={{ color: "#d1d5db" }}>—</span>}</td>
                     <td style={{ ...S.td, color: "#4b5563", direction: "ltr", textAlign: "right" as const }}>
                       {s.phone ? <div style={{ display: "flex", alignItems: "center", gap: 5 }}><Phone size={12} color="#9ca3af" />{s.phone}</div> : <span style={{ color: "#d1d5db" }}>—</span>}
+                    </td>
+                    <td style={{ ...S.td, color: "#4b5563", direction: "ltr", textAlign: "right" as const }}>
+                      {s.email ? (
+                        <a href={`mailto:${s.email}`} style={{ display: "flex", alignItems: "center", gap: 5, color: "#2563eb", textDecoration: "none" }}
+                          onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.textDecoration = "underline"}
+                          onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.textDecoration = "none"}>
+                          <Mail size={12} color="#9ca3af" />{s.email}
+                        </a>
+                      ) : <span style={{ color: "#d1d5db" }}>—</span>}
                     </td>
                     <td style={{ ...S.td, textAlign: "left" as const }}>
                       {canEdit && (

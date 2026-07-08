@@ -42,6 +42,11 @@ router.get("/", async (req: Request, res: Response) => {
         c.government_entity_id as "governmentEntityId", c.contract_value as "contractValue",
         c.sign_date as "signDate", c.start_date as "startDate", c.end_date as "endDate",
         c.status, c.notes, c.created_at as "createdAt", c.updated_at as "updatedAt",
+        c.final_bond_value as "finalBondValue", c.final_bond_number as "finalBondNumber",
+        c.final_bond_bank as "finalBondBank",
+        c.final_bond_issue_date as "finalBondIssueDate",
+        c.final_bond_expiry_date as "finalBondExpiryDate",
+        c.final_bond_status as "finalBondStatus",
         ge.name as "entityName", t.tender_number as "tenderNumber"
       FROM contracts c
       LEFT JOIN government_entities ge ON c.government_entity_id = ge.id

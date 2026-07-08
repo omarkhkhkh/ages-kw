@@ -6,6 +6,7 @@ import {
   Building2, Banknote, CalendarDays, CheckCircle2, XCircle, Clock,
   LayoutGrid, Paperclip, Upload, Shield, MessageSquare, ChevronDown,
   AlertTriangle, Eye, EyeOff, Send, FileText, Trash,
+  Landmark, Save,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { exportContractsToExcel } from "@/lib/export";
@@ -34,6 +35,15 @@ const emptyForm = {
   tenderId: "", contractNumber: "", governmentEntityId: "",
   contractValue: "", signDate: "", startDate: "", endDate: "",
   status: "active", notes: "",
+  // final bond
+  finalBondValue: "", finalBondNumber: "", finalBondBank: "",
+  finalBondIssueDate: "", finalBondExpiryDate: "", finalBondStatus: "active",
+};
+
+const BOND_STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
+  active:      { label: "سارية",    color: "#16a34a", bg: "#f0fdf4" },
+  released:    { label: "مُفرج عنها", color: "#2563eb", bg: "#eff6ff" },
+  confiscated: { label: "مُصادرة",  color: "#dc2626", bg: "#fff1f2" },
 };
 
 function formatBytes(n: number) {
@@ -95,6 +105,30 @@ function ContractModal({ open, editId, form, setForm, onClose, onSubmit, isPendi
             </div>
           </div>
           <div style={{ height: 1, background: "linear-gradient(90deg,transparent,#f0ead8,transparent)", marginBottom: 22 }} />
+          {/* ── Final Bond Section ── */}
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+              <div style={{ width: 3, height: 18, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
+              <Landmark size={14} color={GD} />
+              <span style={{ fontSize: 13, fontWeight: 800, color: GR }}>الكفالة النهائية</span>
+              <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 500 }}>(اختياري)</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div><label style={lbl}>قيمة الكفالة (د.ك)</label><input type="number" step="0.001" min="0" value={form.finalBondValue} onChange={f("finalBondValue")} placeholder="0.000" dir="ltr" style={inp} onFocus={focus} onBlur={blur} /></div>
+              <div><label style={lbl}>رقم الكفالة</label><input value={form.finalBondNumber} onChange={f("finalBondNumber")} placeholder="رقم وثيقة الكفالة" dir="ltr" style={inp} onFocus={focus} onBlur={blur} /></div>
+              <div style={{ gridColumn: "1/-1" }}><label style={lbl}>البنك المُصدر</label><input value={form.finalBondBank} onChange={f("finalBondBank")} placeholder="اسم البنك أو المؤسسة المالية" style={inp} onFocus={focus} onBlur={blur} /></div>
+              <div><label style={lbl}>تاريخ الإصدار</label><input type="date" value={form.finalBondIssueDate} onChange={f("finalBondIssueDate")} style={inp} onFocus={focus} onBlur={blur} /></div>
+              <div><label style={lbl}>تاريخ الانتهاء</label><input type="date" value={form.finalBondExpiryDate} onChange={f("finalBondExpiryDate")} style={inp} onFocus={focus} onBlur={blur} /></div>
+              <div style={{ gridColumn: "1/-1" }}><label style={lbl}>حالة الكفالة</label>
+                <select value={form.finalBondStatus} onChange={f("finalBondStatus")} style={{ ...inp, height: 42 }} onFocus={focus} onBlur={blur}>
+                  <option value="active">سارية</option>
+                  <option value="released">مُفرج عنها</option>
+                  <option value="confiscated">مُصادرة</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div style={{ height: 1, background: "linear-gradient(90deg,transparent,#f0ead8,transparent)", marginBottom: 22 }} />
           <div style={{ marginBottom: 24 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
               <div style={{ width: 3, height: 18, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
@@ -122,7 +156,7 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
   contract: any; onClose: () => void; isAdmin: boolean;
   currentUserId: number; employees: any[];
 }) {
-  const [activeTab, setActiveTab] = useState<"docs" | "perms" | "comments">("docs");
+  const [activeTab, setActiveTab] = useState<"bond" | "docs" | "perms" | "comments">("bond");
   const qc = useQueryClient();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -226,9 +260,10 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
   };
 
   const TABS = [
-    { id: "docs", label: "المرفقات", icon: Paperclip, badge: (docs as any[]).length },
+    { id: "bond",     label: "الكفالة النهائية", icon: Landmark,       badge: 0 },
+    { id: "docs",     label: "المرفقات",         icon: Paperclip,      badge: (docs as any[]).length },
     ...(isAdmin ? [{ id: "perms", label: "الصلاحيات", icon: Shield, badge: 0 }] : []),
-    { id: "comments", label: "التعليقات", icon: MessageSquare, badge: !isAdmin ? unreadCount : (comments as any[]).length },
+    { id: "comments", label: "التعليقات",        icon: MessageSquare, badge: !isAdmin ? unreadCount : (comments as any[]).length },
   ] as const;
 
   const tabBtn = (t: typeof TABS[number]) => {
@@ -307,6 +342,76 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
 
         {/* Content */}
         <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+
+          {/* ── Bond Tab ── */}
+          {activeTab === "bond" && (() => {
+            const bond = contract;
+            const bs = BOND_STATUS_MAP[bond.finalBondStatus ?? "active"] ?? BOND_STATUS_MAP.active;
+            const hasBond = bond.finalBondValue || bond.finalBondNumber || bond.finalBondBank || bond.finalBondIssueDate || bond.finalBondExpiryDate;
+
+            // Expiry warning
+            let expiryWarning: React.ReactNode = null;
+            if (bond.finalBondExpiryDate) {
+              const diff = Math.ceil((new Date(bond.finalBondExpiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+              if (diff < 0)        expiryWarning = <div style={{ display:"flex",alignItems:"center",gap:6,padding:"10px 14px",borderRadius:10,background:"#fff1f2",border:"1.5px solid #fecaca",fontSize:12,fontWeight:700,color:"#dc2626",marginBottom:12 }}><AlertTriangle size={14}/>انتهت صلاحية الكفالة منذ {Math.abs(diff)} يوم</div>;
+              else if (diff <= 30) expiryWarning = <div style={{ display:"flex",alignItems:"center",gap:6,padding:"10px 14px",borderRadius:10,background:"#fffbeb",border:"1.5px solid #fde68a",fontSize:12,fontWeight:700,color:"#d97706",marginBottom:12 }}><AlertTriangle size={14}/>تنتهي الكفالة خلال {diff} يوم</div>;
+            }
+
+            return (
+              <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+                {expiryWarning}
+                {!hasBond ? (
+                  <div style={{ textAlign:"center", padding:40, color:"#9ca3af" }}>
+                    <Landmark size={32} style={{ margin:"0 auto 8px", opacity:0.3 }} />
+                    <div style={{ fontSize:13, fontWeight:600 }}>لا توجد بيانات كفالة نهائية</div>
+                    <div style={{ fontSize:11, marginTop:4 }}>أضفها من خلال تعديل العقد</div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Status badge */}
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                      <span style={{ fontSize:12, fontWeight:700, color:"#6b7280" }}>حالة الكفالة</span>
+                      <span style={{ padding:"4px 14px", borderRadius:20, fontSize:12, fontWeight:700, background:bs.bg, color:bs.color }}>{bs.label}</span>
+                    </div>
+                    <div style={{ height:1, background:"#f0ead8" }} />
+                    {/* Fields grid */}
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                      {bond.finalBondValue && (
+                        <div style={{ gridColumn:"1/-1", padding:"12px 16px", borderRadius:12, background:"#fdfaf5", border:"1.5px solid #f0ead8" }}>
+                          <div style={{ fontSize:11, color:"#9ca3af", fontWeight:700, marginBottom:3 }}>قيمة الكفالة</div>
+                          <div style={{ fontSize:16, fontWeight:900, color:GD, fontFamily:"monospace" }}>{formatCurrency(Number(bond.finalBondValue))}</div>
+                        </div>
+                      )}
+                      {bond.finalBondNumber && (
+                        <div style={{ padding:"10px 14px", borderRadius:10, background:"white", border:"1.5px solid #f0ead8" }}>
+                          <div style={{ fontSize:10, color:"#9ca3af", fontWeight:700, marginBottom:2 }}>رقم الكفالة</div>
+                          <div style={{ fontSize:12, fontWeight:700, color:GR, fontFamily:"monospace" }}>{bond.finalBondNumber}</div>
+                        </div>
+                      )}
+                      {bond.finalBondBank && (
+                        <div style={{ padding:"10px 14px", borderRadius:10, background:"white", border:"1.5px solid #f0ead8" }}>
+                          <div style={{ fontSize:10, color:"#9ca3af", fontWeight:700, marginBottom:2 }}>البنك المُصدر</div>
+                          <div style={{ fontSize:12, fontWeight:700, color:GR }}>{bond.finalBondBank}</div>
+                        </div>
+                      )}
+                      {bond.finalBondIssueDate && (
+                        <div style={{ padding:"10px 14px", borderRadius:10, background:"white", border:"1.5px solid #f0ead8" }}>
+                          <div style={{ fontSize:10, color:"#9ca3af", fontWeight:700, marginBottom:2 }}>تاريخ الإصدار</div>
+                          <div style={{ fontSize:12, fontWeight:700, color:GR }}>{formatDate(bond.finalBondIssueDate)}</div>
+                        </div>
+                      )}
+                      {bond.finalBondExpiryDate && (
+                        <div style={{ padding:"10px 14px", borderRadius:10, background:"white", border:"1.5px solid #f0ead8" }}>
+                          <div style={{ fontSize:10, color:"#9ca3af", fontWeight:700, marginBottom:2 }}>تاريخ الانتهاء</div>
+                          <div style={{ fontSize:12, fontWeight:700, color:GR }}>{formatDate(bond.finalBondExpiryDate)}</div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ── Documents Tab ── */}
           {activeTab === "docs" && (
@@ -587,8 +692,36 @@ export default function ContractsList() {
   const deleteM = useMutation({ mutationFn: contractsApi.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ["contracts"] }); toast({ title: "🗑 تم حذف العقد" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
 
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
-  const openEdit  = (c: any) => { setEditId(c.id); setForm({ tenderId: c.tenderId || "", contractNumber: c.contractNumber, governmentEntityId: c.governmentEntityId || "", contractValue: c.contractValue || "", signDate: c.signDate || "", startDate: c.startDate || "", endDate: c.endDate || "", status: c.status, notes: c.notes || "" }); setShowForm(true); };
-  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.contractNumber) return; const data = { ...form, tenderId: form.tenderId ? Number(form.tenderId) : null, governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : null, contractValue: form.contractValue ? Number(form.contractValue) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
+  const openEdit  = (c: any) => {
+    setEditId(c.id);
+    setForm({
+      tenderId: c.tenderId || "", contractNumber: c.contractNumber,
+      governmentEntityId: c.governmentEntityId || "", contractValue: c.contractValue || "",
+      signDate: c.signDate || "", startDate: c.startDate || "", endDate: c.endDate || "",
+      status: c.status, notes: c.notes || "",
+      finalBondValue: c.finalBondValue || "", finalBondNumber: c.finalBondNumber || "",
+      finalBondBank: c.finalBondBank || "", finalBondIssueDate: c.finalBondIssueDate || "",
+      finalBondExpiryDate: c.finalBondExpiryDate || "", finalBondStatus: c.finalBondStatus || "active",
+    });
+    setShowForm(true);
+  };
+  const handleSubmit = (ev: React.FormEvent) => {
+    ev.preventDefault();
+    if (!form.contractNumber) return;
+    const data = {
+      ...form,
+      tenderId:            form.tenderId            ? Number(form.tenderId)            : null,
+      governmentEntityId:  form.governmentEntityId  ? Number(form.governmentEntityId)  : null,
+      contractValue:       form.contractValue        ? Number(form.contractValue)        : null,
+      finalBondValue:      form.finalBondValue       ? String(form.finalBondValue)       : null,
+      finalBondNumber:     form.finalBondNumber      || null,
+      finalBondBank:       form.finalBondBank        || null,
+      finalBondIssueDate:  form.finalBondIssueDate   || null,
+      finalBondExpiryDate: form.finalBondExpiryDate  || null,
+      finalBondStatus:     form.finalBondStatus      || "active",
+    };
+    editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data);
+  };
 
   const activeCard = STAT_CARDS.find(c => c.id === tab)!;
 
@@ -672,6 +805,7 @@ export default function ContractsList() {
                   { label: "تاريخ التوقيع",  icon: CalendarDays  },
                   { label: "تاريخ الانتهاء", icon: CalendarDays  },
                   { label: "الحالة",          icon: null          },
+                  { label: "الكفالة النهائية", icon: Landmark      },
                   { label: "إجراءات",         icon: null          },
                 ].map((h, i) => (
                   <th key={i} style={{ padding: "12px 16px", fontWeight: 700, fontSize: 11, color: "#6b7280", borderBottom: "1.5px solid #f0ead8", whiteSpace: "nowrap" }}>
@@ -687,12 +821,12 @@ export default function ContractsList() {
               {isLoading ? (
                 [...Array(3)].map((_, i) => (
                   <tr key={i} style={{ borderBottom: "1px solid #f5f0e6" }}>
-                    {[...Array(8)].map((_, j) => <td key={j} style={{ padding: 16 }}><div style={{ height: 14, background: "#f1f5f9", borderRadius: 6, width: 80, animation: "pulse 1.5s infinite" }} /></td>)}
+                    {[...Array(9)].map((_, j) => <td key={j} style={{ padding: 16 }}><div style={{ height: 14, background: "#f1f5f9", borderRadius: 6, width: 80, animation: "pulse 1.5s infinite" }} /></td>)}
                   </tr>
                 ))
               ) : !(contracts as any[]).length ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: "64px 0", textAlign: "center" }}>
+                  <td colSpan={9} style={{ padding: "64px 0", textAlign: "center" }}>
                     <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
                       <div style={{ width: 72, height: 72, borderRadius: 20, background: "#fdf8ec", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <FileSignature size={30} color="#e2d5b0" />
@@ -729,6 +863,28 @@ export default function ContractsList() {
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.color, border: `1px solid ${st.color}22` }}>
                           <st.icon size={11} />{st.label}
                         </span>
+                      </td>
+                      <td style={{ padding: "14px 16px" }}>
+                        {(() => {
+                          if (!c.finalBondValue && !c.finalBondNumber) return <span style={{ color: "#9ca3af", fontSize: 11 }}>—</span>;
+                          const bs = BOND_STATUS_MAP[c.finalBondStatus ?? "active"] ?? BOND_STATUS_MAP.active;
+                          // Expiry check — distinguish expired vs near-expiry
+                          let expiryNote: React.ReactNode = null;
+                          if (c.finalBondExpiryDate) {
+                            const diff = Math.ceil((new Date(c.finalBondExpiryDate).getTime() - Date.now()) / 86400000);
+                            if (diff < 0)        expiryNote = <span style={{ fontSize:10, color:"#dc2626", display:"flex", alignItems:"center", gap:3 }}><AlertTriangle size={9}/>منتهية الصلاحية</span>;
+                            else if (diff <= 30) expiryNote = <span style={{ fontSize:10, color:"#d97706", display:"flex", alignItems:"center", gap:3 }}><AlertTriangle size={9}/>قريبة الانتهاء</span>;
+                          }
+                          return (
+                            <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                              <span style={{ padding:"3px 10px", borderRadius:20, fontSize:11, fontWeight:700, background:bs.bg, color:bs.color, display:"inline-flex", alignItems:"center", gap:4 }}>
+                                <Landmark size={9}/>{bs.label}
+                              </span>
+                              {c.finalBondValue && <span style={{ fontFamily:"monospace", fontSize:11, color:"#6b7280" }}>{formatCurrency(Number(c.finalBondValue))}</span>}
+                              {expiryNote}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td style={{ padding: "14px 16px" }} onClick={e => e.stopPropagation()}>
                         <div style={{ display: "flex", gap: 5, alignItems: "center" }}>

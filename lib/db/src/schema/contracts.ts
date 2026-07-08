@@ -15,6 +15,13 @@ export const contractsTable = pgTable("contracts", {
   endDate: date("end_date"),
   status: text("status").notNull().default("active"), // active, completed, terminated
   notes: text("notes"),
+  // Final bond (كفالة نهائية)
+  finalBondValue:      numeric("final_bond_value",       { precision: 15, scale: 3 }),
+  finalBondNumber:     text("final_bond_number"),     // رقم الكفالة
+  finalBondBank:       text("final_bond_bank"),        // البنك المُصدر
+  finalBondIssueDate:  date("final_bond_issue_date"),  // تاريخ الإصدار
+  finalBondExpiryDate: date("final_bond_expiry_date"), // تاريخ الانتهاء
+  finalBondStatus:     text("final_bond_status").default("active"), // active | released | confiscated
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

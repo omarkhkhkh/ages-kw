@@ -315,6 +315,79 @@ router.get("/predict", async (req: Request, res: Response) => {
 });
 
 /* ═══════════════════════════════════════════════════════
+   GET /item-names?q=xxx — أسماء الأصناف للإكمال التلقائي
+   ═══════════════════════════════════════════════════════ */
+router.get("/item-names", async (req: Request, res: Response) => {
+  try {
+    const { q = "" } = req.query as Record<string, string>;
+    const rows = await db.execute(sql`
+      SELECT DISTINCT bi.item_name
+      FROM bid_items bi
+      WHERE bi.item_name ILIKE ${`%${q}%`}
+      ORDER BY bi.item_name
+      LIMIT 25
+    `);
+    return res.json(rows.rows.map((r: any) => r.item_name));
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في جلب أسماء الأصناف" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════
+   GET /item-analysis?item_name=xxx
+   تحليل سعر صنف معين عبر جميع المنافسين
+   ═══════════════════════════════════════════════════════ */
+router.get("/item-analysis", async (req: Request, res: Response) => {
+  try {
+    const { item_name = "" } = req.query as Record<string, string>;
+    if (!item_name.trim()) return res.status(400).json({ error: "item_name مطلوب" });
+
+    const competitors = await db.execute(sql`
+      SELECT
+        be.competitor_id,
+        MAX(be.company_name)                                     AS company_name,
+        COUNT(*)::int                                            AS appearances,
+        ROUND(AVG(bip.unit_price::numeric), 3)                   AS avg_price,
+        ROUND(MIN(bip.unit_price::numeric), 3)                   AS min_price,
+        ROUND(MAX(bip.unit_price::numeric), 3)                   AS max_price,
+        ROUND(COALESCE(STDDEV(bip.unit_price::numeric), 0)::numeric, 3) AS std_price
+      FROM bid_items bi
+      JOIN bid_item_prices bip ON bip.bid_item_id = bi.id
+      JOIN bid_entries     be  ON be.id = bip.bid_entry_id
+      WHERE bi.item_name ILIKE ${`%${item_name}%`}
+        AND be.is_us = false
+        AND be.competitor_id IS NOT NULL
+      GROUP BY be.competitor_id
+      ORDER BY appearances DESC
+    `);
+
+    const ourData = await db.execute(sql`
+      SELECT
+        ROUND(AVG(bip.unit_price::numeric), 3) AS our_avg_price,
+        ROUND(MIN(bip.unit_price::numeric), 3) AS our_min_price,
+        ROUND(MAX(bip.unit_price::numeric), 3) AS our_max_price,
+        COUNT(*)::int                          AS appearances,
+        STRING_AGG(DISTINCT bi.item_name, ' / ') AS matched_items
+      FROM bid_items bi
+      JOIN bid_item_prices bip ON bip.bid_item_id = bi.id
+      JOIN bid_entries     be  ON be.id = bip.bid_entry_id
+      WHERE bi.item_name ILIKE ${`%${item_name}%`}
+        AND be.is_us = true
+    `);
+
+    return res.json({
+      item_name,
+      competitors: competitors.rows,
+      our_data:    ourData.rows[0] ?? null,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في تحليل الصنف" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════
    GET /:id — تفاصيل شركة واحدة (MUST be after all static paths)
    ═══════════════════════════════════════════════════════ */
 router.get("/:id", async (req: Request, res: Response) => {

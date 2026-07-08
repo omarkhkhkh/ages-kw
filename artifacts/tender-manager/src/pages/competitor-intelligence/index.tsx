@@ -163,10 +163,17 @@ export default function CompetitorIntelligence() {
       </div>
 
       {/* ── Competitor Leaderboard ── */}
-      <div style={{ background: "white", borderRadius: 16, boxShadow: "0 1px 6px rgba(0,0,0,0.07)", overflow: "hidden" }}>
-        <div style={{ padding: "14px 20px", borderBottom: "1.5px solid #f3f4f6", display: "flex", alignItems: "center", gap: 8 }}>
-          <Trophy size={16} color={G} />
-          <span style={{ fontSize: 14, fontWeight: 800, color: GR }}>ترتيب الشركات المنافسة</span>
+      <div style={{ background: "white", borderRadius: 16, boxShadow: "0 2px 12px rgba(0,0,0,0.07)", overflow: "hidden", border: "1px solid #e2e8f0" }}>
+        <div style={{ padding: "16px 22px", borderBottom: "1.5px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${G},${GD})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Trophy size={15} color="white" />
+            </div>
+            <span style={{ fontSize: 14, fontWeight: 800, color: GR }}>ترتيب الشركات المنافسة</span>
+          </div>
+          {summary.length > 0 && (
+            <span style={{ fontSize: 11, color: "#94a3b8", background: "#f1f5f9", padding: "3px 10px", borderRadius: 20, fontWeight: 700 }}>{summary.length} شركة</span>
+          )}
         </div>
         <div style={{ overflowX: "auto" }}>
           {summaryLoading ? (
@@ -174,49 +181,85 @@ export default function CompetitorIntelligence() {
               <Loader2 size={20} style={{ animation: "spin 1s linear infinite", display: "inline-block" }} />
             </div>
           ) : summary.length === 0 ? (
-            <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
-              <Trophy size={32} style={{ margin: "0 auto 8px", display: "block", opacity: 0.3 }} />
-              <p>لا توجد بيانات بعد — ابدأ بتسجيل نتائج فضوض العطاء في المناقصات</p>
+            <div style={{ padding: 48, textAlign: "center", color: "#94a3b8" }}>
+              <Trophy size={36} style={{ margin: "0 auto 10px", display: "block", opacity: 0.2 }} />
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>لا توجد بيانات بعد</p>
+              <p style={{ margin: "4px 0 0", fontSize: 12 }}>ابدأ بتسجيل نتائج فضوض العطاء في المناقصات</p>
             </div>
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680 }}>
               <thead>
-                <tr>
-                  {["#","الشركة","جلسات","فاز علينا","متوسط الفرق","آخر ظهور",""].map(h => (
-                    <th key={h} style={S.th}>{h}</th>
+                <tr style={{ background: "linear-gradient(to bottom,#f8fafc,#f1f5f9)" }}>
+                  {["#","الشركة","الجلسات","فاز علينا","متوسط الفرق","آخر ظهور",""].map(h => (
+                    <th key={h} style={{ padding: "11px 14px", fontWeight: 800, fontSize: 11, color: "#64748b", textAlign: "right", borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {summary.map((c: any, i: number) => (
-                  <tr key={c.competitor_id}
-                    onMouseEnter={e => (e.currentTarget.style.background = "#fafafa")}
-                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-                    <td style={{ ...S.td, fontWeight: 800, color: "#9ca3af", width: 32 }}>{i + 1}</td>
-                    <td style={{ ...S.td, fontWeight: 700, color: GR }}>{c.company_name}</td>
-                    <td style={{ ...S.td, fontWeight: 700 }}>{c.total_bids}</td>
-                    <td style={{ ...S.td }}>
-                      {c.wins > 0
-                        ? <span style={{ color: "#dc2626", fontWeight: 700 }}>{c.wins}×</span>
-                        : <span style={{ color: "#16a34a" }}>لم يفز</span>}
-                    </td>
-                    <td style={{ ...S.td }}>
-                      {c.avg_diff_pct != null ? (
-                        <span style={{ fontWeight: 700, color: c.avg_diff_pct < 0 ? "#16a34a" : c.avg_diff_pct < 2 ? "#d97706" : "#374151" }}>
-                          {c.avg_diff_pct >= 0 ? "+" : ""}{c.avg_diff_pct}%
+                {summary.map((c: any, i: number) => {
+                  const rankColors: Record<number,[string,string,string]> = {
+                    0: [G,       "#7c4b00", "#fffbeb"],
+                    1: ["#94a3b8","#1e293b", "#f8fafc"],
+                    2: ["#cd7c2f","#431407", "#fff7ed"],
+                  };
+                  const [badgeBg, badgeText, rowAccent] = rankColors[i] ?? ["#e2e8f0","#64748b","white"];
+                  const rowBg = i % 2 === 0 ? "white" : "#fafbfc";
+                  return (
+                    <tr key={c.competitor_id} style={{ background: rowBg, cursor: "pointer", transition: "background 0.12s" }}
+                      onMouseEnter={ev => (ev.currentTarget.style.background = "#f0f9ff")}
+                      onMouseLeave={ev => (ev.currentTarget.style.background = rowBg)}>
+                      <td style={{ padding: "12px 14px", width: 44, textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: "50%", background: badgeBg, color: badgeText, fontSize: 11, fontWeight: 900 }}>
+                          {i + 1}
                         </span>
-                      ) : "—"}
-                    </td>
-                    <td style={{ ...S.td, color: "#6b7280", fontSize: 12 }}>
-                      {c.last_seen ? new Date(c.last_seen).toLocaleDateString("ar-KW") : "—"}
-                    </td>
-                    <td style={S.td}>
-                      <Link href={`/competitor-intelligence/c/${c.competitor_id}`} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: G, fontWeight: 700, textDecoration: "none" }}>
-                        تفاصيل <ChevronLeft size={12} />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td style={{ padding: "12px 14px", fontWeight: 700, color: GR, borderBottom: "1px solid #f1f5f9" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 8, background: rowAccent, border: `1.5px solid ${badgeBg}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 900, color: badgeBg, flexShrink: 0 }}>
+                            {c.company_name?.[0] ?? "?"}
+                          </div>
+                          {c.company_name}
+                        </div>
+                      </td>
+                      <td style={{ padding: "12px 14px", borderBottom: "1px solid #f1f5f9" }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#f1f5f9", color: "#475569", padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+                          {c.total_bids} جلسة
+                        </span>
+                      </td>
+                      <td style={{ padding: "12px 14px", borderBottom: "1px solid #f1f5f9" }}>
+                        {c.wins > 0 ? (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#fee2e2", color: "#dc2626", padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 800 }}>
+                            {c.wins}× فاز
+                          </span>
+                        ) : (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#dcfce7", color: "#15803d", padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+                            لم يفز
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: "12px 14px", borderBottom: "1px solid #f1f5f9" }}>
+                        {c.avg_diff_pct != null ? (
+                          <span style={{
+                            display: "inline-block", padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 800,
+                            background: c.avg_diff_pct < 0 ? "#dcfce7" : c.avg_diff_pct < 2 ? "#fef9c3" : "#f1f5f9",
+                            color: c.avg_diff_pct < 0 ? "#15803d" : c.avg_diff_pct < 2 ? "#92400e" : "#475569",
+                          }}>
+                            {c.avg_diff_pct >= 0 ? "+" : ""}{c.avg_diff_pct}%
+                          </span>
+                        ) : <span style={{ color: "#cbd5e1" }}>—</span>}
+                      </td>
+                      <td style={{ padding: "12px 14px", color: "#94a3b8", fontSize: 12, borderBottom: "1px solid #f1f5f9" }}>
+                        {c.last_seen ? new Date(c.last_seen).toLocaleDateString("ar-KW") : "—"}
+                      </td>
+                      <td style={{ padding: "12px 14px", borderBottom: "1px solid #f1f5f9" }}>
+                        <Link href={`/competitor-intelligence/c/${c.competitor_id}`}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: GD, fontWeight: 800, textDecoration: "none", background: "#fffbeb", border: `1.5px solid ${G}40`, padding: "4px 12px", borderRadius: 20 }}>
+                          تفاصيل <ChevronLeft size={12} />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

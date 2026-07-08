@@ -137,38 +137,69 @@ export default function PredictPage() {
           {prediction.predictions?.length > 0 && (
             <>
               {/* Competitor predictions table */}
-              <div style={{ ...S.card }}>
-                <p style={{ fontSize: 13, fontWeight: 800, color: GR, margin: "0 0 14px" }}>توقعات أسعار المنافسين</p>
-                <div style={{ borderRadius: 10, overflow: "hidden", border: "1.5px solid #e5e7eb" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <div style={{ ...S.card, padding: 0, overflow: "hidden", border: "1px solid #e2e8f0", boxShadow: "0 2px 10px rgba(0,0,0,0.06)" }}>
+                <div style={{ padding: "14px 20px", borderBottom: "1.5px solid #f1f5f9", display: "flex", alignItems: "center", gap: 9 }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 8, background: `linear-gradient(135deg,${G},${GD})`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Target size={14} color="white" />
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: GR }}>توقعات أسعار المنافسين</span>
+                  <span style={{ marginRight: "auto", fontSize: 11, color: "#94a3b8", background: "#f1f5f9", padding: "2px 10px", borderRadius: 20, fontWeight: 700 }}>{prediction.predictions.length} شركة</span>
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 580 }}>
                     <thead>
-                      <tr>
-                        {["الشركة","النطاق المتوقع","متوسط السعر","جلسات مشابهة","الثقة"].map(h => (
-                          <th key={h} style={{ padding: "8px 14px", fontWeight: 800, fontSize: 11, color: "#6b7280", textAlign: "right", background: "#f9fafb", borderBottom: "1.5px solid #e5e7eb" }}>{h}</th>
+                      <tr style={{ background: "linear-gradient(to bottom,#f8fafc,#f1f5f9)" }}>
+                        {["#","الشركة","النطاق المتوقع","متوسط السعر","جلسات","الثقة"].map(h => (
+                          <th key={h} style={{ padding: "11px 14px", fontWeight: 800, fontSize: 11, color: "#64748b", textAlign: "right", borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {prediction.predictions.map((p: any, i: number) => (
-                        <tr key={i}>
-                          <td style={{ padding: "10px 14px", fontWeight: 700, color: GR, borderBottom: "1px solid #f3f4f6" }}>{p.company_name}</td>
-                          <td style={{ padding: "10px 14px", fontFamily: "monospace", fontSize: 12, borderBottom: "1px solid #f3f4f6" }}>
-                            {formatCurrency(p.range_low)} — {formatCurrency(p.range_high)}
-                          </td>
-                          <td style={{ padding: "10px 14px", fontFamily: "monospace", fontWeight: 700, color: "#374151", borderBottom: "1px solid #f3f4f6" }}>
-                            {formatCurrency(p.mean)}
-                          </td>
-                          <td style={{ padding: "10px 14px", textAlign: "center", borderBottom: "1px solid #f3f4f6" }}>{p.appearances}</td>
-                          <td style={{ padding: "10px 14px", borderBottom: "1px solid #f3f4f6" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <div style={{ flex: 1, height: 6, background: "#e5e7eb", borderRadius: 3, overflow: "hidden" }}>
-                                <div style={{ height: "100%", width: `${p.confidence}%`, background: p.confidence >= 70 ? "#16a34a" : p.confidence >= 40 ? G : "#dc2626", borderRadius: 3 }} />
+                      {prediction.predictions.map((p: any, i: number) => {
+                        const rowBg = i % 2 === 0 ? "white" : "#fafbfc";
+                        const confColor = p.confidence >= 70 ? "#15803d" : p.confidence >= 40 ? "#92400e" : "#dc2626";
+                        const confBg   = p.confidence >= 70 ? "#dcfce7"  : p.confidence >= 40 ? "#fef9c3"  : "#fee2e2";
+                        return (
+                          <tr key={i} style={{ background: rowBg, transition: "background 0.12s" }}
+                            onMouseEnter={ev => (ev.currentTarget.style.background = "#f0f9ff")}
+                            onMouseLeave={ev => (ev.currentTarget.style.background = rowBg)}>
+                            <td style={{ padding: "12px 14px", width: 40, textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>
+                              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", background: "#f1f5f9", color: "#64748b", fontSize: 11, fontWeight: 800 }}>{i + 1}</span>
+                            </td>
+                            <td style={{ padding: "12px 14px", fontWeight: 700, color: GR, borderBottom: "1px solid #f1f5f9" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ width: 30, height: 30, borderRadius: 8, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 900, color: "#475569", flexShrink: 0 }}>
+                                  {p.company_name?.[0] ?? "?"}
+                                </div>
+                                {p.company_name}
                               </div>
-                              <span style={{ fontSize: 11, fontWeight: 700, color: "#374151", whiteSpace: "nowrap" }}>{p.confidence}%</span>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            <td style={{ padding: "12px 14px", fontFamily: "monospace", fontSize: 12, color: "#475569", borderBottom: "1px solid #f1f5f9" }}>
+                              <span style={{ background: "#f8fafc", padding: "3px 8px", borderRadius: 6, border: "1px solid #e2e8f0" }}>
+                                {formatCurrency(p.range_low)}
+                              </span>
+                              <span style={{ margin: "0 6px", color: "#94a3b8" }}>—</span>
+                              <span style={{ background: "#f8fafc", padding: "3px 8px", borderRadius: 6, border: "1px solid #e2e8f0" }}>
+                                {formatCurrency(p.range_high)}
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px 14px", fontFamily: "monospace", fontWeight: 800, color: GD, fontSize: 14, borderBottom: "1px solid #f1f5f9" }}>
+                              {formatCurrency(p.mean)}
+                            </td>
+                            <td style={{ padding: "12px 14px", textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>
+                              <span style={{ background: "#f1f5f9", color: "#475569", padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>{p.appearances}</span>
+                            </td>
+                            <td style={{ padding: "12px 14px", borderBottom: "1px solid #f1f5f9", minWidth: 140 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ flex: 1, height: 8, background: "#e2e8f0", borderRadius: 4, overflow: "hidden" }}>
+                                  <div style={{ height: "100%", width: `${p.confidence}%`, background: confColor, borderRadius: 4, transition: "width 0.4s ease" }} />
+                                </div>
+                                <span style={{ fontSize: 11, fontWeight: 800, color: confColor, background: confBg, padding: "2px 8px", borderRadius: 10, whiteSpace: "nowrap" }}>{p.confidence}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

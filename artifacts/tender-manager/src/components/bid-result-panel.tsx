@@ -284,8 +284,19 @@ export default function BidResultPanel({ sourceType, sourceId, ourPrice, ourName
   const S = {
     inp: { padding: "6px 10px", borderRadius: 7, border: "1.5px solid #e5e7eb", fontSize: 13, fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box" } as any,
     label: { fontSize: 11, fontWeight: 700, color: "#6b7280", display: "block", marginBottom: 3 } as any,
-    th: { padding: "8px 12px", fontWeight: 800, fontSize: 11, color: "#6b7280", textAlign: "right", background: "#f9fafb", borderBottom: "1.5px solid #e5e7eb", whiteSpace: "nowrap" } as any,
-    td: { padding: "8px 12px", fontSize: 13, borderBottom: "1px solid #f3f4f6", verticalAlign: "middle", textAlign: "right" } as any,
+    th: { padding: "11px 14px", fontWeight: 800, fontSize: 11, color: "#64748b", textAlign: "right", background: "linear-gradient(to bottom,#f8fafc,#f1f5f9)", borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" } as any,
+    td: { padding: "11px 14px", fontSize: 13, borderBottom: "1px solid #f1f5f9", verticalAlign: "middle", textAlign: "right" } as any,
+    tbl: { borderRadius: 12, overflow: "hidden", border: "1px solid #e2e8f0", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" } as any,
+  };
+
+  const rankBadge = (rank: number | null) => {
+    const colors: Record<number, [string, string]> = { 1: [G, "#7c4b00"], 2: ["#94a3b8", "#1e293b"], 3: ["#cd7c2f", "#431407"] };
+    const [bg, text] = colors[rank ?? 0] ?? ["#e2e8f0", "#64748b"];
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: "50%", background: bg, color: text, fontSize: 11, fontWeight: 900 }}>
+        {rank ?? "—"}
+      </span>
+    );
   };
 
   /* ════════════ LOADING ════════════ */
@@ -349,7 +360,7 @@ export default function BidResultPanel({ sourceType, sourceId, ourPrice, ourName
         </div>
 
         {/* Entries table */}
-        <div style={{ borderRadius: 10, overflow: "hidden", border: "1.5px solid #e5e7eb" }}>
+        <div style={S.tbl}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
@@ -359,27 +370,48 @@ export default function BidResultPanel({ sourceType, sourceId, ourPrice, ourName
               </tr>
             </thead>
             <tbody>
-              {[...session.entries].sort((a: any, b: any) => (a.rank ?? 99) - (b.rank ?? 99)).map((e: any) => {
+              {[...session.entries].sort((a: any, b: any) => (a.rank ?? 99) - (b.rank ?? 99)).map((e: any, ri: number) => {
                 const diffPct = ourPriceNum && !e.isUs
                   ? Math.round((Number(e.totalPrice) / ourPriceNum - 1) * 1000) / 10
                   : null;
+                const rowBg = e.isUs ? "#fffdf0" : e.isWinner ? "#f0fdf4" : ri % 2 === 0 ? "white" : "#fafbfc";
+                const borderLeft = e.isUs ? `3px solid ${G}` : e.isWinner ? "3px solid #16a34a" : "3px solid transparent";
                 return (
-                  <tr key={e.id}
-                    style={{ background: e.isUs ? "#fffbeb" : e.isWinner ? "#f0fdf4" : "white" }}>
-                    <td style={{ ...S.td, width: 30, fontWeight: 800, color: "#9ca3af" }}>{e.rank ?? "—"}</td>
+                  <tr key={e.id} style={{ background: rowBg, borderRight: borderLeft, transition: "background 0.15s" }}
+                    onMouseEnter={ev => (ev.currentTarget.style.background = e.isUs ? "#fef3c7" : e.isWinner ? "#dcfce7" : "#f0f9ff")}
+                    onMouseLeave={ev => (ev.currentTarget.style.background = rowBg)}>
+                    <td style={{ ...S.td, width: 44, textAlign: "center" }}>{rankBadge(e.rank)}</td>
                     <td style={{ ...S.td, fontWeight: 700, color: GR }}>
-                      {e.isUs && <span style={{ fontSize: 10, background: G, color: "white", padding: "1px 6px", borderRadius: 4, marginLeft: 6 }}>نحن</span>}
+                      {e.isUs && (
+                        <span style={{ fontSize: 10, background: `linear-gradient(135deg,${G},${GD})`, color: "white", padding: "2px 7px", borderRadius: 10, marginLeft: 7, fontWeight: 800 }}>نحن</span>
+                      )}
                       {e.companyName}
                     </td>
-                    <td style={{ ...S.td, fontFamily: "monospace", fontWeight: 700 }}>{formatCurrency(e.totalPrice)}</td>
+                    <td style={{ ...S.td, fontFamily: "monospace", fontWeight: 700, fontSize: 13.5 }}>{formatCurrency(e.totalPrice)}</td>
                     <td style={{ ...S.td }}>
-                      {e.isUs ? <span style={{ color: "#9ca3af", fontSize: 12 }}>— مرجع</span> : (
-                        <span style={{ fontWeight: 700, color: diffColor(diffPct) }}>{diffLabel(diffPct)}</span>
-                      )}
+                      {e.isUs
+                        ? <span style={{ color: "#94a3b8", fontSize: 12, fontStyle: "italic" }}>مرجع</span>
+                        : (
+                          <span style={{
+                            display: "inline-block", padding: "2px 10px", borderRadius: 20, fontSize: 12, fontWeight: 800,
+                            background: diffPct === null ? "#f1f5f9" : diffPct < -1 ? "#dcfce7" : diffPct < 1 ? "#fef9c3" : "#fee2e2",
+                            color: diffColor(diffPct),
+                          }}>
+                            {diffLabel(diffPct)}
+                          </span>
+                        )}
                     </td>
                     <td style={{ ...S.td, textAlign: "center" }}>
-                      {e.isWinner && !e.isUs && <span style={{ fontSize: 12, background: "#dcfce7", color: "#16a34a", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>✓ فائز</span>}
-                      {e.isWinner && e.isUs  && <span style={{ fontSize: 12, background: "#fef3c7", color: "#92400e", padding: "2px 8px", borderRadius: 6, fontWeight: 700 }}>✓ فزنا</span>}
+                      {e.isWinner && !e.isUs && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, background: "#dcfce7", color: "#15803d", padding: "3px 10px", borderRadius: 20, fontWeight: 800 }}>
+                          <Trophy size={11} /> فائز
+                        </span>
+                      )}
+                      {e.isWinner && e.isUs && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, background: "#fef3c7", color: "#92400e", padding: "3px 10px", borderRadius: 20, fontWeight: 800 }}>
+                          <Trophy size={11} /> فزنا
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
@@ -392,14 +424,15 @@ export default function BidResultPanel({ sourceType, sourceId, ourPrice, ourName
         {session.items?.length > 0 && (
           <button
             onClick={() => setShowItems(v => !v)}
-            style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#6b7280", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: 0 }}>
-            {showItems ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            {showItems ? "إخفاء" : "عرض"} تفاصيل البنود ({session.items.length} بند)
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "#64748b", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", padding: "6px 14px", fontWeight: 600 }}>
+            {showItems ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            {showItems ? "إخفاء" : "عرض"} تفاصيل البنود
+            <span style={{ background: "#e2e8f0", color: "#475569", borderRadius: 10, padding: "1px 8px", fontSize: 11, fontWeight: 800 }}>{session.items.length}</span>
           </button>
         )}
 
         {showItems && session.items?.length > 0 && (
-          <div style={{ borderRadius: 10, overflow: "auto", border: "1.5px solid #e5e7eb" }}>
+          <div style={{ ...S.tbl, overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 500 }}>
               <thead>
                 <tr>
@@ -407,21 +440,25 @@ export default function BidResultPanel({ sourceType, sourceId, ourPrice, ourName
                   <th style={S.th}>الوحدة</th>
                   <th style={S.th}>الكمية</th>
                   {session.entries.map((e: any) => (
-                    <th key={e.id} style={{ ...S.th, color: e.isUs ? G : "#6b7280" }}>{e.isUs ? "◀ نحن" : e.companyName}</th>
+                    <th key={e.id} style={{ ...S.th, color: e.isUs ? GD : "#64748b", background: e.isUs ? "#fffbeb" : undefined }}>
+                      {e.isUs ? "◀ نحن" : e.companyName}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {session.items.map((item: any) => (
-                  <tr key={item.id}>
-                    <td style={{ ...S.td, fontWeight: 700 }}>{item.itemName}</td>
-                    <td style={S.td}>{item.unit ?? "—"}</td>
-                    <td style={S.td}>{item.quantity ?? "—"}</td>
+                {session.items.map((item: any, ri: number) => (
+                  <tr key={item.id} style={{ background: ri % 2 === 0 ? "white" : "#fafbfc" }}
+                    onMouseEnter={ev => (ev.currentTarget.style.background = "#f0f9ff")}
+                    onMouseLeave={ev => (ev.currentTarget.style.background = ri % 2 === 0 ? "white" : "#fafbfc")}>
+                    <td style={{ ...S.td, fontWeight: 700, color: GR }}>{item.itemName}</td>
+                    <td style={{ ...S.td, color: "#64748b" }}>{item.unit ?? "—"}</td>
+                    <td style={{ ...S.td, color: "#64748b" }}>{item.quantity ?? "—"}</td>
                     {session.entries.map((e: any) => {
                       const price = item.prices?.find((p: any) => p.bidEntryId === e.id);
                       return (
-                        <td key={e.id} style={{ ...S.td, fontFamily: "monospace", color: e.isUs ? G : "#374151" }}>
-                          {price ? formatCurrency(price.unitPrice) : "—"}
+                        <td key={e.id} style={{ ...S.td, fontFamily: "monospace", fontWeight: 600, color: e.isUs ? GD : "#374151" }}>
+                          {price ? formatCurrency(price.unitPrice) : <span style={{ color: "#cbd5e1" }}>—</span>}
                         </td>
                       );
                     })}
@@ -433,9 +470,10 @@ export default function BidResultPanel({ sourceType, sourceId, ourPrice, ourName
         )}
 
         {session.notes && (
-          <p style={{ fontSize: 12, color: "#6b7280", background: "#f9fafb", padding: "8px 12px", borderRadius: 8, margin: 0 }}>
-            {session.notes}
-          </p>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: "#f8fafc", border: "1px solid #e2e8f0", padding: "10px 14px", borderRadius: 10 }}>
+            <span style={{ fontSize: 14, marginTop: 1 }}>📝</span>
+            <p style={{ fontSize: 12, color: "#475569", margin: 0, lineHeight: 1.6 }}>{session.notes}</p>
+          </div>
         )}
       </div>
     );

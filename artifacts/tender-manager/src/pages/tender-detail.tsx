@@ -41,6 +41,7 @@ export default function TenderDetail() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<any>({});
+  const [savingFields, setSavingFields] = useState<Set<string>>(new Set());
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -94,9 +95,6 @@ export default function TenderDetail() {
     const { name, value } = e.target;
     setFormData((prev: any) => ({ ...prev, [name]: value }));
   };
-
-  /* Per-field saving state — prevents stale responses from overwriting newer UI state */
-  const [savingFields, setSavingFields] = useState<Set<string>>(new Set());
 
   /* Save a single file field immediately on upload — no form submit needed */
   const handleFileChange = (field: string, path: string | null) => {

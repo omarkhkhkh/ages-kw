@@ -59,6 +59,14 @@ export interface Tender {
   winner?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  fileConditions?: string | null;
+  /** @nullable */
+  filePricing?: string | null;
+  /** @nullable */
+  fileSuppliers?: string | null;
+  /** @nullable */
+  fileOpening?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -99,6 +107,10 @@ export interface TenderInput {
   isSubmitted?: boolean;
   winner?: string;
   notes?: string;
+  fileConditions?: string;
+  filePricing?: string;
+  fileSuppliers?: string;
+  fileOpening?: string;
 }
 
 export type TenderUpdateStatus = typeof TenderUpdateStatus[keyof typeof TenderUpdateStatus];
@@ -137,6 +149,10 @@ export interface TenderUpdate {
   isSubmitted?: boolean;
   winner?: string;
   notes?: string;
+  fileConditions?: string;
+  filePricing?: string;
+  fileSuppliers?: string;
+  fileOpening?: string;
 }
 
 export interface StatusCount {

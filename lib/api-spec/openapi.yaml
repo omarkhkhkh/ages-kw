@@ -306,6 +306,14 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
+        fileConditions:
+          type: ["string", "null"]
+        filePricing:
+          type: ["string", "null"]
+        fileSuppliers:
+          type: ["string", "null"]
+        fileOpening:
+          type: ["string", "null"]
         createdAt:
           type: string
         updatedAt:
@@ -362,6 +370,14 @@ components:
           type: string
         notes:
           type: string
+        fileConditions:
+          type: string
+        filePricing:
+          type: string
+        fileSuppliers:
+          type: string
+        fileOpening:
+          type: string
     TenderUpdate:
       type: object
       properties:
@@ -409,6 +425,14 @@ components:
         winner:
           type: string
         notes:
+          type: string
+        fileConditions:
+          type: string
+        filePricing:
+          type: string
+        fileSuppliers:
+          type: string
+        fileOpening:
           type: string
     TenderStats:
       type: object

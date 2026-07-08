@@ -86,6 +86,10 @@ export const ListTendersResponseItem = zod.object({
   "isSubmitted": zod.boolean().optional(),
   "winner": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "fileConditions": zod.string().nullish(),
+  "filePricing": zod.string().nullish(),
+  "fileSuppliers": zod.string().nullish(),
+  "fileOpening": zod.string().nullish(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -114,7 +118,11 @@ export const CreateTenderBody = zod.object({
   "profitPercentage": zod.number().optional(),
   "isSubmitted": zod.boolean().optional(),
   "winner": zod.string().optional(),
-  "notes": zod.string().optional()
+  "notes": zod.string().optional(),
+  "fileConditions": zod.string().optional(),
+  "filePricing": zod.string().optional(),
+  "fileSuppliers": zod.string().optional(),
+  "fileOpening": zod.string().optional()
 })
 
 export const CreateTenderResponse = zod.object({
@@ -134,6 +142,10 @@ export const CreateTenderResponse = zod.object({
   "isSubmitted": zod.boolean().optional(),
   "winner": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "fileConditions": zod.string().nullish(),
+  "filePricing": zod.string().nullish(),
+  "fileSuppliers": zod.string().nullish(),
+  "fileOpening": zod.string().nullish(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -179,6 +191,10 @@ export const GetTenderResponse = zod.object({
   "isSubmitted": zod.boolean().optional(),
   "winner": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "fileConditions": zod.string().nullish(),
+  "filePricing": zod.string().nullish(),
+  "fileSuppliers": zod.string().nullish(),
+  "fileOpening": zod.string().nullish(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })
@@ -210,7 +226,11 @@ export const UpdateTenderBody = zod.object({
   "profitPercentage": zod.number().optional(),
   "isSubmitted": zod.boolean().optional(),
   "winner": zod.string().optional(),
-  "notes": zod.string().optional()
+  "notes": zod.string().optional(),
+  "fileConditions": zod.string().optional(),
+  "filePricing": zod.string().optional(),
+  "fileSuppliers": zod.string().optional(),
+  "fileOpening": zod.string().optional()
 })
 
 export const UpdateTenderResponse = zod.object({
@@ -230,6 +250,10 @@ export const UpdateTenderResponse = zod.object({
   "isSubmitted": zod.boolean().optional(),
   "winner": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "fileConditions": zod.string().nullish(),
+  "filePricing": zod.string().nullish(),
+  "fileSuppliers": zod.string().nullish(),
+  "fileOpening": zod.string().nullish(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
 })

@@ -35,6 +35,14 @@ export interface Tender {
   winner?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  fileConditions?: string | null;
+  /** @nullable */
+  filePricing?: string | null;
+  /** @nullable */
+  fileSuppliers?: string | null;
+  /** @nullable */
+  fileOpening?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -19,14 +19,18 @@ import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
 import { 
   ArrowRight, Save, Trash2, Clock, MapPin, Building, FileText, 
-  CheckCircle2, XCircle, AlertTriangle, User, Loader2
+  CheckCircle2, XCircle, AlertTriangle, User, Loader2,
+  BookOpen, Calculator, Users, Package,
 } from "lucide-react";
+import FileUpload from "@/components/file-upload";
+import { useAuth } from "@/contexts/auth";
 
 export default function TenderDetail() {
   const params = useParams();
   const id = Number(params.id);
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   const { data: tender, isLoading } = useGetTender(id, {
     query: { enabled: !!id, queryKey: getGetTenderQueryKey(id) }
@@ -55,7 +59,11 @@ export default function TenderDetail() {
         offerValue: tender.offerValue || "",
         profitPercentage: tender.profitPercentage || "",
         winner: tender.winner || "",
-        notes: tender.notes || ""
+        notes: tender.notes || "",
+        fileConditions: (tender as any).fileConditions ?? null,
+        filePricing:    (tender as any).filePricing    ?? null,
+        fileSuppliers:  (tender as any).fileSuppliers  ?? null,
+        fileOpening:    (tender as any).fileOpening    ?? null,
       });
       initialized.current = true;
     }
@@ -85,6 +93,29 @@ export default function TenderDetail() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData((prev: any) => ({ ...prev, [name]: value }));
+  };
+
+  /* Per-field saving state — prevents stale responses from overwriting newer UI state */
+  const [savingFields, setSavingFields] = useState<Set<string>>(new Set());
+
+  /* Save a single file field immediately on upload — no form submit needed */
+  const handleFileChange = (field: string, path: string | null) => {
+    // Optimistically update local form state
+    setFormData((prev: any) => ({ ...prev, [field]: path }));
+    setSavingFields(prev => new Set(prev).add(field));
+    updateTender.mutate(
+      { id, data: { [field]: path } as any },
+      {
+        onSuccess: (updated) => {
+          // Only apply server response if no newer local value has been set
+          queryClient.setQueryData(getGetTenderQueryKey(id), updated);
+          queryClient.invalidateQueries({ queryKey: getListTendersQueryKey() });
+        },
+        onSettled: () => {
+          setSavingFields(prev => { const s = new Set(prev); s.delete(field); return s; });
+        },
+      }
+    );
   };
 
   const handleSave = () => {
@@ -125,6 +156,7 @@ export default function TenderDetail() {
   };
 
   const urgent = isUrgent(tender.deadline, tender.status);
+  const canEdit = user?.role === "admin" || user?.canEdit || user?.fullName === tender.responsibleEngineer;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12">
@@ -300,6 +332,84 @@ export default function TenderDetail() {
                     )}
                  </div>
                )}
+            </CardContent>
+          </Card>
+          {/* Documents Card */}
+          <Card className="shadow-sm">
+            <CardHeader className="border-b bg-slate-50/50 py-4">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileText className="h-5 w-5 text-amber-600" />
+                المستندات المرفقة
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6" dir="rtl">
+
+                {/* الشروط الخاصة */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
+                      <BookOpen className="h-3.5 w-3.5 text-blue-600" />
+                    </div>
+                    <span className="text-sm font-semibold text-slate-700">الشروط الخاصة</span>
+                  </div>
+                  <FileUpload
+                    objectPath={formData.fileConditions}
+                    onChange={(path) => handleFileChange("fileConditions", path)}
+                    label="رفع ملف الشروط الخاصة"
+                    disabled={!canEdit}
+                  />
+                </div>
+
+                {/* التسعير */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-50 border border-emerald-100 flex items-center justify-center">
+                      <Calculator className="h-3.5 w-3.5 text-emerald-600" />
+                    </div>
+                    <span className="text-sm font-semibold text-slate-700">جداول التسعير</span>
+                  </div>
+                  <FileUpload
+                    objectPath={formData.filePricing}
+                    onChange={(path) => handleFileChange("filePricing", path)}
+                    label="رفع ملف التسعير"
+                    disabled={!canEdit}
+                  />
+                </div>
+
+                {/* الموردين */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-7 h-7 rounded-lg bg-violet-50 border border-violet-100 flex items-center justify-center">
+                      <Users className="h-3.5 w-3.5 text-violet-600" />
+                    </div>
+                    <span className="text-sm font-semibold text-slate-700">عروض الموردين</span>
+                  </div>
+                  <FileUpload
+                    objectPath={formData.fileSuppliers}
+                    onChange={(path) => handleFileChange("fileSuppliers", path)}
+                    label="رفع ملف الموردين"
+                    disabled={!canEdit}
+                  />
+                </div>
+
+                {/* فض الظروف */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-7 h-7 rounded-lg bg-orange-50 border border-orange-100 flex items-center justify-center">
+                      <Package className="h-3.5 w-3.5 text-orange-600" />
+                    </div>
+                    <span className="text-sm font-semibold text-slate-700">وثيقة فض الظروف</span>
+                  </div>
+                  <FileUpload
+                    objectPath={formData.fileOpening}
+                    onChange={(path) => handleFileChange("fileOpening", path)}
+                    label="رفع محضر الفض"
+                    disabled={!canEdit}
+                  />
+                </div>
+
+              </div>
             </CardContent>
           </Card>
         </div>

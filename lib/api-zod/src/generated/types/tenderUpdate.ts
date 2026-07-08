@@ -25,4 +25,8 @@ export interface TenderUpdate {
   isSubmitted?: boolean;
   winner?: string;
   notes?: string;
+  fileConditions?: string;
+  filePricing?: string;
+  fileSuppliers?: string;
+  fileOpening?: string;
 }

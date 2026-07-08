@@ -23,6 +23,10 @@ function formatTender(t: typeof tendersTable.$inferSelect) {
     isSubmitted: t.isSubmitted,
     winner: t.winner,
     notes: t.notes,
+    fileConditions: t.fileConditions,
+    filePricing: t.filePricing,
+    fileSuppliers: t.fileSuppliers,
+    fileOpening: t.fileOpening,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
@@ -276,6 +280,10 @@ router.patch("/:id", async (req: Request, res: Response): Promise<void> => {
   if (body.isSubmitted !== undefined) updates.isSubmitted = Boolean(body.isSubmitted);
   if (body.winner !== undefined) updates.winner = body.winner ? String(body.winner) : null;
   if (body.notes !== undefined) updates.notes = body.notes ? String(body.notes) : null;
+  if (body.fileConditions !== undefined) updates.fileConditions = body.fileConditions ? String(body.fileConditions) : null;
+  if (body.filePricing    !== undefined) updates.filePricing    = body.filePricing    ? String(body.filePricing)    : null;
+  if (body.fileSuppliers  !== undefined) updates.fileSuppliers  = body.fileSuppliers  ? String(body.fileSuppliers)  : null;
+  if (body.fileOpening    !== undefined) updates.fileOpening    = body.fileOpening    ? String(body.fileOpening)    : null;
 
   const rows = await db
     .update(tendersTable)

@@ -41,6 +41,11 @@ export const tendersTable = pgTable("tenders", {
   isSubmitted: boolean("is_submitted").notNull().default(false),
   winner: text("winner"),
   notes: text("notes"),
+  // Attached documents
+  fileConditions: text("file_conditions"),   // الشروط الخاصة
+  filePricing: text("file_pricing"),         // التسعير
+  fileSuppliers: text("file_suppliers"),     // الموردين
+  fileOpening: text("file_opening"),         // فض الظروف
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

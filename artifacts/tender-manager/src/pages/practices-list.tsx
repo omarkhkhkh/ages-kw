@@ -925,7 +925,7 @@ export default function PracticesList() {
                           onBlur={ev => { ev.currentTarget.style.borderColor = "#e2e8f0"; ev.currentTarget.style.boxShadow = "none"; }} />
                       </div>
                       <div>
-                        <label style={S.label}>قيمة الكفالة النهائية (د.ك)</label>
+                        <label style={S.label}>قيمة الكفالة الأولية (د.ك)</label>
                         <input type="number" step="0.001" style={{ ...S.input, direction: "ltr", textAlign: "left", fontFamily: "monospace" }} value={form.finalBondValue}
                           onChange={e => setForm(p => ({ ...p, finalBondValue: e.target.value }))} placeholder="0.000"
                           onFocus={ev => { ev.currentTarget.style.borderColor = G; ev.currentTarget.style.boxShadow = `0 0 0 3px ${G}18`; }}

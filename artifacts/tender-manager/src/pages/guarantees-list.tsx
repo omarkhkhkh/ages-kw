@@ -129,7 +129,7 @@ function GuaranteeTable({
               : rows.map((g: any, idx: number) => {
                   const st = STATUS_MAP[g.status] || STATUS_MAP.active;
                   const dl = daysLeft(g.expiryDate);
-                  const near = dl !== null && dl >= 0 && dl <= 30 && g.status === "active";
+                  const near = dl !== null && dl >= 0 && dl <= 90 && g.status === "active";
                   const notesShort = g.notes ? g.notes.slice(0, 80) + (g.notes.length > 80 ? "…" : "") : "—";
                   return (
                     <tr key={g.id}
@@ -306,7 +306,7 @@ export default function GuaranteesList() {
   );
 
   // expiring soon across ALL
-  const expiring = allArr.filter(g => { const d = daysLeft(g.expiryDate); return d !== null && d >= 0 && d <= 30 && g.status === "active"; });
+  const expiring = allArr.filter(g => { const d = daysLeft(g.expiryDate); return d !== null && d >= 0 && d <= 90 && g.status === "active"; });
 
   const currentTypeDef = TYPE_TABS.find(t => t.id === typeTab)!;
 
@@ -351,7 +351,7 @@ export default function GuaranteesList() {
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", background: "#fffbeb", border: "1.5px solid #fbbf24", borderRadius: 14, marginBottom: 18 }}>
           <AlertTriangle size={20} color="#d97706" />
           <div>
-            <div style={{ fontWeight: 700, color: "#92400e", fontSize: 14 }}>⚠️ {expiring.length} كفالة/شيك تنتهي خلال 30 يوماً</div>
+            <div style={{ fontWeight: 700, color: "#92400e", fontSize: 14 }}>⚠️ {expiring.length} كفالة/شيك تنتهي خلال 90 يوماً</div>
             <div style={{ fontSize: 11, color: "#a16207", marginTop: 2 }}>{expiring.map((g: any) => `${g.guaranteeNumber || "BG-"+g.id} — ${g.bankName || ""}`).join(" · ")}</div>
           </div>
         </div>

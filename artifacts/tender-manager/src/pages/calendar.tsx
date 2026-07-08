@@ -61,7 +61,7 @@ export default function CalendarPage() {
     for (const g of guarantees) {
       if (g.expiryDate) {
         const diff = Math.round((new Date(g.expiryDate).getTime() - Date.now()) / 86400000);
-        evs.push({ date: g.expiryDate.slice(0, 10), label: `${g.bankName || "بنك"} — ${g.type}`, kind: "guarantee_expiry", urgent: diff <= 30 && diff > 0 });
+        evs.push({ date: g.expiryDate.slice(0, 10), label: `${g.bankName || "بنك"} — ${g.type}`, kind: "guarantee_expiry", urgent: diff <= 90 && diff > 0 });
       }
     }
     return evs;

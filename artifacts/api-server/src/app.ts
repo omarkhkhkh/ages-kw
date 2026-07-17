@@ -3,11 +3,17 @@ import cors from "cors";
 import pinoHttp from "pino-http";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
+import path from "node:path";
+import fs from "node:fs";
 import { pool, sessionPool } from "@workspace/db";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
+
+// خلف reverse proxy (Coolify/nginx): الثقة بترويسات X-Forwarded-* ضرورية
+// لعمل الكوكيز الآمنة وبناء روابط الرفع بالبروتوكول الصحيح
+app.set("trust proxy", 1);
 
 app.use(
   pinoHttp({
@@ -83,5 +89,18 @@ app.use(
 );
 
 app.use("/api", router);
+
+// ── تقديم واجهة الموقع المبنية (نشر بخدمة واحدة) ─────────────────────────────
+// إن وُجد مجلد الواجهة المبنية (تُنسخ داخل صورة Docker إلى public/)،
+// يقدّمها السيرفر نفسه مع SPA fallback — فلا حاجة لخدمة nginx منفصلة.
+const staticDir = process.env.STATIC_DIR ?? path.join(process.cwd(), "public");
+if (fs.existsSync(path.join(staticDir, "index.html"))) {
+  app.use(express.static(staticDir));
+  app.use((req, res, next) => {
+    if (req.method !== "GET" || req.path.startsWith("/api")) return next();
+    return res.sendFile(path.join(staticDir, "index.html"));
+  });
+  logger.info({ staticDir }, "Serving built frontend");
+}
 
 export default app;

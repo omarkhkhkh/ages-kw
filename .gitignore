@@ -61,3 +61,6 @@ artifacts/uploads/
 
 # Claude Code local session data / worktrees
 .claude/
+
+# Built frontend copied into api-server (Docker build artifact)
+artifacts/api-server/public/

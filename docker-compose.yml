@@ -1,8 +1,10 @@
 # ══════════════════════════════════════════════════════════
-#  تشغيل النظام كاملًا بأمر واحد:
+#  تشغيل النظام كاملًا بأمر واحد (خدمتان فقط: قاعدة بيانات + تطبيق موحّد):
 #     docker compose up -d --build
 #  ثم افتح:  http://localhost:8080
 #  (الدخول الافتراضي: admin / admin123 — غيّره فورًا)
+#
+#  على Coolify: اربط الدومين بخدمة app على المنفذ الداخلي 5000
 # ══════════════════════════════════════════════════════════
 services:
   db:
@@ -10,7 +12,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: tender
-      POSTGRES_PASSWORD: tender
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tender}
       POSTGRES_DB: tender_manager
     volumes:
       - db-data:/var/lib/postgresql/data
@@ -20,35 +22,28 @@ services:
       timeout: 3s
       retries: 12
 
-  api:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://tender:tender@db:5432/tender_manager
+      DATABASE_URL: postgres://tender:${POSTGRES_PASSWORD:-tender}@db:5432/tender_manager
       PORT: 5000
-      # ⚠️ غيّر هذا السر في أي بيئة حقيقية
-      SESSION_SECRET: change-me-to-a-long-random-secret
-      # الـ origins المسموح لها بالوصول للـ API (منفذ الواجهة عبر nginx)
-      EXTRA_ALLOWED_ORIGINS: http://localhost:8080
-      # ملاحظة: لا نضبط NODE_ENV=production هنا لأن كوكيز الجلسة تصبح
-      # secure (HTTPS فقط) — اضبطه مع HTTPS حقيقي خلف reverse proxy
+      # ⚠️ غيّر هذا السر في أي بيئة حقيقية (أو مرّره من متغيرات البيئة/Coolify)
+      SESSION_SECRET: ${SESSION_SECRET:-change-me-to-a-long-random-secret}
+      # الـ origins الإضافية المسموح لها (دومين النشر الحقيقي)
+      EXTRA_ALLOWED_ORIGINS: ${EXTRA_ALLOWED_ORIGINS:-http://localhost:8080}
+      # ملاحظة: لا تضبط NODE_ENV=production إلا مع HTTPS حقيقي —
+      # كوكيز الجلسة تصبح secure ولن تعمل على http العادي
+      NODE_ENV: ${NODE_ENV:-}
     volumes:
       - uploads:/app/artifacts/api-server/uploads
+    ports:
+      - "8080:5000"
     depends_on:
       db:
         condition: service_healthy
-
-  web:
-    build:
-      context: .
-      dockerfile: Dockerfile.web
-    restart: unless-stopped
-    ports:
-      - "8080:80"
-    depends_on:
-      - api
 
 volumes:
   db-data:

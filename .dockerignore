@@ -9,3 +9,6 @@ artifacts/uploads
 attached_assets
 .env
 .env.*
+
+# Built frontend copied into the api image
+artifacts/api-server/public/

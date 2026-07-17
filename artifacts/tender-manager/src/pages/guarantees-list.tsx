@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { guaranteesApi } from "@/lib/api";
+import { guaranteesApi, companiesApi } from "@/lib/api";
 import {
   ShieldCheck, Plus, Pencil, Trash2, X, Check, AlertTriangle,
   Download, Search, Landmark, Clock, FileCheck2, Shield, ShieldAlert,
@@ -11,6 +11,7 @@ import { exportGuaranteesToExcel } from "@/lib/export";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useListTenders } from "@workspace/api-client-react";
+import LinkedTasks from "@/components/linked-tasks";
 
 /* ─── palette ─── */
 const G  = "#D4A534";
@@ -61,7 +62,7 @@ const LOCATION_OPTIONS = [
 const emptyForm = {
   tenderId: "", guaranteeNumber: "", type: "",
   bankName: "", amount: "", issueDate: "", expiryDate: "",
-  status: "active", location: "", notes: "",
+  status: "active", location: "", notes: "", companyId: "",
 };
 
 /* ─── helpers ─── */
@@ -258,6 +259,7 @@ export default function GuaranteesList() {
     queryFn: () => guaranteesApi.list(),
   });
   const { data: tenders = [] } = useListTenders({});
+  const { data: companies = [] } = useQuery<any[]>({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
 
   const isAdmin    = user?.role === "admin";
   const canEdit    = isAdmin || !!user?.canEdit;
@@ -272,7 +274,7 @@ export default function GuaranteesList() {
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
   const openEdit  = (g: any) => {
     setEditId(g.id);
-    setForm({ tenderId: g.tenderId || "", guaranteeNumber: g.guaranteeNumber || "", type: g.type || "", bankName: g.bankName || "", amount: g.amount || "", issueDate: g.issueDate || "", expiryDate: g.expiryDate || "", status: g.status, location: g.location || "", notes: g.notes || "" });
+    setForm({ tenderId: g.tenderId || "", guaranteeNumber: g.guaranteeNumber || "", type: g.type || "", bankName: g.bankName || "", amount: g.amount || "", issueDate: g.issueDate || "", expiryDate: g.expiryDate || "", status: g.status, location: g.location || "", notes: g.notes || "", companyId: g.companyId || "" });
     setShowForm(true);
   };
   const openAdd = (preType?: string) => {
@@ -288,6 +290,7 @@ export default function GuaranteesList() {
       ...form,
       // integer FK must be a number; empty = null
       tenderId:  form.tenderId  ? Number(form.tenderId)  : null,
+      companyId: form.companyId ? Number(form.companyId) : null,
       // numeric column — Drizzle-Zod expects string, not JS number
       amount:    form.amount    ? String(form.amount)    : null,
       // date columns — keep as string (YYYY-MM-DD) or null
@@ -470,6 +473,15 @@ export default function GuaranteesList() {
                     </select>
                   </div>
 
+                  {/* company */}
+                  <div style={{ gridColumn: "1/-1" }}>
+                    <label style={S.label}>الشركة المشاركة</label>
+                    <select style={S.select} value={form.companyId} onChange={e => setForm(p => ({ ...p, companyId: e.target.value }))}>
+                      <option value="">— اختر الشركة —</option>
+                      {(companies as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+
                   {/* bank */}
                   <div style={{ gridColumn: "1/-1" }}>
                     <label style={S.label}>{form.type === "شيك مصدق" ? "البنك المُصدِر" : "الجهة الحكومية / البنك"}</label>
@@ -550,6 +562,11 @@ export default function GuaranteesList() {
                   </button>
                 </div>
               </form>
+              {editId && (
+                <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1.5px solid #f0ead8" }}>
+                  <LinkedTasks entityType="bankGuarantee" entityId={editId} />
+                </div>
+              )}
             </div>
           </div>
         </>

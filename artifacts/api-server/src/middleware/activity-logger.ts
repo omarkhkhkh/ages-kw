@@ -11,6 +11,13 @@ const MODULE_MAP: Record<string, string> = {
   "rfq-requests": "rfq",
   "direct-purchase-orders": "po",
   users: "users",
+  correspondence: "correspondence",
+  vehicles: "vehicles",
+  residency: "residency",
+  maintenance: "maintenance",
+  research: "research",
+  pricing: "pricing",
+  tasks: "tasks",
 };
 
 function detectAction(method: string, status: number): string | null {

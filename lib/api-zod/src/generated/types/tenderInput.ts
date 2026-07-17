@@ -16,6 +16,8 @@ export interface TenderInput {
   tenderType?: string;
   announcementDate?: string;
   deadline?: string;
+  preliminaryMeetingHeld?: boolean;
+  preliminaryMeetingDate?: string;
   bondValue?: number;
   docsValue?: number;
   responsibleEngineer?: string;

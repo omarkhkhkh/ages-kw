@@ -9,6 +9,7 @@ const router = Router();
 const MODULE_FIELDS = [
   "accessTenders", "accessEntities", "accessSuppliers", "accessProjects",
   "accessGuarantees", "accessContracts", "accessRfq", "accessPo", "accessTransportation", "accessFinance",
+  "accessCorrespondence", "accessResidency", "accessMaintenance", "accessResearch", "accessPricing", "accessTasks",
 ] as const;
 
 function buildUserResponse(user: any) {
@@ -31,6 +32,14 @@ function buildUserResponse(user: any) {
     accessPo: user.accessPo,
     accessTransportation: user.accessTransportation,
     accessFinance: user.accessFinance,
+    accessCorrespondence: user.accessCorrespondence,
+    accessResidency: user.accessResidency,
+    accessMaintenance: user.accessMaintenance,
+    accessResearch: user.accessResearch,
+    accessPricing: user.accessPricing,
+    accessTasks: user.accessTasks,
+    taskViewScope: user.taskViewScope,
+    taskCanApprove: user.taskCanApprove,
   };
 }
 
@@ -71,6 +80,8 @@ router.post("/login", async (req, res) => {
   for (const field of MODULE_FIELDS) {
     req.session[field] = user[field] ?? true;
   }
+  req.session.taskViewScope = user.taskViewScope ?? "own";
+  req.session.taskCanApprove = user.taskCanApprove ?? false;
 
   // Log login activity
   logActivity({
@@ -124,6 +135,14 @@ router.get("/me", (req, res) => {
     accessPo: req.session.accessPo ?? true,
     accessTransportation: req.session.accessTransportation ?? true,
     accessFinance: req.session.accessFinance ?? true,
+    accessCorrespondence: req.session.accessCorrespondence ?? true,
+    accessResidency: req.session.accessResidency ?? true,
+    accessMaintenance: req.session.accessMaintenance ?? true,
+    accessResearch: req.session.accessResearch ?? true,
+    accessPricing: req.session.accessPricing ?? true,
+    accessTasks: req.session.accessTasks ?? true,
+    taskViewScope: req.session.taskViewScope ?? "own",
+    taskCanApprove: req.session.taskCanApprove ?? false,
   });
 });
 

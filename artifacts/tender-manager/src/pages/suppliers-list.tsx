@@ -1,17 +1,20 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { suppliersApi } from "@/lib/api";
-import { Users, Plus, Pencil, Trash2, X, Check, Download, Search, Phone, Mail, Briefcase, Hash } from "lucide-react";
+import { suppliersApi, researchApi, companiesApi } from "@/lib/api";
+import { Users, Plus, Pencil, Trash2, X, Check, Download, Search, Phone, Mail, Briefcase, Hash, Star, ShieldCheck, Clock } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { exportSuppliersToExcel } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
+import CorrespondenceSheet from "@/components/correspondence/correspondence-sheet";
+import LinkedPricingSheets from "@/components/linked-pricing-sheets";
+import LinkedTasks from "@/components/linked-tasks";
 
 const G  = "#D4A534";
 const GL = "#E8BE55";
 const GD = "#A87C20";
 
 const SUPPLIER_TYPES = ["مقاول", "مورد", "استشاري", "مصنّع", "أخرى"];
-const emptyForm = { name: "", type: "", contactPerson: "", phone: "", email: "", address: "", specialization: "", commercialRegNo: "", notes: "" };
+const emptyForm = { name: "", type: "", contactPerson: "", phone: "", email: "", address: "", specialization: "", commercialRegNo: "", notes: "", companyId: "" };
 
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
   "مقاول":    { bg: "#fef3c7", text: "#92400e" },
@@ -49,6 +52,91 @@ const S = {
   iconBtn: { background: "transparent", border: "none", cursor: "pointer", padding: "6px 8px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center" },
 };
 
+function StarsDisplay({ value, size = 13 }: { value: number; size?: number }) {
+  const rounded = Math.round(value);
+  return (
+    <span style={{ display: "inline-flex", gap: 1 }}>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Star key={i} size={size} color={i <= rounded ? "#f59e0b" : "#e5e7eb"} fill={i <= rounded ? "#f59e0b" : "none"} />
+      ))}
+    </span>
+  );
+}
+
+function SupplierStars({ supplierId }: { supplierId: number }) {
+  const { data } = useQuery<any>({ queryKey: ["supplier-eval-summary", supplierId], queryFn: () => researchApi.evaluations.summary(supplierId) });
+  if (!data || !data.count) return <span style={{ color: "#d1d5db", fontSize: 11 }}>بدون تقييم</span>;
+  return <StarsDisplay value={Number(data.overallStars)} />;
+}
+
+const emptyEvalForm = { qualityScore: "5", priceScore: "5", commitmentScore: "5", notes: "" };
+
+function SupplierEvaluationSection({ supplierId }: { supplierId: number }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ ...emptyEvalForm });
+  const { data: summary } = useQuery<any>({ queryKey: ["supplier-eval-summary", supplierId], queryFn: () => researchApi.evaluations.summary(supplierId) });
+  const { data: history = [] } = useQuery<any[]>({ queryKey: ["supplier-evaluations", supplierId], queryFn: () => researchApi.evaluations.list(supplierId) });
+
+  const createMut = useMutation({
+    mutationFn: (d: any) => researchApi.evaluations.create(d),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["supplier-eval-summary", supplierId] });
+      qc.invalidateQueries({ queryKey: ["supplier-evaluations", supplierId] });
+      setForm({ ...emptyEvalForm });
+    },
+  });
+
+  return (
+    <div style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid #f0ead8" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: "#132a18" }}>التقييم</span>
+        {summary && summary.count > 0 && <StarsDisplay value={Number(summary.overallStars)} size={16} />}
+      </div>
+      {summary && summary.count > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 14 }}>
+          <div style={{ background: "#fafaf8", borderRadius: 8, padding: "8px 10px", textAlign: "center" as const }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#132a18" }}>{summary.avgQuality}</div>
+            <div style={{ fontSize: 10, color: "#9ca3af" }}>الجودة</div>
+          </div>
+          <div style={{ background: "#fafaf8", borderRadius: 8, padding: "8px 10px", textAlign: "center" as const }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#132a18" }}>{summary.avgPrice}</div>
+            <div style={{ fontSize: 10, color: "#9ca3af" }}>السعر</div>
+          </div>
+          <div style={{ background: "#fafaf8", borderRadius: 8, padding: "8px 10px", textAlign: "center" as const }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#132a18" }}>{summary.avgCommitment}</div>
+            <div style={{ fontSize: 10, color: "#9ca3af" }}>الالتزام</div>
+          </div>
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column" as const, gap: 6, marginBottom: 12, maxHeight: 140, overflowY: "auto" as const }}>
+        {history.map((h: any) => (
+          <div key={h.id} style={{ fontSize: 11.5, padding: "6px 10px", borderRadius: 8, background: "#fafaf8", border: "1px solid #f0ead8" }}>
+            <span style={{ fontWeight: 700 }}>جودة {h.qualityScore} · سعر {h.priceScore} · التزام {h.commitmentScore}</span>
+            <span style={{ color: "#9ca3af" }}> — {h.evaluatedByName ?? ""} — {new Date(h.evaluatedAt).toLocaleDateString("ar-KW")}</span>
+            {h.notes && <div style={{ color: "#6b7280", marginTop: 2 }}>{h.notes}</div>}
+          </div>
+        ))}
+        {history.length === 0 && <p style={{ fontSize: 11.5, color: "#9ca3af", margin: 0 }}>لا توجد تقييمات بعد</p>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+        <div><label style={{ fontSize: 10.5, color: "#6b7280", display: "block", marginBottom: 3 }}>الجودة</label>
+          <select value={form.qualityScore} onChange={(e) => setForm((f) => ({ ...f, qualityScore: e.target.value }))} style={{ ...S.input, height: 32, fontSize: 12 }}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+        </div>
+        <div><label style={{ fontSize: 10.5, color: "#6b7280", display: "block", marginBottom: 3 }}>السعر</label>
+          <select value={form.priceScore} onChange={(e) => setForm((f) => ({ ...f, priceScore: e.target.value }))} style={{ ...S.input, height: 32, fontSize: 12 }}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+        </div>
+        <div><label style={{ fontSize: 10.5, color: "#6b7280", display: "block", marginBottom: 3 }}>الالتزام</label>
+          <select value={form.commitmentScore} onChange={(e) => setForm((f) => ({ ...f, commitmentScore: e.target.value }))} style={{ ...S.input, height: 32, fontSize: 12 }}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+        </div>
+      </div>
+      <input placeholder="ملاحظات (اختياري)" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} style={{ ...S.input, marginBottom: 8 }} />
+      <button type="button" onClick={() => createMut.mutate({ supplierId, qualityScore: Number(form.qualityScore), priceScore: Number(form.priceScore), commitmentScore: Number(form.commitmentScore), notes: form.notes || null })} disabled={createMut.isPending} style={{ ...S.saveBtn, width: "100%", justifyContent: "center" as const }}>
+        <Star size={13} /> إضافة تقييم
+      </button>
+    </div>
+  );
+}
+
 export default function SuppliersList() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -58,20 +146,24 @@ export default function SuppliersList() {
   const [form, setForm] = useState({ ...emptyForm });
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-
-  const { data: suppliers = [], isLoading } = useQuery({ queryKey: ["suppliers"], queryFn: () => suppliersApi.list() });
+  const [pendingOnly, setPendingOnly] = useState(false);
+  const [correspondenceFor, setCorrespondenceFor] = useState<{ id: number; label: string } | null>(null);
 
   const isAdmin = user?.role === "admin";
   const canEdit = isAdmin || !!user?.canEdit;
   const canDownload = isAdmin || !!user?.canDownload;
 
+  const { data: suppliers = [], isLoading } = useQuery({ queryKey: ["suppliers", pendingOnly ? "draft" : "all"], queryFn: () => suppliersApi.list(isAdmin && pendingOnly ? "draft" : undefined) });
+  const { data: companies = [] } = useQuery<any[]>({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
+
   const createM = useMutation({ mutationFn: suppliersApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ["suppliers"] }); closeForm(); toast({ title: "✅ تم إضافة المورد" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
   const updateM = useMutation({ mutationFn: ({ id, data }: any) => suppliersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ["suppliers"] }); closeForm(); toast({ title: "✅ تم تحديث المورد" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
   const deleteM = useMutation({ mutationFn: suppliersApi.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ["suppliers"] }); toast({ title: "تم حذف المورد" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
+  const approveM = useMutation({ mutationFn: suppliersApi.approve, onSuccess: () => { qc.invalidateQueries({ queryKey: ["suppliers"] }); toast({ title: "✅ تم اعتماد المورد" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
 
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
-  const openEdit = (s: any) => { setEditId(s.id); setForm({ name: s.name, type: s.type || "", contactPerson: s.contactPerson || "", phone: s.phone || "", email: s.email || "", address: s.address || "", specialization: s.specialization || "", commercialRegNo: s.commercialRegNo || "", notes: s.notes || "" }); setShowForm(true); };
-  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.name.trim()) return; editId ? updateM.mutate({ id: editId, data: form }) : createM.mutate(form); };
+  const openEdit = (s: any) => { setEditId(s.id); setForm({ name: s.name, type: s.type || "", contactPerson: s.contactPerson || "", phone: s.phone || "", email: s.email || "", address: s.address || "", specialization: s.specialization || "", commercialRegNo: s.commercialRegNo || "", notes: s.notes || "", companyId: s.companyId || "" }); setShowForm(true); };
+  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.name.trim()) return; const data = { ...form, companyId: form.companyId ? Number(form.companyId) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
 
   const filtered = (suppliers as any[]).filter((s: any) => {
     const matchSearch = !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.specialization || "").toLowerCase().includes(search.toLowerCase());
@@ -138,6 +230,11 @@ export default function SuppliersList() {
             </button>
           ))}
         </div>
+        {isAdmin && (
+          <button onClick={() => setPendingOnly(v => !v)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 700, border: "1.5px solid", cursor: "pointer", borderColor: pendingOnly ? "#d97706" : "#e5dfc8", background: pendingOnly ? "#fffbeb" : "white", color: pendingOnly ? "#d97706" : "#6b7280" }}>
+            <Clock size={12} /> بانتظار الاعتماد
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -146,16 +243,16 @@ export default function SuppliersList() {
           <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: 13, textAlign: "right" as const }}>
             <thead style={S.thead}>
               <tr>
-                {["اسم المورد", "النوع", "التخصص", "المسؤول", "الهاتف", "الإيميل", ""].map(h => (
+                {["اسم المورد", "النوع", "التخصص", "المسؤول", "الهاتف", "الإيميل", "التقييم", "الحالة", ""].map(h => (
                   <th key={h} style={S.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? [...Array(4)].map((_, i) => (
-                <tr key={i}>{[...Array(6)].map((_, j) => <td key={j} style={S.td}><div style={{ height: 14, background: "#f3f0e6", borderRadius: 4, width: j === 0 ? 150 : 90, animation: "pulse 1.5s infinite" }} /></td>)}</tr>
+                <tr key={i}>{[...Array(8)].map((_, j) => <td key={j} style={S.td}><div style={{ height: 14, background: "#f3f0e6", borderRadius: 4, width: j === 0 ? 150 : 90, animation: "pulse 1.5s infinite" }} /></td>)}</tr>
               )) : filtered.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: 48, textAlign: "center" as const, color: "#94a3b8", fontSize: 14 }}>
+                <tr><td colSpan={8} style={{ padding: 48, textAlign: "center" as const, color: "#94a3b8", fontSize: 14 }}>
                   <Users size={40} color="#e2d5b0" style={{ margin: "0 auto 12px", display: "block" }} />
                   <p style={{ margin: 0 }}>{search ? "لا نتائج للبحث" : "لا يوجد موردون مسجلون"}</p>
                 </td></tr>
@@ -196,7 +293,29 @@ export default function SuppliersList() {
                         </a>
                       ) : <span style={{ color: "#d1d5db" }}>—</span>}
                     </td>
+                    <td style={S.td}><SupplierStars supplierId={s.id} /></td>
+                    <td style={S.td}>
+                      {s.status === "draft" ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "#fffbeb", color: "#d97706" }}><Clock size={11} /> مسودة{s.createdByName ? ` — ${s.createdByName}` : ""}</span>
+                      ) : (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: "#f0fdf4", color: "#16a34a" }}><ShieldCheck size={11} /> معتمد</span>
+                      )}
+                    </td>
                     <td style={{ ...S.td, textAlign: "left" as const }}>
+                      <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                        {isAdmin && s.status === "draft" && (
+                          <button style={S.iconBtn} onClick={() => approveM.mutate(s.id)} title="اعتماد المورد"
+                            onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = "#f0fdf4"}
+                            onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "transparent"}>
+                            <ShieldCheck size={14} color="#16a34a" />
+                          </button>
+                        )}
+                        <button style={S.iconBtn} onClick={() => setCorrespondenceFor({ id: s.id, label: s.name })}
+                          onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = `${G}18`}
+                          onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "transparent"}>
+                          <Mail size={14} color={GD} />
+                        </button>
+                      </div>
                       {canEdit && (
                         <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
                           <button style={S.iconBtn} onClick={() => openEdit(s)}
@@ -252,6 +371,13 @@ export default function SuppliersList() {
                     <input style={S.input} value={form.commercialRegNo} onChange={e => setForm(p => ({ ...p, commercialRegNo: e.target.value }))} placeholder="رقم السجل" dir="ltr" />
                   </div>
                   <div>
+                    <label style={S.label}>الشركة المشاركة</label>
+                    <select style={S.select} value={form.companyId} onChange={e => setForm(p => ({ ...p, companyId: e.target.value }))}>
+                      <option value="">— اختر الشركة —</option>
+                      {(companies as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
                     <label style={S.label}>الشخص المسؤول</label>
                     <input style={S.input} value={form.contactPerson} onChange={e => setForm(p => ({ ...p, contactPerson: e.target.value }))} placeholder="اسم المسؤول" />
                   </div>
@@ -279,9 +405,29 @@ export default function SuppliersList() {
                   <button type="button" style={S.cancelBtn} onClick={closeForm}>إلغاء</button>
                 </div>
               </form>
+              {editId && <SupplierEvaluationSection supplierId={editId} />}
+              {editId && (
+                <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1.5px solid #f0ead8" }}>
+                  <LinkedPricingSheets entityType="supplier" entityId={editId} />
+                </div>
+              )}
+              {editId && (
+                <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1.5px solid #f0ead8" }}>
+                  <LinkedTasks entityType="supplier" entityId={editId} />
+                </div>
+              )}
             </div>
           </div>
         </>
+      )}
+      {correspondenceFor && (
+        <CorrespondenceSheet
+          open={!!correspondenceFor}
+          onOpenChange={(o) => !o && setCorrespondenceFor(null)}
+          sourceType="supplier"
+          sourceId={correspondenceFor.id}
+          recordLabel={correspondenceFor.label}
+        />
       )}
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
     </div>

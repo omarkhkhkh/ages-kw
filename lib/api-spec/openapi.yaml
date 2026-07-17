@@ -275,6 +275,10 @@ components:
           type: ["string", "null"]
         deadline:
           type: ["string", "null"]
+        preliminaryMeetingHeld:
+          type: boolean
+        preliminaryMeetingDate:
+          type: ["string", "null"]
         bondValue:
           type: ["number", "null"]
         docsValue:
@@ -339,6 +343,10 @@ components:
           type: string
         deadline:
           type: string
+        preliminaryMeetingHeld:
+          type: boolean
+        preliminaryMeetingDate:
+          type: string
         bondValue:
           type: number
         docsValue:
@@ -394,6 +402,10 @@ components:
         announcementDate:
           type: string
         deadline:
+          type: string
+        preliminaryMeetingHeld:
+          type: boolean
+        preliminaryMeetingDate:
           type: string
         bondValue:
           type: number

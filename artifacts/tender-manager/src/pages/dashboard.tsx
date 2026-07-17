@@ -13,8 +13,10 @@ import {
 import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
 import { useAuth } from "@/contexts/auth";
-import { contractsApi, apiFetch } from "@/lib/api";
+import { contractsApi, correspondenceApi, apiFetch } from "@/lib/api";
 import { CalendarWidget, type CalendarEvent } from "@/components/calendar-widget";
+import CorrespondenceDashboardWidget from "@/components/correspondence-dashboard-widget";
+import { Mail } from "lucide-react";
 
 /* ─── brand palette ─── */
 const G  = "#D4A534";   // gold
@@ -49,6 +51,7 @@ const MODULES = [
   { href: "/company-docs",      label: "وثائق الشركة",         icon: FileCheck,     accent: "#0891b2", bg: "#ecfeff" },
   { href: "/gov-registrations", label: "تسجيلات الجهات",       icon: Landmark,      accent: "#7c3aed", bg: "#f5f3ff" },
   { href: "/calendar",          label: "جدول الأعمال",         icon: Calendar,      accent: "#9333ea", bg: "#faf5ff" },
+  { href: "/correspondence",    label: "المراسلات",            icon: Mail,          accent: "#be185d", bg: "#fdf2f8" },
 ];
 
 export default function Dashboard() {
@@ -124,6 +127,12 @@ export default function Dashboard() {
     enabled: isAdmin,
     staleTime: 5 * 60_000,
   });
+  const { data: calCorrespondence } = useQuery({
+    queryKey: ["cal-correspondence"],
+    queryFn: () => correspondenceApi.list({ limit: 100 }),
+    enabled: isAdmin || !!user?.accessCorrespondence,
+    staleTime: 5 * 60_000,
+  });
 
   // ── Build unified CalendarEvent[] ──
   const calendarEvents = useMemo<CalendarEvent[]>(() => {
@@ -186,8 +195,13 @@ export default function Dashboard() {
       push(`po-del-${o.id}`,  o.deliveryDate, "purchase", o.title ?? o.orderNumber, "تاريخ التسليم", { status: o.status });
     });
 
+    // Correspondence deadlines
+    (calCorrespondence?.rows ?? []).forEach((letter: any) => {
+      push(`corr-${letter.id}`, letter.deadlineDate, "correspondence", letter.subject, "الموعد النهائي للرد", { status: letter.status });
+    });
+
     return evts;
-  }, [recentTenders, myTasks, calContracts, calProjects, calGuarantees, calRfq, calPurchases, isAdmin]);
+  }, [recentTenders, myTasks, calContracts, calProjects, calGuarantees, calRfq, calPurchases, calCorrespondence, isAdmin]);
 
   const greeting = () => {
     const h = new Date().getHours();
@@ -467,6 +481,10 @@ export default function Dashboard() {
           })}
         </div>
       </div>
+
+      {(isAdmin || user?.accessCorrespondence) && (
+        <CorrespondenceDashboardWidget />
+      )}
 
       {/* ── My Tasks Widget ── */}
       {myTasks.length > 0 && (

@@ -2,10 +2,12 @@ import { pgTable, serial, text, numeric, timestamp, date, integer } from "drizzl
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { tendersTable } from "./tenders";
+import { companiesTable } from "./company-documents";
 
 export const bankGuaranteesTable = pgTable("bank_guarantees", {
   id: serial("id").primaryKey(),
   tenderId: integer("tender_id").references(() => tendersTable.id, { onDelete: "set null" }),
+  companyId: integer("company_id").references(() => companiesTable.id, { onDelete: "set null" }), // الشركة المشاركة
   guaranteeNumber: text("guarantee_number"),
   type: text("type"), // ابتدائية، نهائية، دفعة مقدمة
   bankName: text("bank_name"),

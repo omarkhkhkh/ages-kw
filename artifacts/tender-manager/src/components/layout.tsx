@@ -4,10 +4,10 @@ import {
   FolderOpen, ShieldCheck, FileSignature, Calendar, LogOut, Activity,
   ChevronDown, Clock, Truck, Wallet, ListChecks, ClipboardCheck,
   FileCheck, Landmark, Settings, Bell, HelpCircle, Headphones,
-  MapPin, BarChart3, Plus, X, Menu, Trophy, Sparkles,
+  MapPin, BarChart3, Plus, X, Menu, Trophy, Sparkles, Mail, IdCard, Wrench, FlaskConical, Calculator,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/auth";
 import type { AuthUser } from "@/contexts/auth";
 import logoImg from "@/assets/logo.png";
@@ -117,6 +117,30 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number): NavGroup[
       show: isAdmin || can("accessTenders"), href: "/company-docs",
     },
     {
+      id: "correspondence", label: "المراسلات", icon: Mail,
+      show: can("accessCorrespondence"), href: "/correspondence",
+    },
+    {
+      id: "residency", label: "إدارة الإقامات", icon: IdCard,
+      show: can("accessResidency"), href: "/residency",
+    },
+    {
+      id: "maintenance", label: "إدارة الصيانة", icon: Wrench,
+      show: can("accessMaintenance") || isAdmin,
+      items: [
+        { href: "/maintenance",                 label: "لوحة الصيانة",   show: can("accessMaintenance") },
+        { href: "/maintenance/report-templates", label: "تقارير الصيانة", show: isAdmin },
+      ].filter(i => i.show),
+    },
+    {
+      id: "research", label: "البحث والتطوير", icon: FlaskConical,
+      show: can("accessResearch"), href: "/research",
+    },
+    {
+      id: "pricing", label: "التسعير", icon: Calculator,
+      show: can("accessPricing"), href: "/pricing",
+    },
+    {
       id: "transport", label: "المركبات والنقل", icon: Truck,
       show: can("accessTransportation"), href: "/transportation",
     },
@@ -124,9 +148,9 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number): NavGroup[
       id: "tasks", label: "المهام والمتابعة", icon: ListChecks,
       show: true,
       items: [
-        { href: "/tasks",    label: "المهام",       show: true },
-        { href: "/calendar", label: "جدول الأعمال", show: true },
-      ],
+        { href: "/tasks",    label: "مركز إدارة العمليات", show: can("accessTasks") },
+        { href: "/calendar", label: "جدول الأعمال",         show: true },
+      ].filter(i => i.show),
     },
     {
       id: "competitor-intelligence", label: "ذكاء المنافسين", icon: Trophy,
@@ -144,8 +168,10 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number): NavGroup[
       id: "settings", label: "الإعدادات", icon: Settings,
       show: isAdmin,
       items: [
-        { href: "/admin/users",        label: "إدارة المستخدمين", show: isAdmin },
-        { href: "/admin/activity-log", label: "سجل الحركات",      show: isAdmin },
+        { href: "/admin/users",         label: "إدارة المستخدمين", show: isAdmin },
+        { href: "/admin/activity-log",  label: "سجل الحركات",      show: isAdmin },
+        { href: "/admin/service-types", label: "أنواع التعامل",    show: isAdmin },
+        { href: "/admin/task-types",    label: "أنواع المهام",     show: isAdmin },
       ].filter(i => i.show),
     },
   ].filter(g => g.show);
@@ -379,8 +405,69 @@ function Sidebar({ groups, location, navigate, user, logout }:
 /* ════════════════════════════════════════════
    TOP HEADER
 ════════════════════════════════════════════ */
-function TopHeader({ user, navigate, location, unreadCount }:
-  { user: any; navigate: (p: string) => void; location: string; unreadCount?: number }) {
+/* ── notification bell ── */
+function NotificationBell({ navigate }: { navigate: (p: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
+
+  const { data: unread } = useQuery<{ count: number }>({
+    queryKey: ["notif-unread-count"],
+    queryFn: () => apiFetch("/api/notifications/unread-count"),
+    refetchInterval: 10000,
+  });
+  const { data: notifications = [] } = useQuery<any[]>({
+    queryKey: ["notifications"],
+    queryFn: () => apiFetch("/api/notifications"),
+    enabled: open,
+  });
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const markRead = async (id: number, link?: string | null) => {
+    await fetch(`/api/notifications/${id}/read`, { method: "PATCH", credentials: "include" });
+    qc.invalidateQueries({ queryKey: ["notif-unread-count"] });
+    qc.invalidateQueries({ queryKey: ["notifications"] });
+    if (link) navigate(link);
+    setOpen(false);
+  };
+
+  const count = unread?.count ?? 0;
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button onClick={() => setOpen(o => !o)} style={{ position: "relative", background: "none", border: "none", cursor: "pointer", display: "flex", padding: 6, borderRadius: 8 }}>
+        <Bell size={17} color="#374151" />
+        {count > 0 && (
+          <span style={{ position: "absolute", top: 0, left: 0, minWidth: 16, height: 16, borderRadius: 8, background: "#dc2626", color: "white", fontSize: 9.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px" }}>
+            {count > 9 ? "9+" : count}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 8px)", left: 0, width: 320, maxHeight: 400, overflowY: "auto", background: "white", borderRadius: 14, border: "1.5px solid #e5e7eb", boxShadow: "0 12px 32px rgba(0,0,0,0.15)", zIndex: 60 }}>
+          <div style={{ padding: "10px 14px", borderBottom: "1px solid #f0ead8", fontSize: 12.5, fontWeight: 800, color: GR2 }}>الإشعارات</div>
+          {notifications.length === 0 ? (
+            <div style={{ padding: 24, textAlign: "center", color: "#9ca3af", fontSize: 12 }}>لا توجد إشعارات</div>
+          ) : notifications.map((n: any) => (
+            <div key={n.id} onClick={() => markRead(n.id, n.link)}
+              style={{ padding: "10px 14px", borderBottom: "1px solid #f5f0e6", cursor: "pointer", background: n.isRead ? "white" : "#fdf8ec" }}>
+              <div style={{ fontSize: 12, color: "#374151", lineHeight: 1.5 }}>{n.message}</div>
+              <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>{new Date(n.createdAt).toLocaleString("ar-KW")}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TopHeader({ user, navigate, location }:
+  { user: any; navigate: (p: string) => void; location: string }) {
 
   const { timeStr, dateStr } = useKuwaitClock();
 
@@ -392,9 +479,15 @@ function TopHeader({ user, navigate, location, unreadCount }:
     "/suppliers": "الموردون", "/projects": "المشاريع",
     "/guarantees": "الكفالات البنكية", "/contracts": "العقود",
     "/rfq": "طلبات عروض الأسعار", "/purchase-orders": "أوامر الشراء المباشر",
-    "/transportation": "النقل والتوزيع", "/finance": "الشؤون المالية",
-    "/tasks": "المهام", "/calendar": "جدول الأعمال",
+    "/transportation": "المركبات والنقل", "/finance": "الشؤون المالية",
+    "/tasks": "المهام", "/calendar": "جدول الأعمال", "/correspondence": "المراسلات",
+    "/residency": "إدارة الإقامات",
+    "/maintenance": "إدارة الصيانة", "/maintenance/report-templates": "تقارير الصيانة",
+    "/research": "البحث والتطوير",
+    "/pricing": "التسعير",
     "/admin/users": "إدارة المستخدمين", "/admin/activity-log": "سجل الحركات",
+    "/admin/service-types": "أنواع التعامل",
+    "/admin/task-types": "أنواع المهام",
     "/guide": "الدعم الفني",
   };
   const currentPage = PAGE_NAMES[location]
@@ -455,6 +548,7 @@ function TopHeader({ user, navigate, location, unreadCount }:
 
       {/* Right: company name */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <NotificationBell navigate={navigate} />
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: GR2, whiteSpace: "nowrap" }}>المجموعة العربية للخدمات التعليمية</div>
           <div style={{ fontSize: 10, color: "#9ca3af" }}>نظام إدارة المناقصات والأعمال التجارية</div>

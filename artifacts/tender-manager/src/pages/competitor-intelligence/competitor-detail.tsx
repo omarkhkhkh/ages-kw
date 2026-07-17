@@ -1,10 +1,16 @@
 /**
  * /competitor-intelligence/c/:id — تفاصيل شركة منافسة
  */
+import { useMemo } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Loader2, Trophy, Building2, Package } from "lucide-react";
+import { ArrowRight, Loader2, Trophy, Building2, Package, FileDown, Printer, TrendingUp } from "lucide-react";
+import {
+  ResponsiveContainer, LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ReferenceLine,
+} from "recharts";
 import { formatCurrency } from "@/lib/utils";
+import { exportCompetitorReportToExcel } from "@/lib/export";
+import { printCompetitorReport } from "@/lib/print-competitor-report";
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -32,6 +38,28 @@ export default function CompetitorDetail() {
     queryFn: () => apiFetch(`/api/analytics/competitors/${id}`),
     staleTime: 5 * 60_000,
   });
+
+  // Monthly buckets of the average price difference vs. us — shows whether the
+  // competitor is getting more or less aggressive over time.
+  const trendData = useMemo(() => {
+    const hist: any[] = data?.history ?? [];
+    const buckets = new Map<string, { sum: number; count: number }>();
+    for (const h of hist) {
+      if (h.opening_date == null || h.diff_pct == null) continue;
+      const month = String(h.opening_date).slice(0, 7); // YYYY-MM
+      const b = buckets.get(month) ?? { sum: 0, count: 0 };
+      b.sum += Number(h.diff_pct);
+      b.count += 1;
+      buckets.set(month, b);
+    }
+    return [...buckets.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, b]) => ({
+        month,
+        avgDiff: Math.round((b.sum / b.count) * 10) / 10,
+        sessions: b.count,
+      }));
+  }, [data]);
 
   const S = {
     card: { background: "white", borderRadius: 14, padding: "18px 20px", boxShadow: "0 2px 10px rgba(0,0,0,0.06)", border: "1px solid #e2e8f0" } as any,
@@ -68,6 +96,23 @@ export default function CompetitorDetail() {
           <h1 style={{ fontSize: 20, fontWeight: 800, color: GR, margin: 0 }}>{competitor.name}</h1>
           {competitor.shortName && <p style={{ fontSize: 12, color: "#9ca3af", margin: 0 }}>{competitor.shortName}</p>}
         </div>
+        <div style={{ marginRight: "auto", display: "flex", gap: 8 }}>
+          <button
+            onClick={() => exportCompetitorReportToExcel(competitor.name, history, entityBreakdown, itemBreakdown)}
+            style={{ display: "flex", alignItems: "center", gap: 5, background: "white", border: "1.5px solid #e5e7eb", borderRadius: 9, padding: "7px 13px", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#374151", fontFamily: "inherit" }}>
+            <FileDown size={13} /> Excel
+          </button>
+          <button
+            onClick={() => printCompetitorReport(competitor.name, {
+              totalSessions: history.length,
+              theirWins: wins,
+              ourWins: history.length - wins,
+              avgDiffPct: avgDiff != null ? Number(avgDiff) : null,
+            }, history, entityBreakdown, itemBreakdown)}
+            style={{ display: "flex", alignItems: "center", gap: 5, background: "white", border: "1.5px solid #e5e7eb", borderRadius: 9, padding: "7px 13px", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#374151", fontFamily: "inherit" }}>
+            <Printer size={13} /> PDF
+          </button>
+        </div>
       </div>
 
       {/* Stat cards */}
@@ -84,6 +129,35 @@ export default function CompetitorDetail() {
           </div>
         ))}
       </div>
+
+      {/* Price-behavior trend over time */}
+      {history.length >= 3 && trendData.length >= 2 && (
+        <div style={{ ...S.card }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <TrendingUp size={15} color={G} />
+            <span style={{ fontSize: 13, fontWeight: 800, color: GR }}>📈 اتجاه السلوك السعري عبر الزمن</span>
+          </div>
+          <p style={{ margin: "0 0 12px", fontSize: 11, color: "#9ca3af" }}>
+            متوسط فارق سعره عن سعرنا شهريًا — فوق الصفر: أغلى منّا، تحت الصفر: أرخص منّا (أكثر شراسة)
+          </p>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={trendData} margin={{ top: 5, right: 10, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} unit="%" />
+              <Tooltip
+                contentStyle={{ fontSize: 12, fontFamily: "Cairo, sans-serif", direction: "rtl" }}
+                formatter={(v: any, _n: any, props: any) => [
+                  `${Number(v) >= 0 ? "+" : ""}${v}% (${props.payload.sessions} جلسة)`,
+                  "متوسط الفرق",
+                ]}
+              />
+              <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="4 4" />
+              <Line dataKey="avgDiff" stroke={G} strokeWidth={3} dot={{ r: 5, fill: G }} connectNulls={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* History table */}
       <div style={{ background: "white", borderRadius: 14, boxShadow: "0 1px 6px rgba(0,0,0,0.06)", overflow: "hidden" }}>

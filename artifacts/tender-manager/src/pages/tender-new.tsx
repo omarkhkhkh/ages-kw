@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useCreateTender, getListTendersQueryKey, getGetTenderStatsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -6,9 +6,10 @@ import { TenderStatus } from "@workspace/api-client-react";
 import { STATUS_ARABIC } from "@/lib/constants";
 import {
   ArrowRight, FileText, Calendar, Users,
-  Building2, Hash, Briefcase, AlertCircle,
+  Hash, Briefcase, AlertCircle,
   ChevronDown, Loader2, CheckCircle2,
 } from "lucide-react";
+import EntityDirectoryPicker from "@/components/entity-directory-picker";
 
 /* ── theme ── */
 const G  = "#D4A534";
@@ -131,68 +132,6 @@ function StyledTextarea({ ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaEl
   );
 }
 
-/* ── Government entity autocomplete ── */
-function EntityInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const [q, setQ] = useState(value);
-  const [open, setOpen] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  const { data: entities = [] } = useQuery<any[]>({
-    queryKey: ["government-entities"],
-    queryFn: () => apiFetch("/api/government-entities"),
-    staleTime: 5 * 60_000,
-  });
-
-  const filtered = q.trim().length >= 1
-    ? entities.filter((e: any) => e.name?.includes(q) || e.shortName?.includes(q))
-    : entities.slice(0, 8);
-
-  useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, []);
-
-  return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <div style={{ position: "relative" }}>
-        <Building2 size={14} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", pointerEvents: "none" }} />
-        <input
-          style={{ ...INP, ...(focused ? INP_FOCUS : {}), paddingRight: 34 }}
-          value={q}
-          onChange={e => { setQ(e.target.value); onChange(e.target.value); setOpen(true); }}
-          onFocus={() => { setFocused(true); setOpen(true); }}
-          onBlur={() => setFocused(false)}
-          placeholder="ابحث عن الجهة الحكومية..."
-          dir="rtl"
-        />
-      </div>
-      {open && filtered.length > 0 && (
-        <div style={{
-          position: "absolute", top: "calc(100% + 4px)", right: 0, left: 0,
-          background: "white", border: "1.5px solid #e2e8f0", borderRadius: 10,
-          zIndex: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.1)", maxHeight: 220, overflowY: "auto",
-        }}>
-          {filtered.map((e: any) => (
-            <div key={e.id}
-              style={{ padding: "10px 14px", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 8 }}
-              onMouseDown={() => { setQ(e.name); onChange(e.name); setOpen(false); }}
-              onMouseEnter={ev => (ev.currentTarget.style.background = "#f8fafc")}
-              onMouseLeave={ev => (ev.currentTarget.style.background = "transparent")}>
-              <Building2 size={13} color={G} />
-              <span style={{ fontWeight: 600, color: GR }}>{e.name}</span>
-              {e.shortName && <span style={{ fontSize: 11, color: "#94a3b8" }}>({e.shortName})</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ═══════════════════════════════════════════════════════════ */
 export default function TenderNew() {
   const [, setLocation] = useLocation();
@@ -203,17 +142,28 @@ export default function TenderNew() {
     tenderNumber: "",
     projectName: "",
     governmentEntity: "",
+    governmentEntityId: "" as string | number | null,
+    departmentId: "" as string | number | null,
+    contactId: "" as string | number | null,
     tenderType: "",
     announcementDate: "",
     deadline: "",
+    preliminaryMeetingHeld: false as boolean,
+    preliminaryMeetingDate: "",
     bondValue: "",
     docsValue: "",
     responsibleEngineer: "",
     status: TenderStatus.new as string,
     notes: "",
+    companyId: "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [success, setSuccess] = useState(false);
+
+  const { data: companies = [] } = useQuery<any[]>({
+    queryKey: ["companies-list"],
+    queryFn: () => apiFetch("/api/company-documents/companies"),
+  });
 
   const set = (field: string, value: string) =>
     setForm(f => ({ ...f, [field]: value }));
@@ -238,6 +188,10 @@ export default function TenderNew() {
           ...form,
           bondValue: form.bondValue ? Number(form.bondValue) : undefined,
           docsValue: form.docsValue ? Number(form.docsValue) : undefined,
+          companyId: form.companyId ? Number(form.companyId) : undefined,
+          governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : undefined,
+          departmentId: form.departmentId ? Number(form.departmentId) : undefined,
+          contactId: form.contactId ? Number(form.contactId) : undefined,
         } as any,
       },
       {
@@ -350,8 +304,20 @@ export default function TenderNew() {
               />
             </Field>
 
-            <Field label="الجهة الحكومية">
-              <EntityInput value={form.governmentEntity} onChange={v => set("governmentEntity", v)} />
+            <Field label="الجهة الحكومية ← الاختصاص ← المسؤول" col>
+              <EntityDirectoryPicker
+                value={{ governmentEntityId: form.governmentEntityId, departmentId: form.departmentId, contactId: form.contactId }}
+                onChange={next => setForm(f => ({ ...f, ...next }))}
+              />
+            </Field>
+
+            <Field label="الشركة المشاركة">
+              <select style={INP} value={form.companyId} onChange={e => set("companyId", e.target.value)}>
+                <option value="">— اختر الشركة —</option>
+                {companies.map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
             </Field>
 
           </div>
@@ -433,6 +399,28 @@ export default function TenderNew() {
                 style={errors.deadline ? { borderColor: "#ef4444" } : {}}
               />
             </Field>
+
+            <Field label="الاجتماع التمهيدي">
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#374151", cursor: "pointer", height: 38 }}>
+                <input
+                  type="checkbox"
+                  checked={form.preliminaryMeetingHeld}
+                  onChange={e => setForm(f => ({ ...f, preliminaryMeetingHeld: e.target.checked, preliminaryMeetingDate: e.target.checked ? f.preliminaryMeetingDate : "" }))}
+                  style={{ width: 16, height: 16, accentColor: "#D4A534", cursor: "pointer" }}
+                />
+                هل عُقد الاجتماع التمهيدي؟
+              </label>
+            </Field>
+
+            {form.preliminaryMeetingHeld && (
+              <Field label="تاريخ الاجتماع التمهيدي">
+                <StyledInput
+                  type="date"
+                  value={form.preliminaryMeetingDate}
+                  onChange={e => set("preliminaryMeetingDate", e.target.value)}
+                />
+              </Field>
+            )}
 
             <Field label="قيمة الكراسة (د.ك)" hint="اتركه فارغاً إن لم تُحدَّد">
               <div style={{ position: "relative" }}>

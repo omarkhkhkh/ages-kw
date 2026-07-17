@@ -423,6 +423,91 @@ router.get("/item-analysis", async (req: Request, res: Response) => {
 });
 
 /* ═══════════════════════════════════════════════════════
+   GET /best-sectors — نسبة الفوز ومتوسط قيمة العقد حسب نوع الجهة الحكومية
+   (يستخدم government_entities.type كبديل جاهز لمفهوم "القطاع")
+   ═══════════════════════════════════════════════════════ */
+router.get("/best-sectors", async (_req: Request, res: Response) => {
+  try {
+    const result = await db.execute(sql`
+      SELECT
+        COALESCE(ge.type, 'غير مصنّف') AS sector,
+        COUNT(*)::int AS total_bids,
+        SUM(CASE WHEN be.is_winner THEN 1 ELSE 0 END)::int AS wins,
+        ROUND(
+          (SUM(CASE WHEN be.is_winner THEN 1 ELSE 0 END)::numeric / COUNT(*)::numeric) * 100,
+          1
+        ) AS win_rate_pct,
+        ROUND(AVG(be.total_price::numeric), 3) AS avg_value
+      FROM bid_entries be
+      JOIN bid_results br ON br.id = be.bid_result_id
+      LEFT JOIN tenders t ON t.id = br.tender_id
+      LEFT JOIN government_entities ge ON ge.id = t.government_entity_id
+      WHERE be.is_us = true
+      GROUP BY ge.type
+      ORDER BY win_rate_pct DESC, total_bids DESC
+    `);
+    return res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في تحليل أفضل القطاعات" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════
+   GET /by-entity/:entityId — ترتيب المنافسين عند جهة حكومية محددة
+   (يُستخدم لتنبيه صفحة المناقصة بالمنافسين الخطرين المتوقعين لنفس الجهة)
+   ═══════════════════════════════════════════════════════ */
+router.get("/by-entity/:entityId", async (req: Request, res: Response) => {
+  try {
+    const entityId = Number(req.params.entityId);
+    if (isNaN(entityId)) return res.status(400).json({ error: "معرّف جهة غير صالح" });
+
+    const rows = await db.execute(sql`
+      WITH us_prices AS (
+        SELECT be_us.bid_result_id, be_us.total_price AS our_price
+        FROM bid_entries be_us
+        WHERE be_us.is_us = true
+      ),
+      competitor_bids AS (
+        SELECT
+          be.competitor_id,
+          be.company_name,
+          be.total_price,
+          be.is_winner,
+          up.our_price,
+          br.opening_date
+        FROM bid_entries be
+        JOIN bid_results br ON br.id = be.bid_result_id
+        LEFT JOIN us_prices up ON up.bid_result_id = be.bid_result_id
+        JOIN tenders t ON t.id = br.tender_id
+        WHERE be.is_us = false
+          AND br.source_type = 'tender'
+          AND t.government_entity_id = ${entityId}
+      )
+      SELECT
+        competitor_id,
+        MAX(company_name) AS company_name,
+        COUNT(*)::int AS total_bids,
+        SUM(CASE WHEN is_winner THEN 1 ELSE 0 END)::int AS wins,
+        ROUND(AVG(
+          CASE WHEN our_price IS NOT NULL AND our_price::numeric > 0
+               THEN (total_price::numeric / our_price::numeric - 1) * 100
+               ELSE NULL END
+        ), 2) AS avg_diff_pct,
+        MAX(opening_date) AS last_seen
+      FROM competitor_bids
+      WHERE competitor_id IS NOT NULL
+      GROUP BY competitor_id
+      ORDER BY wins DESC, total_bids DESC
+    `);
+    return res.json(rows.rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في جلب منافسي الجهة" });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════
    GET /:id — تفاصيل شركة واحدة (MUST be after all static paths)
    ═══════════════════════════════════════════════════════ */
 router.get("/:id", async (req: Request, res: Response) => {

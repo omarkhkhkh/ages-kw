@@ -1,15 +1,17 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Landmark, Plus, Search, Pencil, Trash2, X,
   CheckCircle2, AlertTriangle, AlertCircle, Clock, Bell,
   Calendar, User, Hash, FileText, Paperclip, ExternalLink,
-  Upload, Loader2,
+  Upload, Loader2, Building2,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import FileUpload, { objectPathToUrl } from "@/components/file-upload";
 import { useUpload } from "@workspace/object-storage-web";
 import { useToast } from "@/hooks/use-toast";
+import { CompanyChips } from "@/components/company-switcher";
+import LinkedTasks from "@/components/linked-tasks";
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -137,16 +139,26 @@ export default function GovernmentRegistrations() {
   const [editId, setEditId]     = useState<number | null>(null);
   const [form, setForm]         = useState({ ...emptyForm });
   const [customEntity, setCustomEntity] = useState(false);
+  const [activeCompanyId, setActiveCompanyId] = useState<number | null>(null);
+
+  const { data: companies = [] } = useQuery<any[]>({ queryKey: ["companies-list"], queryFn: () => apiFetch("/api/company-documents/companies") });
+
+  useEffect(() => {
+    if (activeCompanyId === null && companies.length > 0) setActiveCompanyId(companies[0].id);
+    if (activeCompanyId !== null && !companies.some((c: any) => c.id === activeCompanyId)) setActiveCompanyId(companies[0]?.id ?? null);
+  }, [companies, activeCompanyId]);
 
   const { data: stats } = useQuery<any>({
-    queryKey: ["gov-reg-stats"],
-    queryFn: () => apiFetch("/api/government-registrations/stats"),
+    queryKey: ["gov-reg-stats", activeCompanyId],
+    queryFn: () => apiFetch(`/api/government-registrations/stats?companyId=${activeCompanyId}`),
+    enabled: !!activeCompanyId,
     refetchInterval: 60000,
   });
 
   const { data: rows = [], isLoading } = useQuery<any[]>({
-    queryKey: ["gov-regs", search],
-    queryFn: () => apiFetch("/api/government-registrations" + (search ? `?search=${encodeURIComponent(search)}` : "")),
+    queryKey: ["gov-regs", activeCompanyId, search],
+    queryFn: () => apiFetch(`/api/government-registrations?companyId=${activeCompanyId}` + (search ? `&search=${encodeURIComponent(search)}` : "")),
+    enabled: !!activeCompanyId,
   });
 
   const upsert = useMutation({
@@ -172,7 +184,9 @@ export default function GovernmentRegistrations() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!activeCompanyId) return;
     upsert.mutate({
+      companyId: activeCompanyId,
       entityName: form.entityName || null, registrationNumber: form.registrationNumber || null,
       supplierNumber: form.supplierNumber || null, fileNumber: form.fileNumber || null,
       registrationDate: form.registrationDate || null, expiryDate: form.expiryDate || null,
@@ -205,13 +219,27 @@ export default function GovernmentRegistrations() {
           </div>
           <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>تسجيلات الشركة لدى الوزارات والهيئات الحكومية</p>
         </div>
-        {canEdit && (
+        {canEdit && activeCompanyId && (
           <button onClick={openAdd} style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 18px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", fontFamily: "inherit", boxShadow: `0 4px 14px rgba(212,165,52,0.4)` }}>
             <Plus size={15} /> إضافة تسجيل
           </button>
         )}
       </div>
 
+      {/* Companies */}
+      <div style={{ background: "white", borderRadius: 14, padding: "14px 16px", boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#9ca3af", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>الشركات</div>
+        <CompanyChips activeId={activeCompanyId} onSelect={setActiveCompanyId} canEdit={canEdit} isAdmin={isAdmin} showDocCount={false} />
+      </div>
+
+      {companies.length === 0 ? (
+        <div style={{ background: "white", borderRadius: 16, boxShadow: "0 1px 6px rgba(0,0,0,0.07)", padding: 60, textAlign: "center" }}>
+          <Building2 size={40} style={{ margin: "0 auto 12px", display: "block", opacity: 0.25 }} />
+          <p style={{ color: "#6b7280", fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>لا توجد شركات مضافة بعد</p>
+          <p style={{ color: "#9ca3af", fontSize: 12.5, margin: 0 }}>أضف شركة من الأعلى لتبدأ بإدارة تسجيلاتها الحكومية</p>
+        </div>
+      ) : (
+      <>
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(155px,1fr))", gap: 12 }}>
         {statCards.map(c => (
@@ -342,6 +370,8 @@ export default function GovernmentRegistrations() {
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* ═══ DRAWER ═══ */}
       {showForm && (
@@ -427,6 +457,11 @@ export default function GovernmentRegistrations() {
                 </button>
               </div>
             </form>
+            {editId && (
+              <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1.5px solid #f0ead8" }}>
+                <LinkedTasks entityType="governmentRegistration" entityId={editId} />
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -43,6 +43,9 @@ export interface Tender {
   announcementDate?: string | null;
   /** @nullable */
   deadline?: string | null;
+  preliminaryMeetingHeld?: boolean;
+  /** @nullable */
+  preliminaryMeetingDate?: string | null;
   /** @nullable */
   bondValue?: number | null;
   /** @nullable */
@@ -98,6 +101,8 @@ export interface TenderInput {
   tenderType?: string;
   announcementDate?: string;
   deadline?: string;
+  preliminaryMeetingHeld?: boolean;
+  preliminaryMeetingDate?: string;
   bondValue?: number;
   docsValue?: number;
   responsibleEngineer?: string;
@@ -140,6 +145,8 @@ export interface TenderUpdate {
   tenderType?: string;
   announcementDate?: string;
   deadline?: string;
+  preliminaryMeetingHeld?: boolean;
+  preliminaryMeetingDate?: string;
   bondValue?: number;
   docsValue?: number;
   responsibleEngineer?: string;

@@ -1,9 +1,11 @@
-import { pgTable, serial, text, date, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, date, timestamp, integer } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { companiesTable } from "./company-documents";
 
 export const governmentRegistrationsTable = pgTable("government_registrations", {
   id:                  serial("id").primaryKey(),
+  companyId:           integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }),
   entityName:          text("entity_name").notNull(),
   registrationNumber:  text("registration_number"),
   supplierNumber:      text("supplier_number"),

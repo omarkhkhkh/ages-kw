@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { projectsApi, entitiesApi } from "@/lib/api";
-import { FolderOpen, Plus, Pencil, Trash2, X, Check, Download, Search, TrendingUp, Clock, CheckCircle2, PauseCircle } from "lucide-react";
+import { projectsApi, companiesApi } from "@/lib/api";
+import { FolderOpen, Plus, Pencil, Trash2, X, Check, Download, Search, TrendingUp, Clock, CheckCircle2, PauseCircle, Mail } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { exportProjectsToExcel } from "@/lib/export";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useListTenders } from "@workspace/api-client-react";
+import CorrespondenceSheet from "@/components/correspondence/correspondence-sheet";
+import EntityDirectoryPicker from "@/components/entity-directory-picker";
+import LinkedTasks from "@/components/linked-tasks";
 
 const G  = "#D4A534";
 const GL = "#E8BE55";
@@ -18,7 +21,7 @@ const STATUS_MAP: Record<string, { label: string; bg: string; text: string; bord
   suspended: { label: "موقوف", bg: "#fee2e2", text: "#991b1b", border: "#fecaca", icon: PauseCircle },
 };
 
-const emptyForm = { tenderId: "", projectNumber: "", name: "", governmentEntityId: "", contractValue: "", startDate: "", endDate: "", status: "active", projectManager: "", completionPercentage: "0", notes: "" };
+const emptyForm = { tenderId: "", projectNumber: "", name: "", governmentEntityId: "" as string | number | null, departmentId: "" as string | number | null, contactId: "" as string | number | null, companyId: "", contractValue: "", startDate: "", endDate: "", status: "active", projectManager: "", completionPercentage: "0", notes: "" };
 
 const S = {
   page: { fontFamily: "'Segoe UI', Tahoma, sans-serif", direction: "rtl" as const },
@@ -57,10 +60,11 @@ export default function ProjectsList() {
   const [form, setForm] = useState({ ...emptyForm });
   const [tab, setTab] = useState("all");
   const [search, setSearch] = useState("");
+  const [correspondenceFor, setCorrespondenceFor] = useState<{ id: number; label: string; governmentEntityId: number | null } | null>(null);
 
   const statusFilter = tab !== "all" ? tab : undefined;
   const { data: projects = [], isLoading } = useQuery({ queryKey: ["projects", tab], queryFn: () => projectsApi.list(statusFilter) });
-  const { data: entities = [] } = useQuery({ queryKey: ["government-entities"], queryFn: () => entitiesApi.list() });
+  const { data: companies = [] } = useQuery({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
   const { data: tenders = [] } = useListTenders({ won: true } as any);
 
   const isAdmin = user?.role === "admin";
@@ -72,8 +76,8 @@ export default function ProjectsList() {
   const deleteM = useMutation({ mutationFn: projectsApi.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ["projects"] }); toast({ title: "تم حذف المشروع" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
 
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
-  const openEdit = (p: any) => { setEditId(p.id); setForm({ tenderId: p.tenderId || "", projectNumber: p.projectNumber || "", name: p.name, governmentEntityId: p.governmentEntityId || "", contractValue: p.contractValue || "", startDate: p.startDate || "", endDate: p.endDate || "", status: p.status, projectManager: p.projectManager || "", completionPercentage: p.completionPercentage || "0", notes: p.notes || "" }); setShowForm(true); };
-  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.name.trim()) return; const data = { ...form, tenderId: form.tenderId ? Number(form.tenderId) : null, governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : null, contractValue: form.contractValue ? Number(form.contractValue) : null, completionPercentage: form.completionPercentage ? Number(form.completionPercentage) : 0 }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
+  const openEdit = (p: any) => { setEditId(p.id); setForm({ tenderId: p.tenderId || "", projectNumber: p.projectNumber || "", name: p.name, governmentEntityId: p.governmentEntityId || "", departmentId: p.departmentId || "", contactId: p.contactId || "", companyId: p.companyId || "", contractValue: p.contractValue || "", startDate: p.startDate || "", endDate: p.endDate || "", status: p.status, projectManager: p.projectManager || "", completionPercentage: p.completionPercentage || "0", notes: p.notes || "" }); setShowForm(true); };
+  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.name.trim()) return; const data = { ...form, tenderId: form.tenderId ? Number(form.tenderId) : null, governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : null, departmentId: form.departmentId ? Number(form.departmentId) : null, contactId: form.contactId ? Number(form.contactId) : null, companyId: form.companyId ? Number(form.companyId) : null, contractValue: form.contractValue ? Number(form.contractValue) : null, completionPercentage: form.completionPercentage ? Number(form.completionPercentage) : 0 }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
 
   const filtered = (projects as any[]).filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.projectNumber || "").includes(search) || (p.entityName || "").includes(search));
   const tabs = [{ id: "all", label: "الجميع", count: (projects as any[]).length }, ...Object.entries(STATUS_MAP).map(([k, v]) => ({ id: k, label: v.label, count: (projects as any[]).filter((p: any) => p.status === k).length }))];
@@ -193,8 +197,15 @@ export default function ProjectsList() {
                       </span>
                     </td>
                     <td style={{ ...S.td, textAlign: "left" as const }}>
+                      <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                        <button style={S.iconBtn} onClick={() => setCorrespondenceFor({ id: p.id, label: p.name, governmentEntityId: p.governmentEntityId ?? null })}
+                          onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = `${G}18`}
+                          onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "transparent"}>
+                          <Mail size={14} color={GD} />
+                        </button>
+                      </div>
                       {canEdit && (
-                        <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                        <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
                           <button style={S.iconBtn} onClick={() => openEdit(p)}
                             onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = `${G}18`}
                             onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "transparent"}>
@@ -249,11 +260,18 @@ export default function ProjectsList() {
                       {(tenders as any[]).map((t: any) => <option key={t.id} value={t.id}>{t.tenderNumber} — {t.projectName}</option>)}
                     </select>
                   </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <label style={S.label}>الجهة الحكومية ← الاختصاص ← المسؤول</label>
+                    <EntityDirectoryPicker
+                      value={{ governmentEntityId: form.governmentEntityId, departmentId: form.departmentId, contactId: form.contactId }}
+                      onChange={next => setForm(p => ({ ...p, ...next }))}
+                    />
+                  </div>
                   <div>
-                    <label style={S.label}>الجهة الحكومية</label>
-                    <select style={S.select} value={form.governmentEntityId} onChange={e => setForm(p => ({ ...p, governmentEntityId: e.target.value }))}>
-                      <option value="">اختر الجهة</option>
-                      {(entities as any[]).map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    <label style={S.label}>الشركة المشاركة</label>
+                    <select style={S.select} value={form.companyId} onChange={e => setForm(p => ({ ...p, companyId: e.target.value }))}>
+                      <option value="">— بدون —</option>
+                      {(companies as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                   <div>
@@ -288,9 +306,24 @@ export default function ProjectsList() {
                   <button type="button" style={S.cancelBtn} onClick={closeForm}>إلغاء</button>
                 </div>
               </form>
+              {editId && (
+                <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1.5px solid #f0ead8" }}>
+                  <LinkedTasks entityType="project" entityId={editId} />
+                </div>
+              )}
             </div>
           </div>
         </>
+      )}
+      {correspondenceFor && (
+        <CorrespondenceSheet
+          open={!!correspondenceFor}
+          onOpenChange={(o) => !o && setCorrespondenceFor(null)}
+          sourceType="project"
+          sourceId={correspondenceFor.id}
+          recordLabel={correspondenceFor.label}
+          governmentEntityId={correspondenceFor.governmentEntityId}
+        />
       )}
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
     </div>

@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { desc, ilike, or, sql, eq } from "drizzle-orm";
+import { desc, ilike, or, and, sql, eq } from "drizzle-orm";
 import { db, governmentRegistrationsTable, insertGovernmentRegistrationSchema, updateGovernmentRegistrationSchema } from "@workspace/db";
 
 const router = Router();
@@ -11,14 +11,19 @@ function parseId(raw: string | string[]): number | null {
 }
 
 /* ── STATS ── */
-router.get("/stats", async (_req: Request, res: Response) => {
+router.get("/stats", async (req: Request, res: Response) => {
   try {
-    const [row] = await db.select({
-      total:      sql<number>`count(*)::int`,
-      active:     sql<number>`count(*) filter (where expiry_date > current_date + interval '30 days' or expiry_date is null)::int`,
-      expiring30: sql<number>`count(*) filter (where expiry_date <= current_date + interval '30 days' and expiry_date >= current_date)::int`,
-      expired:    sql<number>`count(*) filter (where expiry_date < current_date)::int`,
-    }).from(governmentRegistrationsTable);
+    const companyId = req.query.companyId ? Number(req.query.companyId) : null;
+    const where = companyId ? sql`where company_id = ${companyId}` : sql``;
+    const [row] = await db.execute(sql`
+      SELECT
+        count(*)::int AS total,
+        count(*) filter (where expiry_date > current_date + interval '30 days' or expiry_date is null)::int AS active,
+        count(*) filter (where expiry_date <= current_date + interval '30 days' and expiry_date >= current_date)::int AS expiring30,
+        count(*) filter (where expiry_date < current_date)::int AS expired
+      FROM government_registrations
+      ${where}
+    `).then((r: any) => r.rows);
     return res.json(row);
   } catch {
     return res.status(500).json({ error: "فشل في جلب إحصائيات التسجيلات" });
@@ -28,13 +33,16 @@ router.get("/stats", async (_req: Request, res: Response) => {
 /* ── LIST ── */
 router.get("/", async (req: Request, res: Response) => {
   try {
-    const { search } = req.query as Record<string, string>;
-    let query = db.select().from(governmentRegistrationsTable).$dynamic();
-    if (search) query = query.where(or(
+    const { search, companyId } = req.query as Record<string, string>;
+    const conditions = [];
+    if (companyId) conditions.push(eq(governmentRegistrationsTable.companyId, Number(companyId)));
+    if (search) conditions.push(or(
       ilike(governmentRegistrationsTable.entityName, `%${search}%`),
       ilike(governmentRegistrationsTable.registrationNumber, `%${search}%`),
       ilike(governmentRegistrationsTable.responsibleEmployee, `%${search}%`),
-    ));
+    )!);
+    let query = db.select().from(governmentRegistrationsTable).$dynamic();
+    if (conditions.length) query = query.where(and(...conditions));
     const rows = await query.orderBy(governmentRegistrationsTable.entityName);
     return res.json(rows);
   } catch {

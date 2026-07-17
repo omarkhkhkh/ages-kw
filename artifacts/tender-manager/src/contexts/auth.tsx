@@ -23,6 +23,14 @@ export interface AuthUser {
   accessPo: boolean;
   accessTransportation: boolean;
   accessFinance: boolean;
+  accessCorrespondence: boolean;
+  accessResidency: boolean;
+  accessMaintenance: boolean;
+  accessResearch: boolean;
+  accessPricing: boolean;
+  accessTasks: boolean;
+  taskViewScope: "own" | "department" | "all";
+  taskCanApprove: boolean;
 }
 
 interface AuthContextValue {
@@ -113,7 +121,8 @@ export function useAuth() {
 /** Returns true if the current user has access to a given module */
 export function useModuleAccess(module: keyof Pick<AuthUser,
   "accessTenders" | "accessEntities" | "accessSuppliers" | "accessProjects" |
-  "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo" | "accessTransportation" | "accessFinance"
+  "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo" | "accessTransportation" | "accessFinance" |
+  "accessCorrespondence" | "accessResidency" | "accessMaintenance" | "accessResearch" | "accessPricing" | "accessTasks"
 >): boolean {
   const { user } = useAuth();
   if (!user) return false;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { rfqApi, suppliersApi } from "@/lib/api";
+import { rfqApi, suppliersApi, companiesApi } from "@/lib/api";
 import { ClipboardList, Plus, Pencil, Trash2, X, Check, Search, Clock, CheckCircle2, XCircle } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -16,7 +16,7 @@ const STATUS_MAP: Record<string, { label: string; bg: string; text: string; bord
   rejected: { label: "مرفوض",        bg: "#fee2e2", text: "#991b1b", border: "#fecaca", icon: XCircle },
 };
 
-const emptyForm = { tenderId: "", supplierId: "", rfqNumber: "", itemDescription: "", requestDate: "", responseDeadline: "", quotedPrice: "", status: "pending", notes: "" };
+const emptyForm = { tenderId: "", supplierId: "", companyId: "", rfqNumber: "", itemDescription: "", requestDate: "", responseDeadline: "", quotedPrice: "", status: "pending", notes: "" };
 
 const S = {
   page: { fontFamily: "'Segoe UI', Tahoma, sans-serif", direction: "rtl" as const },
@@ -57,14 +57,15 @@ export default function RfqList() {
   const { data: rfqs = [], isLoading } = useQuery({ queryKey: ["rfq-requests"], queryFn: () => rfqApi.list() });
   const { data: tenders = [] } = useListTenders({});
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: () => suppliersApi.list() });
+  const { data: companies = [] } = useQuery({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
 
   const createM = useMutation({ mutationFn: rfqApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ["rfq-requests"] }); closeForm(); toast({ title: "✅ تم إضافة طلب العرض" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
   const updateM = useMutation({ mutationFn: ({ id, data }: any) => rfqApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ["rfq-requests"] }); closeForm(); toast({ title: "✅ تم تحديث الطلب" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
   const deleteM = useMutation({ mutationFn: rfqApi.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ["rfq-requests"] }); toast({ title: "تم حذف الطلب" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
 
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
-  const openEdit = (r: any) => { setEditId(r.id); setForm({ tenderId: r.tenderId || "", supplierId: r.supplierId || "", rfqNumber: r.rfqNumber || "", itemDescription: r.itemDescription || "", requestDate: r.requestDate || "", responseDeadline: r.responseDeadline || "", quotedPrice: r.quotedPrice || "", status: r.status, notes: r.notes || "" }); setShowForm(true); };
-  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.itemDescription.trim()) return; const data = { ...form, tenderId: form.tenderId ? Number(form.tenderId) : null, supplierId: form.supplierId ? Number(form.supplierId) : null, quotedPrice: form.quotedPrice ? Number(form.quotedPrice) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
+  const openEdit = (r: any) => { setEditId(r.id); setForm({ tenderId: r.tenderId || "", supplierId: r.supplierId || "", companyId: r.companyId || "", rfqNumber: r.rfqNumber || "", itemDescription: r.itemDescription || "", requestDate: r.requestDate || "", responseDeadline: r.responseDeadline || "", quotedPrice: r.quotedPrice || "", status: r.status, notes: r.notes || "" }); setShowForm(true); };
+  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.itemDescription.trim()) return; const data = { ...form, tenderId: form.tenderId ? Number(form.tenderId) : null, supplierId: form.supplierId ? Number(form.supplierId) : null, companyId: form.companyId ? Number(form.companyId) : null, quotedPrice: form.quotedPrice ? Number(form.quotedPrice) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
 
   const filtered = (rfqs as any[]).filter(r => {
     const matchTab = tab === "all" || r.status === tab;
@@ -220,6 +221,13 @@ export default function RfqList() {
                   <div>
                     <label style={S.label}>رقم الطلب</label>
                     <input style={S.input} value={form.rfqNumber} onChange={e => setForm(p => ({ ...p, rfqNumber: e.target.value }))} placeholder="رقم طلب العرض" />
+                  </div>
+                  <div>
+                    <label style={S.label}>الشركة المشاركة</label>
+                    <select style={S.select} value={form.companyId} onChange={e => setForm(p => ({ ...p, companyId: e.target.value }))}>
+                      <option value="">— بدون —</option>
+                      {(companies as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
                   </div>
                   <div>
                     <label style={S.label}>الحالة</label>

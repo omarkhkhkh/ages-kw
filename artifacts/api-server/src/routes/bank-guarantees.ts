@@ -6,6 +6,7 @@ import {
   insertBankGuaranteeSchema,
   updateBankGuaranteeSchema,
   tendersTable,
+  companiesTable,
 } from "@workspace/db";
 
 const router = Router();
@@ -18,6 +19,7 @@ router.get("/", async (req: Request, res: Response) => {
       .select({
         id: bankGuaranteesTable.id,
         tenderId: bankGuaranteesTable.tenderId,
+        companyId: bankGuaranteesTable.companyId,
         guaranteeNumber: bankGuaranteesTable.guaranteeNumber,
         type: bankGuaranteesTable.type,
         bankName: bankGuaranteesTable.bankName,
@@ -30,9 +32,11 @@ router.get("/", async (req: Request, res: Response) => {
         updatedAt: bankGuaranteesTable.updatedAt,
         tenderNumber: tendersTable.tenderNumber,
         projectName: tendersTable.projectName,
+        companyName: companiesTable.name,
       })
       .from(bankGuaranteesTable)
       .leftJoin(tendersTable, eq(bankGuaranteesTable.tenderId, tendersTable.id))
+      .leftJoin(companiesTable, eq(bankGuaranteesTable.companyId, companiesTable.id))
       .orderBy(bankGuaranteesTable.expiryDate);
 
     const results = tenderId

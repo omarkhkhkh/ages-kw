@@ -3,6 +3,8 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { tendersTable } from "./tenders";
 import { governmentEntitiesTable } from "./government-entities";
+import { companiesTable } from "./company-documents";
+import { departmentsTable, governmentContactsTable } from "./entity-directory";
 
 export const projectsTable = pgTable("projects", {
   id: serial("id").primaryKey(),
@@ -10,6 +12,9 @@ export const projectsTable = pgTable("projects", {
   projectNumber: text("project_number"),
   name: text("name").notNull(),
   governmentEntityId: integer("government_entity_id").references(() => governmentEntitiesTable.id, { onDelete: "set null" }),
+  departmentId: integer("department_id").references(() => departmentsTable.id, { onDelete: "set null" }), // الاختصاص
+  contactId: integer("contact_id").references(() => governmentContactsTable.id, { onDelete: "set null" }), // المسؤول
+  companyId: integer("company_id").references(() => companiesTable.id, { onDelete: "set null" }), // الشركة المشاركة
   contractValue: numeric("contract_value", { precision: 15, scale: 2 }),
   startDate: date("start_date"),
   endDate: date("end_date"),

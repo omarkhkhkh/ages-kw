@@ -31,6 +31,29 @@ function calcWinProb(sliderValue: number, predictions: any[]): number {
   return Math.min(95, Math.max(3, Math.round((score / predictions.length) * 100)));
 }
 
+/* ── Smart recommendation — reuses calcWinProb so the advice always matches the simulator ── */
+function buildRecommendation(predictions: any[], refValue: number, similarSessions: number): {
+  sufficient: boolean;
+  topThreat?: any;
+  suggestedPrice?: number;
+  suggestedPct?: number;
+  achievedProb?: number;
+} | null {
+  if (!predictions.length || refValue <= 0) return null;
+  if (similarSessions < 2) return { sufficient: false };
+  // Top threat: most-seen competitor among those historically cheaper than our reference; fallback to lowest mean
+  const cheaper = predictions.filter(p => p.mean < refValue);
+  const pool = cheaper.length ? cheaper : predictions;
+  const topThreat = [...pool].sort((a, b) => b.appearances - a.appearances || a.mean - b.mean)[0];
+  // Highest price achieving >=70% win probability (prob only rises as price drops, so first hit wins)
+  let suggestedPct = -25;
+  for (let pct = 10; pct >= -25; pct -= 0.5) {
+    if (calcWinProb(refValue * (1 + pct / 100), predictions) >= 70) { suggestedPct = pct; break; }
+  }
+  const suggestedPrice = refValue * (1 + suggestedPct / 100);
+  return { sufficient: true, topThreat, suggestedPrice, suggestedPct, achievedProb: calcWinProb(suggestedPrice, predictions) };
+}
+
 /* ── Probability Gauge (SVG arc) ── */
 function ProbGauge({ pct }: { pct: number }) {
   const color = pct >= 60 ? "#16a34a" : pct >= 35 ? GD : "#dc2626";
@@ -284,6 +307,9 @@ export default function PredictPage() {
   const refValue   = prediction?.ref_value ?? 0;
   const sliderVal  = refValue ? refValue * (1 + sliderPct / 100) : 0;
   const prob       = prediction ? calcWinProb(sliderVal, prediction.predictions ?? []) : 0;
+  const recommendation = prediction
+    ? buildRecommendation(prediction.predictions ?? [], refValue, prediction.similar_sessions ?? 0)
+    : null;
 
   const filteredPredictions = (prediction?.predictions ?? []).filter((p: any) =>
     !compFilter || p.company_name?.toLowerCase().includes(compFilter.toLowerCase())
@@ -607,6 +633,69 @@ export default function PredictPage() {
                       </div>
                     </div>
                   )}
+
+                  {/* ── Smart Recommendation ── */}
+                  {refValue > 0 && recommendation && (
+                    <div style={{
+                      display: "flex", alignItems: "flex-start", gap: 12, padding: "14px 18px",
+                      background: "#fffbeb", border: "1.5px solid #fbbf24", borderRadius: 14,
+                    }}>
+                      <Sparkles size={20} color="#d97706" style={{ flexShrink: 0, marginTop: 2 }} />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                          <span style={{ fontWeight: 800, color: "#92400e", fontSize: 14 }}>💡 توصية النظام</span>
+                          <span style={{ fontSize: 10, background: "#fef3c7", color: "#a16207", padding: "1px 8px", borderRadius: 10, fontWeight: 700 }}>
+                            تحليل إحصائي من الجلسات السابقة
+                          </span>
+                        </div>
+                        {!recommendation.sufficient ? (
+                          <p style={{ margin: 0, fontSize: 13, color: "#a16207" }}>
+                            بيانات تاريخية غير كافية لتوصية موثوقة — سُجّلت أقل من جلستين مشابهتين لهذه {sourceType === "practice" ? "الممارسة" : "المناقصة"}.
+                          </p>
+                        ) : (
+                          <>
+                            {recommendation.topThreat && (() => {
+                              const t = recommendation.topThreat;
+                              const dp = ((t.mean - refValue) / refValue) * 100;
+                              return (
+                                <p style={{ margin: "0 0 4px", fontSize: 13, color: "#92400e" }}>
+                                  أخطر منافس متوقع: <strong style={{ color: GR }}>{t.company_name}</strong>{" "}
+                                  ({t.appearances} {t.appearances >= 3 && t.appearances <= 10 ? "مواجهات" : "مواجهة"}، متوسط سعره{" "}
+                                  <strong style={{ fontFamily: "monospace" }}>{formatCurrency(t.mean)}</strong> أي{" "}
+                                  <strong style={{ color: dp < 0 ? "#dc2626" : "#15803d" }}>
+                                    {dp < 0 ? "أرخص منّا بـ" : "أغلى منّا بـ"}{Math.abs(dp).toFixed(1)}%
+                                  </strong>).
+                                </p>
+                              );
+                            })()}
+                            <p style={{ margin: 0, fontSize: 13, color: "#92400e" }}>
+                              {recommendation.achievedProb! >= 70 ? (
+                                <>
+                                  للوصول لاحتمال فوز ≈<strong>{recommendation.achievedProb}%</strong>، يُنصح بسعر لا يتجاوز{" "}
+                                  <strong style={{ fontFamily: "monospace", color: GD }}>{formatCurrency(recommendation.suggestedPrice!)}</strong>{" "}
+                                  ({recommendation.suggestedPct! >= 0 ? "+" : ""}{recommendation.suggestedPct}% من القيمة المرجعية).
+                                </>
+                              ) : (
+                                <>
+                                  منافسة شديدة: حتى بخصم 25% ({formatCurrency(refValue * 0.75)}) يبقى احتمال الفوز التقديري{" "}
+                                  <strong>{recommendation.achievedProb}%</strong> فقط — راجع بنية التكلفة قبل التقديم.
+                                </>
+                              )}
+                            </p>
+                            <button
+                              onClick={() => setSliderPct(recommendation.suggestedPct!)}
+                              style={{
+                                marginTop: 8, background: "white", border: "1.5px solid #fbbf24", borderRadius: 8,
+                                padding: "5px 14px", fontSize: 12, fontWeight: 700, color: "#a16207",
+                                cursor: "pointer", fontFamily: "inherit",
+                              }}>
+                              تطبيق السعر المقترح على المحاكي ↑
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </>
@@ -753,8 +842,8 @@ export default function PredictPage() {
                                 {diffPct !== null ? (
                                   <span style={{
                                     display: "inline-block", padding: "3px 9px", borderRadius: 20, fontSize: 12, fontWeight: 800,
-                                    background: cheaperThanUs ? "#dcfce7" : "#fee2e2",
-                                    color: cheaperThanUs ? "#15803d" : "#dc2626",
+                                    background: cheaperThanUs ? "#fee2e2" : "#dcfce7",
+                                    color: cheaperThanUs ? "#dc2626" : "#15803d",
                                   }}>
                                     {cheaperThanUs ? "أرخص منا " : "أغلى منا "}
                                     {Number(diffPct) >= 0 ? "+" : ""}{diffPct}%

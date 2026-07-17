@@ -5,13 +5,17 @@ import {
   X, ChevronDown, ChevronUp, Pencil, Trash2,
   CheckCircle2, Clock, Target, FileText, TrendingUp,
   UserCog, User2, Loader2,
-  BookOpen, Calculator, Users, Package,
+  BookOpen, Calculator, Users, Package, Mail,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { formatCurrency } from "@/lib/utils";
 import FileUpload from "@/components/file-upload";
 import BidResultPanel from "@/components/bid-result-panel";
+import CorrespondenceSheet from "@/components/correspondence/correspondence-sheet";
 import { useToast } from "@/hooks/use-toast";
+import EntityDirectoryPicker from "@/components/entity-directory-picker";
+import LinkedPricingSheets from "@/components/linked-pricing-sheets";
+import LinkedTasks from "@/components/linked-tasks";
 
 /* ─── colours ─── */
 const G  = "#D4A534";
@@ -40,10 +44,13 @@ const STATUS_TABS = [
 /* ─── empty form ─── */
 const emptyForm = {
   practiceNumber: "", projectName: "", description: "",
-  governmentEntity: "", contractValue: "", profitPercentage: "",
+  governmentEntity: "", governmentEntityId: "" as string | number | null,
+  departmentId: "" as string | number | null, contactId: "" as string | number | null,
+  contractValue: "", profitPercentage: "",
   completionPercentage: "", startYear: "", endYear: "",
+  preliminaryMeetingHeld: false as boolean, preliminaryMeetingDate: "",
   status: "current", expectedValue: "", finalBondValue: "", notes: "",
-  responsibleEmployee: "",
+  responsibleEmployee: "", companyId: "",
 };
 
 /* ─── api helper ─── */
@@ -274,7 +281,7 @@ function PracticeExpandedRow({ practice, canEdit, onUpdated }: {
   onUpdated: () => void;
 }) {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<"docs"|"bid">("docs");
+  const [activeTab, setActiveTab] = useState<"docs"|"bid"|"pricing"|"tasks">("docs");
   const [files, setFiles] = useState({
     fileConditions: practice.fileConditions ?? null,
     filePricing:    practice.filePricing    ?? null,
@@ -370,7 +377,7 @@ function PracticeExpandedRow({ practice, canEdit, onUpdated }: {
 
       {/* ── Tab bar ── */}
       <div style={{ padding: "0 24px", background: "white", borderBottom: "1.5px solid #e2e8f0", display: "flex", gap: 4, alignItems: "center" }}>
-        {([["docs", "📄 المستندات"], ["bid", "🏆 فض العطاء"]] as const).map(([t, l]) => (
+        {([["docs", "📄 المستندات"], ["bid", "🏆 فض العطاء"], ["pricing", "🧮 التسعير"], ["tasks", "☑️ المهام"]] as const).map(([t, l]) => (
           <button key={t} onClick={() => setActiveTab(t)}
             style={{
               padding: "11px 20px", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
@@ -394,6 +401,10 @@ function PracticeExpandedRow({ practice, canEdit, onUpdated }: {
             sourceId={practice.id}
             ourPrice={practice.contractValue ?? practice.expectedValue}
           />
+        ) : activeTab === "pricing" ? (
+          <LinkedPricingSheets entityType="practice" entityId={practice.id} />
+        ) : activeTab === "tasks" ? (
+          <LinkedTasks entityType="practice" entityId={practice.id} />
         ) : (
           <>
             {/* description + notes */}
@@ -482,6 +493,7 @@ export default function PracticesList() {
   const [editId,     setEditId]     = useState<number | null>(null);
   const [form,       setForm]       = useState({ ...emptyForm });
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [correspondenceFor, setCorrespondenceFor] = useState<{ id: number; label: string } | null>(null);
 
   /* ── data ── */
   const { data: stats } = useQuery<any>({
@@ -497,6 +509,11 @@ export default function PracticesList() {
       if (search) p.set("search", search);
       return apiFetch("/api/practices?" + p.toString());
     },
+  });
+
+  const { data: companies = [] } = useQuery<any[]>({
+    queryKey: ["companies-list"],
+    queryFn: () => apiFetch("/api/company-documents/companies"),
   });
 
   const invalidate = () => {
@@ -525,11 +542,16 @@ export default function PracticesList() {
     setForm({
       practiceNumber: p.practiceNumber || "", projectName: p.projectName || "",
       description: p.description || "", governmentEntity: p.governmentEntity || "",
+      governmentEntityId: p.governmentEntityId || "", departmentId: p.departmentId || "", contactId: p.contactId || "",
       contractValue: p.contractValue ?? "", profitPercentage: p.profitPercentage ?? "",
       completionPercentage: p.completionPercentage ?? "", startYear: p.startYear || "",
-      endYear: p.endYear || "", status: p.status || "current",
+      endYear: p.endYear || "",
+      preliminaryMeetingHeld: p.preliminaryMeetingHeld ?? false,
+      preliminaryMeetingDate: p.preliminaryMeetingDate || "",
+      status: p.status || "current",
       expectedValue: p.expectedValue ?? "", finalBondValue: p.finalBondValue ?? "",
       notes: p.notes || "", responsibleEmployee: p.responsibleEmployee || "",
+      companyId: p.companyId || "",
     });
     setShowForm(true);
   };
@@ -542,11 +564,17 @@ export default function PracticesList() {
       projectName:          form.projectName,
       description:          form.description || null,
       governmentEntity:     form.governmentEntity || null,
+      governmentEntityId:   form.governmentEntityId ? Number(form.governmentEntityId) : null,
+      departmentId:         form.departmentId ? Number(form.departmentId) : null,
+      contactId:            form.contactId ? Number(form.contactId) : null,
       status:               form.status,
       startYear:            form.startYear || null,
       endYear:              form.endYear   || null,
+      preliminaryMeetingHeld: Boolean(form.preliminaryMeetingHeld),
+      preliminaryMeetingDate: form.preliminaryMeetingHeld ? (form.preliminaryMeetingDate || null) : null,
       notes:                form.notes     || null,
       responsibleEmployee:  form.responsibleEmployee || null,
+      companyId:            form.companyId ? Number(form.companyId) : null,
       contractValue:        form.contractValue        ? String(form.contractValue)        : null,
       profitPercentage:     form.profitPercentage     ? String(form.profitPercentage)     : null,
       completionPercentage: form.completionPercentage ? String(form.completionPercentage) : null,
@@ -764,8 +792,14 @@ export default function PracticesList() {
 
                     {/* actions */}
                     <td style={{ ...S.td, whiteSpace: "nowrap" }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => setCorrespondenceFor({ id: p.id, label: p.practiceNumber })}
+                          style={{ padding: "5px 10px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "white", cursor: "pointer", color: "#475569", display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}>
+                          <Mail size={12} /> المراسلات
+                        </button>
+                      </div>
                       {canEdit && (
-                        <div style={{ display: "flex", gap: 6 }}>
+                        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                           <button onClick={() => openEdit(p)}
                             style={{ padding: "5px 12px", borderRadius: 8, border: "1.5px solid #e2e8f0", background: "white", cursor: "pointer", color: "#475569", display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, fontFamily: "inherit" }}
                             onMouseEnter={ev => { ev.currentTarget.style.borderColor = G; ev.currentTarget.style.color = GD; }}
@@ -889,21 +923,31 @@ export default function PracticesList() {
                       onFocus={ev => { ev.currentTarget.style.borderColor = G; ev.currentTarget.style.boxShadow = `0 0 0 3px ${G}18`; }}
                       onBlur={ev => { ev.currentTarget.style.borderColor = "#e2e8f0"; ev.currentTarget.style.boxShadow = "none"; }} />
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    <div>
-                      <label style={S.label}>الجهة الحكومية</label>
-                      <input style={S.input} value={form.governmentEntity}
-                        onChange={e => setForm(p => ({ ...p, governmentEntity: e.target.value }))} placeholder="وزارة التربية..."
-                        onFocus={ev => { ev.currentTarget.style.borderColor = G; ev.currentTarget.style.boxShadow = `0 0 0 3px ${G}18`; }}
-                        onBlur={ev => { ev.currentTarget.style.borderColor = "#e2e8f0"; ev.currentTarget.style.boxShadow = "none"; }} />
-                    </div>
-                    <div>
-                      <label style={S.label}>الموظف المسؤول</label>
-                      <input style={S.input} value={form.responsibleEmployee}
-                        onChange={e => setForm(p => ({ ...p, responsibleEmployee: e.target.value }))} placeholder="اسم الموظف..."
-                        onFocus={ev => { ev.currentTarget.style.borderColor = G; ev.currentTarget.style.boxShadow = `0 0 0 3px ${G}18`; }}
-                        onBlur={ev => { ev.currentTarget.style.borderColor = "#e2e8f0"; ev.currentTarget.style.boxShadow = "none"; }} />
-                    </div>
+                  <div>
+                    <label style={S.label}>الجهة الحكومية ← الاختصاص ← المسؤول</label>
+                    <EntityDirectoryPicker
+                      value={{ governmentEntityId: form.governmentEntityId, departmentId: form.departmentId, contactId: form.contactId }}
+                      onChange={next => setForm(p => ({ ...p, ...next }))}
+                    />
+                  </div>
+                  <div>
+                    <label style={S.label}>الموظف المسؤول</label>
+                    <input style={S.input} value={form.responsibleEmployee}
+                      onChange={e => setForm(p => ({ ...p, responsibleEmployee: e.target.value }))} placeholder="اسم الموظف..."
+                      onFocus={ev => { ev.currentTarget.style.borderColor = G; ev.currentTarget.style.boxShadow = `0 0 0 3px ${G}18`; }}
+                      onBlur={ev => { ev.currentTarget.style.borderColor = "#e2e8f0"; ev.currentTarget.style.boxShadow = "none"; }} />
+                  </div>
+                  <div>
+                    <label style={S.label}>الشركة المشاركة</label>
+                    <select style={S.input} value={form.companyId}
+                      onChange={e => setForm(p => ({ ...p, companyId: e.target.value }))}
+                      onFocus={ev => { ev.currentTarget.style.borderColor = G; ev.currentTarget.style.boxShadow = `0 0 0 3px ${G}18`; }}
+                      onBlur={ev => { ev.currentTarget.style.borderColor = "#e2e8f0"; ev.currentTarget.style.boxShadow = "none"; }}>
+                      <option value="">— اختر الشركة —</option>
+                      {companies.map((c: any) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
@@ -973,6 +1017,27 @@ export default function PracticesList() {
                       onFocus={ev => { ev.currentTarget.style.borderColor = G; ev.currentTarget.style.boxShadow = `0 0 0 3px ${G}18`; }}
                       onBlur={ev => { ev.currentTarget.style.borderColor = "#e2e8f0"; ev.currentTarget.style.boxShadow = "none"; }} />
                   </div>
+                  <div>
+                    <label style={S.label}>الاجتماع التمهيدي</label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#374151", cursor: "pointer", height: 38 }}>
+                      <input
+                        type="checkbox"
+                        checked={form.preliminaryMeetingHeld}
+                        onChange={e => setForm(p => ({ ...p, preliminaryMeetingHeld: e.target.checked, preliminaryMeetingDate: e.target.checked ? p.preliminaryMeetingDate : "" }))}
+                        style={{ width: 16, height: 16, accentColor: G, cursor: "pointer" }}
+                      />
+                      هل عُقد الاجتماع التمهيدي؟
+                    </label>
+                  </div>
+                  {form.preliminaryMeetingHeld && (
+                    <div>
+                      <label style={S.label}>تاريخ الاجتماع التمهيدي</label>
+                      <input type="date" style={{ ...S.input, direction: "ltr", textAlign: "left" }} value={form.preliminaryMeetingDate}
+                        onChange={e => setForm(p => ({ ...p, preliminaryMeetingDate: e.target.value }))}
+                        onFocus={ev => { ev.currentTarget.style.borderColor = G; ev.currentTarget.style.boxShadow = `0 0 0 3px ${G}18`; }}
+                        onBlur={ev => { ev.currentTarget.style.borderColor = "#e2e8f0"; ev.currentTarget.style.boxShadow = "none"; }} />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1005,6 +1070,16 @@ export default function PracticesList() {
             </form>
           </div>
         </div>
+      )}
+
+      {correspondenceFor && (
+        <CorrespondenceSheet
+          open={!!correspondenceFor}
+          onOpenChange={(o) => !o && setCorrespondenceFor(null)}
+          sourceType="practice"
+          sourceId={correspondenceFor.id}
+          recordLabel={correspondenceFor.label}
+        />
       )}
     </div>
   );

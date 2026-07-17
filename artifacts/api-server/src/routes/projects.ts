@@ -7,6 +7,9 @@ import {
   updateProjectSchema,
   governmentEntitiesTable,
   tendersTable,
+  companiesTable,
+  departmentsTable,
+  governmentContactsTable,
 } from "@workspace/db";
 
 const router = Router();
@@ -21,6 +24,9 @@ router.get("/", async (req: Request, res: Response) => {
         projectNumber: projectsTable.projectNumber,
         name: projectsTable.name,
         governmentEntityId: projectsTable.governmentEntityId,
+        departmentId: projectsTable.departmentId,
+        contactId: projectsTable.contactId,
+        companyId: projectsTable.companyId,
         contractValue: projectsTable.contractValue,
         startDate: projectsTable.startDate,
         endDate: projectsTable.endDate,
@@ -32,10 +38,16 @@ router.get("/", async (req: Request, res: Response) => {
         updatedAt: projectsTable.updatedAt,
         entityName: governmentEntitiesTable.name,
         tenderNumber: tendersTable.tenderNumber,
+        companyName: companiesTable.name,
+        departmentName: departmentsTable.name,
+        contactName: governmentContactsTable.name,
       })
       .from(projectsTable)
       .leftJoin(governmentEntitiesTable, eq(projectsTable.governmentEntityId, governmentEntitiesTable.id))
       .leftJoin(tendersTable, eq(projectsTable.tenderId, tendersTable.id))
+      .leftJoin(companiesTable, eq(projectsTable.companyId, companiesTable.id))
+      .leftJoin(departmentsTable, eq(projectsTable.departmentId, departmentsTable.id))
+      .leftJoin(governmentContactsTable, eq(projectsTable.contactId, governmentContactsTable.id))
       .orderBy(projectsTable.createdAt);
 
     const results = status

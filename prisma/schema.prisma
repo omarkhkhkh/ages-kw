@@ -1,0 +1,1401 @@
+// schema.prisma
+//
+// Reference/documentation copy of the database schema for "سجل المناقصات".
+// The app's actual runtime ORM is Drizzle (see lib/db/src/schema/*.ts) — this
+// file is a Prisma-format mirror of that schema, generated for readability/tooling
+// that expects Prisma. It is not wired into the build.
+//
+// Regenerated from the current lib/db/src/schema/*.ts files.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── Companies (multi-company scoping) ───────────────────────────
+
+model Company {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  documents               CompanyDocument[]
+  tenders                 Tender[]
+  practices               Practice[]
+  projects                Project[]
+  contracts               Contract[]
+  directPurchaseOrders    DirectPurchaseOrder[]
+  rfqRequests             RfqRequest[]
+  bankGuarantees          BankGuarantee[]
+  suppliers               Supplier[]
+  governmentRegistrations GovernmentRegistration[]
+  governmentEntities      GovernmentEntity[]
+
+  @@map("companies")
+}
+
+model CompanyDocument {
+  id                  Int       @id @default(autoincrement())
+  companyId           Int       @map("company_id")
+  company             Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name                String
+  documentNumber      String?   @map("document_number")
+  issuingBody         String?   @map("issuing_body")
+  issueDate           DateTime? @map("issue_date") @db.Date
+  expiryDate          DateTime? @map("expiry_date") @db.Date
+  fileUrl             String?   @map("file_url")
+  notes               String?
+  responsibleEmployee String?   @map("responsible_employee")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @map("updated_at")
+
+  @@map("company_documents")
+}
+
+// ─────────────────────────── Core: Tenders ───────────────────────────
+
+model Tender {
+  id                  Int                @id @default(autoincrement())
+  tenderNumber        String             @map("tender_number")
+  // Legacy text field kept for backward compat; prefer governmentEntityId going forward
+  governmentEntity    String?            @map("government_entity")
+  governmentEntityId  Int?               @map("government_entity_id")
+  governmentEntityRef GovernmentEntity?  @relation(fields: [governmentEntityId], references: [id], onDelete: SetNull)
+  departmentId        Int?               @map("department_id") // الاختصاص
+  department          Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  contactId           Int?               @map("contact_id") // المسؤول
+  contact             GovernmentContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  companyId           Int?               @map("company_id") // الشركة المشاركة
+  company             Company?           @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  projectName         String             @map("project_name")
+  tenderType          String?            @map("tender_type")
+  referenceNumber     String?            @map("reference_number")
+  competitionType     String?            @map("competition_type") // عامة، محدودة، مباشرة
+  announcementDate    DateTime?          @map("announcement_date") @db.Date
+  deadline            DateTime?          @db.Date
+  executionDuration   Int?               @map("execution_duration") // بالأيام
+  bondValue           Decimal?           @map("bond_value") @db.Decimal(15, 2)
+  docsValue           Decimal?           @map("docs_value") @db.Decimal(15, 2)
+
+  // Responsibilities
+  responsibleEngineer String? @map("responsible_engineer")
+  tenderManager       String? @map("tender_manager")
+  procurementOfficer  String? @map("procurement_officer")
+  financialOfficer    String? @map("financial_officer")
+  transportOfficer    String? @map("transport_officer")
+  approvalManager     String? @map("approval_manager")
+
+  // Status
+  status String @default("new")
+
+  // Financial
+  estimatedCost    Decimal? @map("estimated_cost") @db.Decimal(15, 2)
+  offerValue       Decimal? @map("offer_value") @db.Decimal(15, 2)
+  expectedProfit   Decimal? @map("expected_profit") @db.Decimal(15, 2)
+  profitPercentage Decimal? @map("profit_percentage") @db.Decimal(5, 2)
+
+  // Award
+  contractValue      Decimal?  @map("contract_value") @db.Decimal(15, 2)
+  awardDate          DateTime? @map("award_date") @db.Date
+  executionStartDate DateTime? @map("execution_start_date") @db.Date
+  executionEndDate   DateTime? @map("execution_end_date") @db.Date
+
+  // Misc
+  isSubmitted Boolean @default(false) @map("is_submitted")
+  winner      String?
+  notes       String?
+
+  // Attached documents
+  fileConditions String? @map("file_conditions") // الشروط الخاصة
+  filePricing    String? @map("file_pricing") // التسعير
+  fileSuppliers  String? @map("file_suppliers") // الموردين
+  fileOpening    String? @map("file_opening") // فض الظروف
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  rfqRequests           RfqRequest[]
+  projects              Project[]
+  bankGuarantees        BankGuarantee[]
+  contracts             Contract[]
+  permissions           TenderPermission[]
+  bidResults            BidResult[]
+  directPurchaseOrders  DirectPurchaseOrder[]
+  correspondenceLetters CorrespondenceLetter[]
+  knowledgeEntries      KnowledgeEntry[]
+
+  @@map("tenders")
+}
+
+model GovernmentEntity {
+  id            Int      @id @default(autoincrement())
+  companyId     Int?     @map("company_id") // الشركة المشاركة
+  company       Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  name          String
+  type          String? // وزارة، هيئة، شركة حكومية، جامعة
+  contactPerson String?  @map("contact_person")
+  phone         String?
+  email         String?
+  website       String?
+  address       String?
+  notes         String?
+  codePrefix    String?  @map("code_prefix") // بادئة ترقيم المراسلات، مثال "MOE"
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  tenders               Tender[]
+  directPurchaseOrders  DirectPurchaseOrder[]
+  projects              Project[]
+  contracts             Contract[]
+  practices             Practice[]
+  maintenanceWorkOrders MaintenanceWorkOrder[]
+  correspondenceLetters CorrespondenceLetter[]
+  departments           Department[]
+
+  @@unique([companyId, codePrefix], name: "uq_government_entities_company_code_prefix")
+  @@map("government_entities")
+}
+
+// ─────────────────────────── Entity Directory (hierarchical contacts) ───────────────────────────
+
+model Department {
+  id                 Int              @id @default(autoincrement())
+  governmentEntityId Int              @map("government_entity_id")
+  governmentEntity   GovernmentEntity @relation(fields: [governmentEntityId], references: [id], onDelete: Cascade)
+  name               String
+  notes              String?
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @default(now()) @map("updated_at")
+
+  contacts              GovernmentContact[]
+  tenders               Tender[]
+  contracts             Contract[]
+  projects              Project[]
+  directPurchaseOrders  DirectPurchaseOrder[]
+  practices             Practice[]
+  maintenanceWorkOrders MaintenanceWorkOrder[]
+  correspondenceLetters CorrespondenceLetter[]
+
+  @@map("departments")
+}
+
+model GovernmentContact {
+  id           Int        @id @default(autoincrement())
+  departmentId Int        @map("department_id")
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  name         String
+  role         String? // تصنيف: مدير / رئيس قسم / موظف / ... / تصنيف مخصص (نص حر)
+  notes        String?
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @default(now()) @map("updated_at")
+
+  contactMethods        ContactMethod[]
+  tenders               Tender[]
+  contracts             Contract[]
+  projects              Project[]
+  directPurchaseOrders  DirectPurchaseOrder[]
+  practices             Practice[]
+  maintenanceWorkOrders MaintenanceWorkOrder[]
+  correspondenceLetters CorrespondenceLetter[]
+
+  @@map("government_contacts")
+}
+
+model ContactMethod {
+  id        Int               @id @default(autoincrement())
+  contactId Int               @map("contact_id")
+  contact   GovernmentContact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  type      String // هاتف المكتب / هاتف مباشر / تحويلة / فاكس / هاتف الطوارئ / جوال شخصي / جوال العمل / واتساب / بريد إلكتروني / Teams / أخرى
+  value     String
+  label     String? // ملاحظة اختيارية، مثال: "تحويلة 105"
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @default(now()) @map("updated_at")
+
+  @@map("contact_methods")
+}
+
+// ─────────────────────────── Suppliers / Procurement ───────────────────────────
+
+model Supplier {
+  id              Int      @id @default(autoincrement())
+  name            String
+  companyId       Int?     @map("company_id") // الشركة المشاركة
+  company         Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  type            String? // مقاول، مورد، استشاري
+  contactPerson   String?  @map("contact_person")
+  phone           String?
+  email           String?
+  address         String?
+  specialization  String?
+  commercialRegNo String?  @map("commercial_reg_no")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @map("updated_at")
+
+  rfqRequests               RfqRequest[]
+  directPurchaseOrders      DirectPurchaseOrder[]
+  transportationOrders      TransportationOrder[]
+  evaluations               SupplierEvaluation[]
+  maintenanceWorkOrderParts MaintenanceWorkOrderPart[]
+
+  @@map("suppliers")
+}
+
+/// تقييمات الموردين/المصانع (جودة/سعر/التزام)
+model SupplierEvaluation {
+  id                Int      @id @default(autoincrement())
+  supplierId        Int      @map("supplier_id")
+  supplier          Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  qualityScore      Int      @map("quality_score") @db.SmallInt // 1-5
+  priceScore        Int      @map("price_score") @db.SmallInt // 1-5
+  commitmentScore   Int      @map("commitment_score") @db.SmallInt // 1-5
+  notes             String?
+  evaluatedByUserId Int?     @map("evaluated_by_user_id")
+  evaluatedByUser   User?    @relation(fields: [evaluatedByUserId], references: [id], onDelete: SetNull)
+  evaluatedAt       DateTime @default(now()) @map("evaluated_at")
+
+  @@map("supplier_evaluations")
+}
+
+model RfqRequest {
+  id               Int       @id @default(autoincrement())
+  tenderId         Int?      @map("tender_id")
+  tender           Tender?   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  supplierId       Int?      @map("supplier_id")
+  supplier         Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  companyId        Int?      @map("company_id") // الشركة المشاركة
+  company          Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  rfqNumber        String?   @map("rfq_number")
+  itemDescription  String    @map("item_description")
+  requestDate      DateTime? @map("request_date") @db.Date
+  responseDeadline DateTime? @map("response_deadline") @db.Date
+  quotedPrice      Decimal?  @map("quoted_price") @db.Decimal(15, 2)
+  status           String    @default("pending") // pending, received, rejected
+  notes            String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @default(now()) @map("updated_at")
+
+  @@map("rfq_requests")
+}
+
+model DirectPurchaseOrder {
+  id                 Int                @id @default(autoincrement())
+  orderNumber        String             @map("order_number")
+  supplierId         Int?               @map("supplier_id")
+  supplier           Supplier?          @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  companyId          Int?               @map("company_id") // الشركة المشاركة
+  company            Company?           @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  governmentEntityId Int?               @map("government_entity_id")
+  governmentEntity   GovernmentEntity?  @relation(fields: [governmentEntityId], references: [id], onDelete: SetNull)
+  departmentId       Int?               @map("department_id") // الاختصاص
+  department         Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  contactId          Int?               @map("contact_id") // المسؤول
+  contact            GovernmentContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  contractId         Int?               @map("contract_id")
+  contract           Contract?          @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  projectId          Int?               @map("project_id")
+  project            Project?           @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  tenderId           Int?               @map("tender_id")
+  tender             Tender?            @relation(fields: [tenderId], references: [id], onDelete: SetNull)
+  practiceId         Int?               @map("practice_id")
+  practice           Practice?          @relation(fields: [practiceId], references: [id], onDelete: SetNull)
+  description        String
+  amount             Decimal?           @db.Decimal(15, 2)
+  orderDate          DateTime?          @map("order_date") @db.Date
+  deliveryDate       DateTime?          @map("delivery_date") @db.Date
+  status             String             @default("new") // new, in_progress, delivered, completed
+  priority           String             @default("medium") // low | medium | high | urgent
+  assignedToUserId   Int?               @map("assigned_to_user_id")
+  assignedToUser     User?              @relation("PoAssignee", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  followUpManagerId  Int?               @map("follow_up_manager_id")
+  followUpManager    User?              @relation("PoFollowUpManager", fields: [followUpManagerId], references: [id], onDelete: SetNull)
+  executionStage     String             @default("supplier_approval") @map("execution_stage")
+  // supplier_approval | po_issued | materials_received | materials_inspected | delivered_to_entity | closed
+  poFileUrl          String?            @map("po_file_url")
+  notes              String?
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @default(now()) @map("updated_at")
+
+  items                 PoItem[]
+  teamMembers           PoTeamMember[]
+  stageHistory          PoStageHistory[]
+  financeExpenses       FinanceExpense[]
+  correspondenceLetters CorrespondenceLetter[]
+
+  @@map("direct_purchase_orders")
+}
+
+/// بنود أمر الشراء
+model PoItem {
+  id              Int                 @id @default(autoincrement())
+  purchaseOrderId Int                 @map("purchase_order_id")
+  purchaseOrder   DirectPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  itemName        String              @map("item_name")
+  description     String?
+  quantity        Decimal?            @db.Decimal(12, 3)
+  unit            String?
+  unitPrice       Decimal?            @map("unit_price") @db.Decimal(15, 3)
+  executionStatus String              @default("pending") @map("execution_status") // pending | in_progress | done
+  sortOrder       Int                 @default(0) @map("sort_order") @db.SmallInt
+  notes           String?
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @default(now()) @map("updated_at")
+
+  @@map("po_items")
+}
+
+/// فريق عمل الطلب
+model PoTeamMember {
+  id              Int                 @id @default(autoincrement())
+  purchaseOrderId Int                 @map("purchase_order_id")
+  purchaseOrder   DirectPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  userId          Int                 @map("user_id")
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addedAt         DateTime            @default(now()) @map("added_at")
+
+  @@map("po_team_members")
+}
+
+/// سجل مراحل تنفيذ أمر الشراء
+model PoStageHistory {
+  id              Int                 @id @default(autoincrement())
+  purchaseOrderId Int                 @map("purchase_order_id")
+  purchaseOrder   DirectPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  stage           String
+  changedAt       DateTime            @default(now()) @map("changed_at")
+  changedByUserId Int?                @map("changed_by_user_id")
+  changedByUser   User?               @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
+
+  @@map("po_stage_history")
+}
+
+// ─────────────────────────── Projects / Contracts / Guarantees ───────────────────────────
+
+model Project {
+  id                   Int                @id @default(autoincrement())
+  tenderId             Int?               @map("tender_id")
+  tender               Tender?            @relation(fields: [tenderId], references: [id], onDelete: SetNull)
+  projectNumber        String?            @map("project_number")
+  name                 String
+  governmentEntityId   Int?               @map("government_entity_id")
+  governmentEntity     GovernmentEntity?  @relation(fields: [governmentEntityId], references: [id], onDelete: SetNull)
+  departmentId         Int?               @map("department_id") // الاختصاص
+  department           Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  contactId            Int?               @map("contact_id") // المسؤول
+  contact              GovernmentContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  companyId            Int?               @map("company_id") // الشركة المشاركة
+  company              Company?           @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  contractValue        Decimal?           @map("contract_value") @db.Decimal(15, 2)
+  startDate            DateTime?          @map("start_date") @db.Date
+  endDate              DateTime?          @map("end_date") @db.Date
+  status               String             @default("active") // active, completed, suspended
+  projectManager       String?            @map("project_manager")
+  completionPercentage Decimal?           @default(0) @map("completion_percentage") @db.Decimal(5, 2)
+  notes                String?
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @default(now()) @map("updated_at")
+
+  directPurchaseOrders  DirectPurchaseOrder[]
+  maintenanceWorkOrders MaintenanceWorkOrder[]
+  correspondenceLetters CorrespondenceLetter[]
+
+  @@map("projects")
+}
+
+model BankGuarantee {
+  id              Int       @id @default(autoincrement())
+  tenderId        Int?      @map("tender_id")
+  tender          Tender?   @relation(fields: [tenderId], references: [id], onDelete: SetNull)
+  companyId       Int?      @map("company_id") // الشركة المشاركة
+  company         Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  guaranteeNumber String?   @map("guarantee_number")
+  type            String? // ابتدائية، نهائية، دفعة مقدمة
+  bankName        String?   @map("bank_name")
+  amount          Decimal?  @db.Decimal(15, 2)
+  issueDate       DateTime? @map("issue_date") @db.Date
+  expiryDate      DateTime? @map("expiry_date") @db.Date
+  status          String    @default("active") // active, expired, released
+  location        String? // مكان وجود الكفالة (البنك / الخزينة / لدى موظف...)
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @map("updated_at")
+
+  @@map("bank_guarantees")
+}
+
+model Contract {
+  id                 Int                @id @default(autoincrement())
+  tenderId           Int?               @map("tender_id")
+  tender             Tender?            @relation(fields: [tenderId], references: [id], onDelete: SetNull)
+  contractNumber     String             @map("contract_number")
+  governmentEntityId Int?               @map("government_entity_id")
+  governmentEntity   GovernmentEntity?  @relation(fields: [governmentEntityId], references: [id], onDelete: SetNull)
+  departmentId       Int?               @map("department_id") // الاختصاص
+  department         Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  contactId          Int?               @map("contact_id") // المسؤول
+  contact            GovernmentContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  companyId          Int?               @map("company_id") // الشركة المشاركة
+  company            Company?           @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  contractValue      Decimal?           @map("contract_value") @db.Decimal(15, 2)
+  signDate           DateTime?          @map("sign_date") @db.Date
+  startDate          DateTime?          @map("start_date") @db.Date
+  endDate            DateTime?          @map("end_date") @db.Date
+  status             String             @default("active") // active, completed, terminated
+  notes              String?
+
+  // Final bond (كفالة نهائية)
+  finalBondValue      Decimal?  @map("final_bond_value") @db.Decimal(15, 3)
+  finalBondNumber     String?   @map("final_bond_number") // رقم الكفالة
+  finalBondBank       String?   @map("final_bond_bank") // البنك المُصدر
+  finalBondIssueDate  DateTime? @map("final_bond_issue_date") @db.Date
+  finalBondExpiryDate DateTime? @map("final_bond_expiry_date") @db.Date
+  finalBondStatus     String?   @default("active") @map("final_bond_status") // active | released | confiscated
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  financeIncomes        FinanceIncome[]
+  financeExpenses       FinanceExpense[]
+  employeeSales         EmployeeSale[]
+  directPurchaseOrders  DirectPurchaseOrder[]
+  transportationOrders  TransportationOrder[]
+  maintenanceWorkOrders MaintenanceWorkOrder[]
+  correspondenceLetters CorrespondenceLetter[]
+
+  @@map("contracts")
+}
+
+// ─────────────────────────── Users / Auth / Permissions ───────────────────────────
+
+model User {
+  id       Int    @id @default(autoincrement())
+  username String @unique
+  fullName String @map("full_name")
+  password String // bcrypt hashed
+  role     String @default("employee") // 'admin' | 'employee'
+
+  // Global permissions
+  canView     Boolean @default(true) @map("can_view")
+  canDownload Boolean @default(false) @map("can_download")
+  canUpload   Boolean @default(false) @map("can_upload")
+  canEdit     Boolean @default(false) @map("can_edit")
+
+  // Per-module access (each module can be hidden per employee)
+  accessTenders        Boolean @default(true) @map("access_tenders")
+  accessEntities       Boolean @default(true) @map("access_entities")
+  accessSuppliers      Boolean @default(true) @map("access_suppliers")
+  accessProjects       Boolean @default(true) @map("access_projects")
+  accessGuarantees     Boolean @default(true) @map("access_guarantees")
+  accessContracts      Boolean @default(true) @map("access_contracts")
+  accessRfq            Boolean @default(true) @map("access_rfq")
+  accessPo             Boolean @default(true) @map("access_po")
+  accessTransportation Boolean @default(true) @map("access_transportation")
+  accessFinance        Boolean @default(true) @map("access_finance")
+  accessCorrespondence Boolean @default(true) @map("access_correspondence")
+  accessResidency      Boolean @default(true) @map("access_residency")
+  accessMaintenance    Boolean @default(true) @map("access_maintenance")
+  accessResearch       Boolean @default(true) @map("access_research")
+
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  lastLogin DateTime? @map("last_login")
+
+  tenderPermissions                 TenderPermission[]
+  transportTeamMembers              TransportTeamMember[]
+  transportTasksAssigned            TransportTask[]            @relation("TransportTaskAssignee")
+  transportTasksCreated             TransportTask[]            @relation("TransportTaskCreator")
+  financeIncomesAsEmployee          FinanceIncome[]            @relation("FinanceIncomeEmployee")
+  financeIncomesCreated             FinanceIncome[]            @relation("FinanceIncomeCreator")
+  financeExpensesCreated            FinanceExpense[]           @relation("FinanceExpenseCreator")
+  employeeSales                     EmployeeSale[]             @relation("EmployeeSaleEmployee")
+  employeeSalesCreated              EmployeeSale[]             @relation("EmployeeSaleCreator")
+  tasksAssigned                     Task[]                     @relation("TaskAssignee")
+  tasksCreated                      Task[]                     @relation("TaskCreator")
+  poTeamMemberships                 PoTeamMember[]
+  poAssignedOrders                  DirectPurchaseOrder[]      @relation("PoAssignee")
+  poFollowUpOrders                  DirectPurchaseOrder[]      @relation("PoFollowUpManager")
+  poStageChanges                    PoStageHistory[]
+  maintenanceEquipmentResponsible   MaintenanceEquipment[]
+  maintenanceWorkOrdersAssigned     MaintenanceWorkOrder[]     @relation("MaintenanceTechnician")
+  maintenanceWorkOrdersApproved     MaintenanceWorkOrder[]     @relation("MaintenanceApprover")
+  maintenanceStageChanges           MaintenanceStageHistory[]
+  supplierEvaluations               SupplierEvaluation[]
+  knowledgeEntriesCreated           KnowledgeEntry[]
+  teamMessages                      TeamMessage[]
+  correspondenceCreated             CorrespondenceLetter[]     @relation("CorrespondenceCreator")
+  correspondenceApproved            CorrespondenceLetter[]     @relation("CorrespondenceApprover")
+  correspondenceCancelled           CorrespondenceLetter[]     @relation("CorrespondenceCanceller")
+  correspondenceTemplatesCreated    CorrespondenceTemplate[]
+  correspondenceAttachmentsUploaded CorrespondenceAttachment[]
+  workerDocumentsUploaded           WorkerDocument[]
+  workerHistoryCreated              WorkerHistory[]
+  vehicleFuelLogs                   VehicleFuelLog[]
+  vehicleServiceLogs                VehicleServiceLog[]
+
+  @@map("users")
+}
+
+model TenderPermission {
+  tenderId Int     @map("tender_id")
+  tender   Tender  @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  userId   Int     @map("user_id")
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  canView  Boolean @default(true) @map("can_view")
+
+  @@id([tenderId, userId])
+  @@map("tender_permissions")
+}
+
+model ActivityLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  username   String
+  fullName   String   @map("full_name")
+  action     String // login | logout | create | update | delete | export
+  module     String? // tenders | entities | suppliers | ... | maintenance | research | residency | correspondence
+  resourceId Int?     @map("resource_id")
+  details    String?
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("activity_logs")
+}
+
+// ─────────────────────────── Transportation / Fleet ───────────────────────────
+
+model TransportationOrder {
+  id                 Int       @id @default(autoincrement())
+  orderNumber        String?   @map("order_number")
+  supplierId         Int?      @map("supplier_id")
+  supplier           Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  contractId         Int?      @map("contract_id")
+  contract           Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  description        String
+  origin             String?
+  destination        String?
+  orderDate          DateTime? @map("order_date") @db.Date
+  deliveryDate       DateTime? @map("delivery_date") @db.Date
+  value              Decimal?  @db.Decimal(15, 2)
+  status             String    @default("pending") // pending | in_transit | delivered | cancelled
+  vehicleInfo        String?   @map("vehicle_info")
+  notes              String?
+  actualDeliveryDate DateTime? @map("actual_delivery_date") @db.Date
+  completionNotes    String?   @map("completion_notes")
+  lat                Decimal?  @db.Decimal(10, 7)
+  lng                Decimal?  @db.Decimal(10, 7)
+  locationUpdatedAt  DateTime? @map("location_updated_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @map("updated_at")
+
+  financeExpenses FinanceExpense[]
+
+  @@map("transportation_orders")
+}
+
+/// ميزانية النقل الشهرية
+model TransportationBudget {
+  id        Int      @id @default(autoincrement())
+  year      Int
+  month     Int
+  amount    Decimal  @db.Decimal(15, 3)
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@unique([year, month], name: "uq_transportation_budget_year_month")
+  @@map("transportation_budgets")
+}
+
+model TransportTeam {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  color       String   @default("#D4A534")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  members TransportTeamMember[]
+  tasks   TransportTask[]
+
+  @@map("transport_teams")
+}
+
+model TransportTeamMember {
+  id       Int           @id @default(autoincrement())
+  teamId   Int           @map("team_id")
+  team     TransportTeam @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId   Int           @map("user_id")
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime      @default(now()) @map("joined_at")
+
+  @@map("transport_team_members")
+}
+
+model TransportTask {
+  id          Int            @id @default(autoincrement())
+  teamId      Int?           @map("team_id")
+  team        TransportTeam? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  title       String
+  description String?
+  dueDate     DateTime?      @map("due_date") @db.Date
+  dueTime     String?        @map("due_time") // HH:MM stored as text
+  status      String         @default("pending") // pending | in_progress | done
+  notes       String?
+  assignedTo  Int?           @map("assigned_to")
+  assignee    User?          @relation("TransportTaskAssignee", fields: [assignedTo], references: [id], onDelete: SetNull)
+  createdBy   Int?           @map("created_by")
+  creator     User?          @relation("TransportTaskCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @default(now()) @map("updated_at")
+
+  @@map("transport_tasks")
+}
+
+model Vehicle {
+  id                 Int       @id @default(autoincrement())
+  plateNumber        String    @map("plate_number")
+  vehicleType        String?   @map("vehicle_type") // سيارة صغيرة | شاحنة | باص | معدة ثقيلة | أخرى
+  makeModel          String?   @map("make_model")
+  year               Int?
+  color              String?
+  ownership          String    @default("owned") // owned | rented
+  status             String    @default("active") // active | maintenance | out_of_service
+  driverName         String?   @map("driver_name")
+  driverPhone        String?   @map("driver_phone")
+  registrationExpiry DateTime? @map("registration_expiry") @db.Date
+  insuranceExpiry    DateTime? @map("insurance_expiry") @db.Date
+  notes              String?
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @map("updated_at")
+
+  financeExpenses FinanceExpense[]
+  fuelLogs        VehicleFuelLog[]
+  serviceLogs     VehicleServiceLog[]
+
+  @@map("fleet_vehicles")
+}
+
+/// سجل تعبئة الوقود — ينشئ مصروفًا مرتبطًا تلقائيًا في finance_expenses (category="fuel")
+model VehicleFuelLog {
+  id              Int      @id @default(autoincrement())
+  vehicleId       Int      @map("vehicle_id")
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  date            DateTime @db.Date
+  liters          Decimal  @db.Decimal(10, 2)
+  pricePerLiter   Decimal  @map("price_per_liter") @db.Decimal(10, 3)
+  totalCost       Decimal  @map("total_cost") @db.Decimal(12, 3)
+  odometerReading Int?     @map("odometer_reading")
+  notes           String?
+  createdBy       Int?     @map("created_by")
+  creator         User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("vehicle_fuel_logs")
+}
+
+/// سجل سيرفس المركبة (بسيط، بدون دورة اعتماد) — ينشئ مصروفًا مرتبطًا تلقائيًا (category="vehicle_service")
+model VehicleServiceLog {
+  id              Int      @id @default(autoincrement())
+  vehicleId       Int      @map("vehicle_id")
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  serviceDate     DateTime @map("service_date") @db.Date
+  serviceType     String   @default("general") @map("service_type") // oil_change | tires | brakes | general | other
+  workshopName    String?  @map("workshop_name")
+  description     String?
+  cost            Decimal  @db.Decimal(12, 3)
+  odometerReading Int?     @map("odometer_reading")
+  notes           String?
+  createdBy       Int?     @map("created_by")
+  creator         User?    @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  parts VehicleServicePart[]
+
+  @@map("vehicle_service_logs")
+}
+
+/// قطع الغيار المستخدمة في السيرفس — مرتبطة بمخزون الصيانة (maintenance_inventory)، تنقص الرصيد فعليًا
+model VehicleServicePart {
+  id              Int                   @id @default(autoincrement())
+  serviceLogId    Int                   @map("service_log_id")
+  serviceLog      VehicleServiceLog     @relation(fields: [serviceLogId], references: [id], onDelete: Cascade)
+  inventoryItemId Int?                  @map("inventory_item_id")
+  inventoryItem   MaintenanceInventory? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  partName        String                @map("part_name")
+  quantity        Decimal               @default(1) @db.Decimal(10, 2)
+  unitCost        Decimal?              @map("unit_cost") @db.Decimal(12, 3)
+  createdAt       DateTime              @default(now()) @map("created_at")
+
+  @@map("vehicle_service_parts")
+}
+
+// ─────────────────────────── Finance ───────────────────────────
+
+model FinanceIncome {
+  id          Int       @id @default(autoincrement())
+  contractId  Int?      @map("contract_id")
+  contract    Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  employeeId  Int?      @map("employee_id")
+  employee    User?     @relation("FinanceIncomeEmployee", fields: [employeeId], references: [id], onDelete: SetNull)
+  description String
+  amount      Decimal   @db.Decimal(15, 3)
+  date        DateTime  @db.Date
+  category    String    @default("contract")
+  notes       String?
+  createdBy   Int?      @map("created_by")
+  creator     User?     @relation("FinanceIncomeCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @map("updated_at")
+
+  @@map("finance_income")
+}
+
+/// مصروف — يمكن ربطه اختياريًا بعقد/أمر شراء/أمر صيانة/أمر نقل/مركبة/عامل (workerId يحدد قسم الميزانية عند عدم وجود ربط مباشر)
+model FinanceExpense {
+  id                     Int                   @id @default(autoincrement())
+  contractId             Int?                  @map("contract_id")
+  contract               Contract?             @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  purchaseOrderId        Int?                  @map("purchase_order_id")
+  purchaseOrder          DirectPurchaseOrder?  @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  maintenanceWorkOrderId Int?                  @map("maintenance_work_order_id")
+  maintenanceWorkOrder   MaintenanceWorkOrder? @relation(fields: [maintenanceWorkOrderId], references: [id], onDelete: SetNull)
+  transportationOrderId  Int?                  @map("transportation_order_id")
+  transportationOrder    TransportationOrder?  @relation(fields: [transportationOrderId], references: [id], onDelete: SetNull)
+  vehicleId              Int?                  @map("vehicle_id")
+  vehicle                Vehicle?              @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  workerId               Int?                  @map("worker_id") // لربط راتب/تكلفة إقامة عامل معيّن؛ قسم العامل (assignedModule) يحدد ميزانية أي وحدة عند عدم الربط بأمر عمل محدد
+  worker                 Worker?               @relation(fields: [workerId], references: [id], onDelete: SetNull)
+  description            String
+  amount                 Decimal               @db.Decimal(15, 3)
+  dueDate                DateTime?             @map("due_date") @db.Date
+  paidDate               DateTime?             @map("paid_date") @db.Date
+  status                 String                @default("pending") // pending | paid | overdue
+  category               String                @default("general") // general | salary | rent | utilities | maintenance | tax | customs | customs_clearance | installation | labor | residency | fuel | vehicle_service | other
+  vendor                 String?
+  notes                  String?
+  createdBy              Int?                  @map("created_by")
+  creator                User?                 @relation("FinanceExpenseCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt              DateTime              @default(now()) @map("created_at")
+  updatedAt              DateTime              @default(now()) @map("updated_at")
+
+  @@map("finance_expenses")
+}
+
+model EmployeeSale {
+  id                  Int       @id @default(autoincrement())
+  employeeId          Int       @map("employee_id")
+  employee            User      @relation("EmployeeSaleEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  contractId          Int?      @map("contract_id")
+  contract            Contract? @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  description         String
+  totalContractAmount Decimal?  @map("total_contract_amount") @db.Decimal(15, 3) // admin-only
+  profitPercentage    Decimal?  @map("profit_percentage") @db.Decimal(5, 2) // employee can enter
+  profitAmount        Decimal?  @map("profit_amount") @db.Decimal(15, 3) // admin-only (computed)
+  saleDate            DateTime  @map("sale_date") @db.Date
+  notes               String?
+  createdBy           Int?      @map("created_by")
+  creator             User?     @relation("EmployeeSaleCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @map("updated_at")
+
+  @@map("employee_sales")
+}
+
+// ─────────────────────────── Tasks ───────────────────────────
+
+model Task {
+  id          Int       @id @default(autoincrement())
+  title       String
+  taskType    String    @map("task_type") // category/type label
+  description String?
+  priority    String    @default("medium") // low | medium | high | urgent
+  status      String    @default("pending") // pending | in_progress | completed | cancelled
+  assignedTo  Int       @map("assigned_to")
+  assignee    User      @relation("TaskAssignee", fields: [assignedTo], references: [id], onDelete: Cascade)
+  createdBy   Int       @map("created_by")
+  creator     User      @relation("TaskCreator", fields: [createdBy], references: [id])
+  dueDate     DateTime? @map("due_date")
+  completedAt DateTime? @map("completed_at")
+
+  // Employee interaction
+  employeeNotes    String?   @map("employee_notes")
+  notesUpdatedAt   DateTime? @map("notes_updated_at")
+  // Admin read receipt for employee notes
+  notesReadByAdmin Boolean   @default(false) @map("notes_read_by_admin")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@map("tasks")
+}
+
+// ─────────────────────────── Practices / Documents / Registrations ───────────────────────────
+
+model Practice {
+  id                   Int                @id @default(autoincrement())
+  practiceNumber       String             @map("practice_number")
+  projectName          String             @map("project_name")
+  description          String?
+  // Legacy text field kept for backward compat; prefer governmentEntityId going forward
+  governmentEntity     String?            @map("government_entity")
+  governmentEntityId   Int?               @map("government_entity_id")
+  governmentEntityRef  GovernmentEntity?  @relation(fields: [governmentEntityId], references: [id], onDelete: SetNull)
+  departmentId         Int?               @map("department_id") // الاختصاص
+  department           Department?        @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  contactId            Int?               @map("contact_id") // المسؤول
+  contact              GovernmentContact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  companyId            Int?               @map("company_id") // الشركة المشاركة
+  company              Company?           @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  contractValue        Decimal?           @map("contract_value") @db.Decimal(15, 3)
+  profitPercentage     Decimal?           @map("profit_percentage") @db.Decimal(5, 2)
+  completionPercentage Decimal?           @map("completion_percentage") @db.Decimal(5, 2)
+  startYear            String?            @map("start_year")
+  endYear              String?            @map("end_year")
+  // status: current | previous | future | targeted | under_submission
+  status               String             @default("current")
+  // future-project specific
+  expectedValue        Decimal?           @map("expected_value") @db.Decimal(15, 3)
+  finalBondValue       Decimal?           @map("final_bond_value") @db.Decimal(15, 3)
+  notes                String?
+  responsibleEmployee  String?            @map("responsible_employee")
+
+  // Attached documents
+  fileConditions String? @map("file_conditions") // الشروط الخاصة
+  filePricing    String? @map("file_pricing") // التسعير
+  fileSuppliers  String? @map("file_suppliers") // الموردين
+  fileOpening    String? @map("file_opening") // فض الظروف
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  bidResults            BidResult[]
+  directPurchaseOrders  DirectPurchaseOrder[]
+  knowledgeEntries      KnowledgeEntry[]
+  correspondenceLetters CorrespondenceLetter[]
+
+  @@map("practices")
+}
+
+model GovernmentRegistration {
+  id                  Int       @id @default(autoincrement())
+  companyId           Int       @map("company_id")
+  company             Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  entityName          String    @map("entity_name")
+  registrationNumber  String?   @map("registration_number")
+  supplierNumber      String?   @map("supplier_number")
+  fileNumber          String?   @map("file_number")
+  registrationDate    DateTime? @map("registration_date") @db.Date
+  expiryDate          DateTime? @map("expiry_date") @db.Date
+  // status: active | expiring_soon | expired | pending
+  status              String    @default("active")
+  notes               String?
+  responsibleEmployee String?   @map("responsible_employee")
+  fileUrl             String?   @map("file_url")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @map("updated_at")
+
+  @@map("government_registrations")
+}
+
+// ─────────────────────────── Competitor Intelligence / Bid Results ───────────────────────────
+
+model Competitor {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  shortName String?  @map("short_name")
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  bidEntries BidEntry[]
+
+  @@map("competitors")
+}
+
+/// جلسة فض العطاء
+model BidResult {
+  id          Int       @id @default(autoincrement())
+  sourceType  String    @default("tender") @map("source_type") // 'tender' | 'practice'
+  tenderId    Int?      @map("tender_id")
+  tender      Tender?   @relation(fields: [tenderId], references: [id], onDelete: Cascade)
+  practiceId  Int?      @map("practice_id")
+  practice    Practice? @relation(fields: [practiceId], references: [id], onDelete: Cascade)
+  openingDate DateTime? @map("opening_date") @db.Date
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  entries BidEntry[]
+  items   BidItem[]
+
+  @@map("bid_results")
+}
+
+/// إدخال كل شركة في الجلسة
+model BidEntry {
+  id           Int         @id @default(autoincrement())
+  bidResultId  Int         @map("bid_result_id")
+  bidResult    BidResult   @relation(fields: [bidResultId], references: [id], onDelete: Cascade)
+  competitorId Int?        @map("competitor_id")
+  competitor   Competitor? @relation(fields: [competitorId], references: [id], onDelete: SetNull)
+  companyName  String      @map("company_name")
+  totalPrice   Decimal     @map("total_price") @db.Decimal(15, 3)
+  rank         Int?        @db.SmallInt
+  isWinner     Boolean     @default(false) @map("is_winner")
+  isUs         Boolean     @default(false) @map("is_us")
+  notes        String?
+
+  prices BidItemPrice[]
+
+  @@map("bid_entries")
+}
+
+/// بنود المناقصة
+model BidItem {
+  id          Int       @id @default(autoincrement())
+  bidResultId Int       @map("bid_result_id")
+  bidResult   BidResult @relation(fields: [bidResultId], references: [id], onDelete: Cascade)
+  itemName    String    @map("item_name")
+  itemType    String?   @map("item_type")
+  unit        String?
+  quantity    Decimal?  @db.Decimal(12, 3)
+  sortOrder   Int       @default(0) @map("sort_order") @db.SmallInt
+
+  prices BidItemPrice[]
+
+  @@map("bid_items")
+}
+
+/// سعر كل شركة لكل بند
+model BidItemPrice {
+  id         Int      @id @default(autoincrement())
+  bidItemId  Int      @map("bid_item_id")
+  bidItem    BidItem  @relation(fields: [bidItemId], references: [id], onDelete: Cascade)
+  bidEntryId Int      @map("bid_entry_id")
+  bidEntry   BidEntry @relation(fields: [bidEntryId], references: [id], onDelete: Cascade)
+  unitPrice  Decimal  @map("unit_price") @db.Decimal(15, 3)
+  notes      String?
+
+  @@map("bid_item_prices")
+}
+
+// ─────────────────────────── Correspondence (letters archive) ───────────────────────────
+
+model CorrespondenceTemplate {
+  id              Int      @id @default(autoincrement())
+  name            String
+  // quote_request | inquiry | extension_request | approval | apology | thanks |
+  // meeting_invitation | supply_request | purchase_order | financial_claim | custom
+  category        String
+  bodyJson        String   @map("body_json") // Tiptap JSON with {{placeholder}} tokens, stringified
+  isSystem        Boolean  @default(false) @map("is_system")
+  createdByUserId Int?     @map("created_by_user_id")
+  createdByUser   User?    @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @default(now()) @map("updated_at")
+
+  letters CorrespondenceLetter[]
+
+  @@map("correspondence_templates")
+}
+
+model CorrespondenceLetter {
+  id                  Int                     @id @default(autoincrement())
+  letterNumber        String                  @unique @map("letter_number") // server-generated, e.g. "MOE-2026-0001"; suffixed "-VOID" once its number is reclaimed on cancel
+  direction           String // 'outgoing' | 'incoming'
+  status              String                  @default("draft") // draft | sent | received | closed | cancelled
+  subject             String
+  letterType          String?                 @map("letter_type") // same vocabulary as template.category, plus incoming_general/other
+  bodyJson            String?                 @map("body_json") // Tiptap JSON (composed letters); null for scan-only incoming letters
+  bodyHtml            String?                 @map("body_html") // cached render, regenerated on every save — used for list preview/search
+  letterDate          DateTime                @map("letter_date") @db.Date
+  senderName          String?                 @map("sender_name") // mainly for incoming letters
+  recipientName       String?                 @map("recipient_name") // mainly for outgoing letters
+  attentionLine       String?                 @map("attention_line") // "عناية" — a specific person/department within the recipient entity
+  companyName         String?                 @map("company_name") // sender company name shown in the signature block (manual, per letter)
+  referenceNumber     String?                 @map("reference_number") // the OTHER party's letter/reference number
+  inReplyToId         Int?                    @map("in_reply_to_id")
+  inReplyTo           CorrespondenceLetter?   @relation("LetterReplies", fields: [inReplyToId], references: [id], onDelete: SetNull)
+  replies             CorrespondenceLetter[]  @relation("LetterReplies")
+  // Which record this letter is filed under
+  sourceType          String?                 @map("source_type") // 'tender'|'practice'|'contract'|'purchase_order'|'supplier'|'project'|'government_entity'|null
+  tenderId            Int?                    @map("tender_id")
+  tender              Tender?                 @relation(fields: [tenderId], references: [id], onDelete: SetNull)
+  practiceId          Int?                    @map("practice_id")
+  practice            Practice?               @relation(fields: [practiceId], references: [id], onDelete: SetNull)
+  contractId          Int?                    @map("contract_id")
+  contract            Contract?               @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  purchaseOrderId     Int?                    @map("purchase_order_id")
+  purchaseOrder       DirectPurchaseOrder?    @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  supplierId          Int?                    @map("supplier_id")
+  projectId           Int?                    @map("project_id")
+  project             Project?                @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  // Which government entity the letter is addressed to/from — drives numbering + entity-scoped archive view
+  governmentEntityId  Int?                    @map("government_entity_id")
+  governmentEntity    GovernmentEntity?       @relation(fields: [governmentEntityId], references: [id], onDelete: SetNull)
+  departmentId        Int?                    @map("department_id") // الاختصاص
+  department          Department?             @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  contactId           Int?                    @map("contact_id") // المسؤول
+  contact             GovernmentContact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  responsibleEmployee String?                 @map("responsible_employee")
+  templateId          Int?                    @map("template_id")
+  template            CorrespondenceTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  approvalStatus      String                  @default("not_required") @map("approval_status") // not_required|pending|approved|rejected
+  approvedByUserId    Int?                    @map("approved_by_user_id")
+  approvedByUser      User?                   @relation("CorrespondenceApprover", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  approvedAt          DateTime?               @map("approved_at")
+  sentAt              DateTime?               @map("sent_at")
+  deadlineDate        DateTime?               @map("deadline_date") @db.Date // drives dashboard deadline alerts
+  isAnswered          Boolean                 @default(false) @map("is_answered")
+  cancelledAt         DateTime?               @map("cancelled_at")
+  cancelledByUserId   Int?                    @map("cancelled_by_user_id")
+  cancelledByUser     User?                   @relation("CorrespondenceCanceller", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+  notes               String?
+  createdByUserId     Int?                    @map("created_by_user_id")
+  createdByUser       User?                   @relation("CorrespondenceCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @default(now()) @map("updated_at")
+
+  attachments CorrespondenceAttachment[]
+
+  @@map("correspondence_letters")
+}
+
+model CorrespondenceAttachment {
+  id               Int                  @id @default(autoincrement())
+  letterId         Int                  @map("letter_id")
+  letter           CorrespondenceLetter @relation(fields: [letterId], references: [id], onDelete: Cascade)
+  fileName         String               @map("file_name")
+  fileUrl          String               @map("file_url") // objectPath from object storage
+  mimeType         String?              @map("mime_type")
+  fileSize         Int?                 @map("file_size")
+  attachmentType   String?              @default("general") @map("attachment_type") // 'main_copy' | 'general'
+  uploadedByUserId Int?                 @map("uploaded_by_user_id")
+  uploadedByUser   User?                @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime             @default(now()) @map("created_at")
+
+  @@map("correspondence_attachments")
+}
+
+/// تتبّع تسلسل الترقيم لكل جهة / فئة
+model CorrespondenceSequence {
+  id         Int      @id @default(autoincrement())
+  // 'government_entity' | 'suppliers' | 'contracts' | 'practices' | 'purchase_orders' | 'tenders' | 'general'
+  scopeType  String   @map("scope_type")
+  scopeId    Int      @default(0) @map("scope_id") // government_entities.id when scopeType='government_entity', else 0
+  prefix     String
+  year       Int
+  lastNumber Int      @default(0) @map("last_number")
+  updatedAt  DateTime @default(now()) @map("updated_at")
+
+  @@unique([scopeType, scopeId, year], name: "uq_correspondence_sequences_scope")
+  @@map("correspondence_sequences")
+}
+
+// ─────────────────────────── Residency Management (sponsored workers) ───────────────────────────
+
+/// الشركات الكفيلة
+model SponsorCompany {
+  id        Int      @id @default(autoincrement())
+  name      String
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  workers Worker[]
+
+  @@map("sponsor_companies")
+}
+
+/// العمال
+model Worker {
+  id        Int            @id @default(autoincrement())
+  companyId Int            @map("company_id")
+  company   SponsorCompany @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  photoUrl  String?        @map("photo_url")
+
+  fullName       String    @map("full_name")
+  nationality    String?
+  civilId        String?   @map("civil_id")
+  jobTitle       String?   @map("job_title")
+  department     String? // نص حر لعرض/فلترة القسم الوظيفي العام
+  assignedModule String?   @map("assigned_module") // "maintenance" | "transportation" | null — يحدد أي ميزانية تُحمَّل رواتب/إقامة العامل تلقائيًا
+  salary         Decimal?  @db.Decimal(12, 3)
+  hireDate       DateTime? @map("hire_date") @db.Date
+  sponsor        String?
+  status         String    @default("active") // active | inactive | terminated
+
+  residencyNumber       String?   @map("residency_number")
+  residencyExpiry       DateTime? @map("residency_expiry") @db.Date
+  passportNumber        String?   @map("passport_number")
+  passportExpiry        DateTime? @map("passport_expiry") @db.Date
+  healthInsuranceNumber String?   @map("health_insurance_number")
+  healthInsuranceExpiry DateTime? @map("health_insurance_expiry") @db.Date
+  workPermitNumber      String?   @map("work_permit_number")
+  workPermitExpiry      DateTime? @map("work_permit_expiry") @db.Date
+
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  documents       WorkerDocument[]
+  history         WorkerHistory[]
+  financeExpenses FinanceExpense[]
+
+  @@map("workers")
+}
+
+/// مستندات العامل (8 سلوتات ثابتة)
+model WorkerDocument {
+  id               Int      @id @default(autoincrement())
+  workerId         Int      @map("worker_id")
+  worker           Worker   @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  documentType     String   @map("document_type") // passport_photo | residency_photo | work_permit | civil_id | health_insurance | employment_contract | personal_photo | driving_license
+  fileUrl          String   @map("file_url")
+  mimeType         String?  @map("mime_type")
+  fileSize         Int?     @map("file_size")
+  uploadedByUserId Int?     @map("uploaded_by_user_id")
+  uploadedByUser   User?    @relation(fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@unique([workerId, documentType], name: "uq_worker_doc_type")
+  @@map("worker_documents")
+}
+
+/// سجل تجديد العامل
+model WorkerHistory {
+  id              Int       @id @default(autoincrement())
+  workerId        Int       @map("worker_id")
+  worker          Worker    @relation(fields: [workerId], references: [id], onDelete: Cascade)
+  operationType   String    @map("operation_type") // e.g. "تجديد إقامة", "تعديل مهنة"
+  oldValue        String?   @map("old_value")
+  newValue        String?   @map("new_value")
+  effectiveDate   DateTime? @map("effective_date") @db.Date
+  notes           String?
+  createdByUserId Int?      @map("created_by_user_id")
+  createdByUser   User?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@map("worker_history")
+}
+
+// ─────────────────────────── Maintenance Management ───────────────────────────
+
+/// سجل المعدات
+model MaintenanceEquipment {
+  id                Int       @id @default(autoincrement())
+  assetNumber       String    @unique @map("asset_number")
+  name              String
+  category          String?
+  manufacturer      String?
+  model             String?
+  serialNumber      String?   @map("serial_number")
+  yearOfManufacture Int?      @map("year_of_manufacture")
+  purchaseDate      DateTime? @map("purchase_date") @db.Date
+  purchaseValue     Decimal?  @map("purchase_value") @db.Decimal(15, 3)
+  usefulLifeYears   Int?      @map("useful_life_years")
+  warrantyExpiry    DateTime? @map("warranty_expiry") @db.Date
+  location          String?
+  department        String?
+  branch            String?
+  responsibleUserId Int?      @map("responsible_user_id")
+  responsibleUser   User?     @relation(fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  status            String    @default("operational")
+  // operational | needs_maintenance | stopped | out_of_service | under_repair
+  photoUrl          String?   @map("photo_url")
+  notes             String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @default(now()) @map("updated_at")
+
+  workOrders      MaintenanceWorkOrder[]
+  preventivePlans MaintenancePreventivePlan[]
+
+  @@map("maintenance_equipment")
+}
+
+/// أوامر الصيانة
+model MaintenanceWorkOrder {
+  id                   Int                  @id @default(autoincrement())
+  orderNumber          String               @unique @map("order_number")
+  equipmentId          Int                  @map("equipment_id")
+  equipment            MaintenanceEquipment @relation(fields: [equipmentId], references: [id])
+  maintenanceType      String               @default("corrective") @map("maintenance_type")
+  // preventive | corrective | emergency | periodic
+  reportReason         String?              @map("report_reason")
+  priority             String               @default("medium") // low | medium | high | critical
+  reportDate           DateTime             @default(now()) @map("report_date")
+  location             String?
+  stage                String               @default("reported")
+  // reported | manager_approval | technician_assigned | in_progress | parts_requested | completed | manager_review | closed
+  assignedTechnicianId Int?                 @map("assigned_technician_id")
+  assignedTechnician   User?                @relation("MaintenanceTechnician", fields: [assignedTechnicianId], references: [id], onDelete: SetNull)
+  approvedByUserId     Int?                 @map("approved_by_user_id")
+  approvedByUser       User?                @relation("MaintenanceApprover", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  projectId            Int?                 @map("project_id")
+  project              Project?             @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  contractId           Int?                 @map("contract_id")
+  contract             Contract?            @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  governmentEntityId   Int?                 @map("government_entity_id") // الجهة الحكومية (للزيارة)
+  governmentEntity     GovernmentEntity?    @relation(fields: [governmentEntityId], references: [id], onDelete: SetNull)
+  departmentId         Int?                 @map("department_id") // الاختصاص
+  department           Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  contactId            Int?                 @map("contact_id") // المسؤول
+  contact              GovernmentContact?   @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  cause                String?
+  downtimeMinutes      Int?                 @map("downtime_minutes")
+  startedAt            DateTime?            @map("started_at")
+  completedAt          DateTime?            @map("completed_at")
+  beforePhotoUrl       String?              @map("before_photo_url")
+  afterPhotoUrl        String?              @map("after_photo_url")
+  attachmentUrl        String?              @map("attachment_url")
+  notes                String?
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @default(now()) @map("updated_at")
+
+  stageHistory    MaintenanceStageHistory[]
+  parts           MaintenanceWorkOrderPart[]
+  financeExpenses FinanceExpense[]
+
+  @@map("maintenance_work_orders")
+}
+
+/// سجل مراحل أمر الصيانة
+model MaintenanceStageHistory {
+  id              Int                  @id @default(autoincrement())
+  workOrderId     Int                  @map("work_order_id")
+  workOrder       MaintenanceWorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  stage           String
+  changedAt       DateTime             @default(now()) @map("changed_at")
+  changedByUserId Int?                 @map("changed_by_user_id")
+  changedByUser   User?                @relation(fields: [changedByUserId], references: [id], onDelete: SetNull)
+
+  @@map("maintenance_stage_history")
+}
+
+/// مستودع قطع الغيار (مشترك بين الصيانة والمركبات)
+model MaintenanceInventory {
+  id             Int      @id @default(autoincrement())
+  partNumber     String   @unique @map("part_number")
+  partName       String   @map("part_name")
+  category       String?
+  unit           String?
+  quantityOnHand Decimal  @default(0) @map("quantity_on_hand") @db.Decimal(12, 3)
+  reorderLevel   Decimal? @map("reorder_level") @db.Decimal(12, 3)
+  unitCost       Decimal? @map("unit_cost") @db.Decimal(15, 3)
+  location       String?
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @map("updated_at")
+
+  workOrderParts      MaintenanceWorkOrderPart[]
+  vehicleServiceParts VehicleServicePart[]
+
+  @@map("maintenance_inventory")
+}
+
+/// طلبات قطع غيار لأمر صيانة
+model MaintenanceWorkOrderPart {
+  id              Int                   @id @default(autoincrement())
+  workOrderId     Int                   @map("work_order_id")
+  workOrder       MaintenanceWorkOrder  @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  inventoryItemId Int?                  @map("inventory_item_id")
+  inventoryItem   MaintenanceInventory? @relation(fields: [inventoryItemId], references: [id], onDelete: SetNull)
+  partName        String                @map("part_name")
+  quantity        Decimal               @db.Decimal(12, 3)
+  unitPrice       Decimal?              @map("unit_price") @db.Decimal(15, 3)
+  supplierId      Int?                  @map("supplier_id")
+  supplier        Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  requestDate     DateTime?             @map("request_date") @db.Date
+  receivedDate    DateTime?             @map("received_date") @db.Date
+  status          String                @default("requested") // requested | ordered | received | issued
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @default(now()) @map("updated_at")
+
+  @@map("maintenance_work_order_parts")
+}
+
+/// خطط الصيانة الوقائية
+model MaintenancePreventivePlan {
+  id                 Int                  @id @default(autoincrement())
+  equipmentId        Int                  @map("equipment_id")
+  equipment          MaintenanceEquipment @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+  planName           String               @map("plan_name")
+  frequencyType      String               @default("monthly") @map("frequency_type")
+  // daily | weekly | monthly | quarterly | semi_annual | annual | meter_based
+  intervalValue      Int                  @default(1) @map("interval_value")
+  meterIntervalValue Decimal?             @map("meter_interval_value") @db.Decimal(12, 2)
+  checklistItems     String?              @map("checklist_items") // JSON-stringified string[]
+  active             Boolean              @default(true)
+  nextDueDate        DateTime?            @map("next_due_date") @db.Date
+  lastGeneratedDate  DateTime?            @map("last_generated_date") @db.Date
+  notes              String?
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @default(now()) @map("updated_at")
+
+  @@map("maintenance_preventive_plans")
+}
+
+/// ميزانية الصيانة الشهرية
+model MaintenanceBudget {
+  id        Int      @id @default(autoincrement())
+  year      Int
+  month     Int
+  amount    Decimal  @db.Decimal(15, 3)
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  @@unique([year, month], name: "uq_maintenance_budget_year_month")
+  @@map("maintenance_budgets")
+}
+
+/// قوالب تقارير زيارة الصيانة (رفع .docx واستبدال tokens)
+model MaintenanceReportTemplate {
+  id         Int      @id @default(autoincrement())
+  name       String
+  reportType String   @default("visit_report") @map("report_type")
+  fileUrl    String   @map("file_url")
+  isDefault  Boolean  @default(false) @map("is_default")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @default(now()) @map("updated_at")
+
+  @@map("maintenance_report_templates")
+}
+
+// ─────────────────────────── Research & Development ───────────────────────────
+
+/// مركز المعرفة المؤسسية (دروس مستفادة من مناقصة/ممارسة)
+model KnowledgeEntry {
+  id              Int       @id @default(autoincrement())
+  tenderId        Int?      @map("tender_id")
+  tender          Tender?   @relation(fields: [tenderId], references: [id], onDelete: SetNull)
+  practiceId      Int?      @map("practice_id")
+  practice        Practice? @relation(fields: [practiceId], references: [id], onDelete: SetNull)
+  title           String
+  outcome         String    @default("other") // won | lost | ongoing | other
+  reasons         String?
+  lessonsLearned  String?   @map("lessons_learned")
+  competitorNames String?   @map("competitor_names")
+  tags            String?
+  createdByUserId Int?      @map("created_by_user_id")
+  createdByUser   User?     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @map("updated_at")
+
+  @@map("knowledge_entries")
+}
+
+/// شات الفريق (قناة واحدة مشتركة)
+model TeamMessage {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("team_messages")
+}

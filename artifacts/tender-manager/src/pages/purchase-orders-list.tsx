@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { purchaseOrdersApi, suppliersApi, entitiesApi } from "@/lib/api";
-import { ShoppingCart, Plus, Pencil, Trash2, X, Check, Search, Truck, PackageCheck, RotateCcw, Sparkles } from "lucide-react";
+import { useLocation } from "wouter";
+import { purchaseOrdersApi, suppliersApi, contractsApi, companiesApi } from "@/lib/api";
+import { ShoppingCart, Plus, Pencil, Trash2, X, Check, Search, Truck, PackageCheck, RotateCcw, Sparkles, Mail, TrendingUp, Percent } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import CorrespondenceSheet from "@/components/correspondence/correspondence-sheet";
+import EntityDirectoryPicker from "@/components/entity-directory-picker";
 
 const G  = "#D4A534";
 const GL = "#E8BE55";
@@ -16,7 +19,14 @@ const STATUS_MAP: Record<string, { label: string; bg: string; text: string; bord
   completed:   { label: "مكتمل",        bg: "#dcfce7", text: "#166534", border: "#bbf7d0", icon: PackageCheck },
 };
 
-const emptyForm = { orderNumber: "", supplierId: "", governmentEntityId: "", description: "", amount: "", orderDate: "", deliveryDate: "", status: "new", notes: "" };
+const PRIORITY_MAP: Record<string, { label: string; color: string }> = {
+  low: { label: "منخفضة", color: "#6b7280" },
+  medium: { label: "متوسطة", color: "#d97706" },
+  high: { label: "عالية", color: "#dc2626" },
+  urgent: { label: "عاجلة", color: "#7c3aed" },
+};
+
+const emptyForm = { orderNumber: "", supplierId: "", governmentEntityId: "" as string | number | null, departmentId: "" as string | number | null, contactId: "" as string | number | null, companyId: "", contractId: "", description: "", amount: "", orderDate: "", deliveryDate: "", status: "new", priority: "medium", notes: "" };
 
 const S = {
   page: { fontFamily: "'Segoe UI', Tahoma, sans-serif", direction: "rtl" as const },
@@ -48,24 +58,28 @@ const S = {
 export default function PurchaseOrdersList() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
   const [tab, setTab] = useState("all");
   const [search, setSearch] = useState("");
+  const [correspondenceFor, setCorrespondenceFor] = useState<{ id: number; label: string; governmentEntityId: number | null } | null>(null);
 
   const statusFilter = tab !== "all" ? tab : undefined;
   const { data: orders = [], isLoading } = useQuery({ queryKey: ["purchase-orders", tab], queryFn: () => purchaseOrdersApi.list(statusFilter) });
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: () => suppliersApi.list() });
-  const { data: entities = [] } = useQuery({ queryKey: ["government-entities"], queryFn: () => entitiesApi.list() });
+  const { data: contracts = [] } = useQuery({ queryKey: ["contracts", "all"], queryFn: () => contractsApi.list() });
+  const { data: companies = [] } = useQuery({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
+  const { data: kpi } = useQuery({ queryKey: ["purchase-orders-stats"], queryFn: () => purchaseOrdersApi.stats() });
 
   const createM = useMutation({ mutationFn: purchaseOrdersApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); closeForm(); toast({ title: "✅ تم إضافة أمر الشراء" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
   const updateM = useMutation({ mutationFn: ({ id, data }: any) => purchaseOrdersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); closeForm(); toast({ title: "✅ تم تحديث أمر الشراء" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
   const deleteM = useMutation({ mutationFn: purchaseOrdersApi.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); toast({ title: "تم حذف أمر الشراء" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
 
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
-  const openEdit = (o: any) => { setEditId(o.id); setForm({ orderNumber: o.orderNumber, supplierId: o.supplierId || "", governmentEntityId: o.governmentEntityId || "", description: o.description, amount: o.amount || "", orderDate: o.orderDate || "", deliveryDate: o.deliveryDate || "", status: o.status, notes: o.notes || "" }); setShowForm(true); };
-  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.orderNumber.trim() || !form.description.trim()) return; const data = { ...form, supplierId: form.supplierId ? Number(form.supplierId) : null, governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : null, amount: form.amount ? Number(form.amount) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
+  const openEdit = (o: any) => { setEditId(o.id); setForm({ orderNumber: o.orderNumber, supplierId: o.supplierId || "", governmentEntityId: o.governmentEntityId || "", departmentId: o.departmentId || "", contactId: o.contactId || "", companyId: o.companyId || "", contractId: o.contractId || "", description: o.description, amount: o.amount || "", orderDate: o.orderDate || "", deliveryDate: o.deliveryDate || "", status: o.status, priority: o.priority || "medium", notes: o.notes || "" }); setShowForm(true); };
+  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.orderNumber.trim() || !form.description.trim()) return; const data = { ...form, supplierId: form.supplierId ? Number(form.supplierId) : null, governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : null, departmentId: form.departmentId ? Number(form.departmentId) : null, contactId: form.contactId ? Number(form.contactId) : null, companyId: form.companyId ? Number(form.companyId) : null, contractId: form.contractId ? Number(form.contractId) : null, amount: form.amount ? Number(form.amount) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
 
   const filtered = (orders as any[]).filter(o => {
     const matchSearch = !search || o.orderNumber.toLowerCase().includes(search.toLowerCase()) || (o.description || "").toLowerCase().includes(search.toLowerCase()) || (o.supplierName || "").includes(search);
@@ -99,6 +113,8 @@ export default function PurchaseOrdersList() {
           { label: "جاري التنفيذ", value: (orders as any[]).filter((o: any) => o.status === "in_progress").length, color: "#1d4ed8", icon: RotateCcw },
           { label: "مكتمل", value: completedCount, color: "#059669", icon: PackageCheck },
           { label: "إجمالي المبالغ", value: formatCurrency(totalAmount), color: "#7c3aed", icon: ShoppingCart },
+          { label: "إجمالي الربح", value: kpi ? formatCurrency(kpi.totalProfit) : "—", color: "#16a34a", icon: TrendingUp },
+          { label: "متوسط الهامش", value: kpi ? `${Number(kpi.avgMarginPct).toFixed(1)}%` : "—", color: "#0891b2", icon: Percent },
         ].map(s => (
           <div key={s.label} style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "14px 20px", display: "flex", alignItems: "center", gap: 12, boxShadow: "0 2px 10px rgba(0,0,0,0.04)" }}>
             <div style={{ width: 36, height: 36, borderRadius: 9, background: `${s.color}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -134,23 +150,24 @@ export default function PurchaseOrdersList() {
           <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: 13, textAlign: "right" as const }}>
             <thead style={S.thead}>
               <tr>
-                {["رقم الأمر", "وصف الشراء", "المورد", "الجهة", "المبلغ", "تاريخ التسليم", "الحالة", ""].map(h => (
+                {["رقم الأمر", "وصف الشراء", "المورد", "الجهة", "العقد", "المبلغ", "الأولوية", "تاريخ التسليم", "الحالة", ""].map(h => (
                   <th key={h} style={S.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? [...Array(3)].map((_, i) => (
-                <tr key={i}>{[...Array(8)].map((_, j) => <td key={j} style={S.td}><div style={{ height: 14, background: "#f3f0e6", borderRadius: 4, width: 80, animation: "pulse 1.5s infinite" }} /></td>)}</tr>
+                <tr key={i}>{[...Array(10)].map((_, j) => <td key={j} style={S.td}><div style={{ height: 14, background: "#f3f0e6", borderRadius: 4, width: 80, animation: "pulse 1.5s infinite" }} /></td>)}</tr>
               )) : filtered.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: 48, textAlign: "center" as const, color: "#94a3b8" }}>
+                <tr><td colSpan={10} style={{ padding: 48, textAlign: "center" as const, color: "#94a3b8" }}>
                   <ShoppingCart size={40} color="#e2d5b0" style={{ margin: "0 auto 12px", display: "block" }} />
                   <p style={{ margin: 0 }}>لا توجد أوامر شراء</p>
                 </td></tr>
               ) : filtered.map((o: any, idx: number) => {
                 const st = STATUS_MAP[o.status] || STATUS_MAP.new;
+                const pr = PRIORITY_MAP[o.priority] || PRIORITY_MAP.medium;
                 return (
-                  <tr key={o.id} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #f5f0e6" : "none", background: "white", transition: "background 0.1s" }}
+                  <tr key={o.id} onClick={() => navigate(`/purchase-orders/${o.id}`)} style={{ borderBottom: idx < filtered.length - 1 ? "1px solid #f5f0e6" : "none", background: "white", transition: "background 0.1s", cursor: "pointer" }}
                     onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = "#fffdf5"}
                     onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "white"}
                   >
@@ -160,15 +177,24 @@ export default function PurchaseOrdersList() {
                     </td>
                     <td style={{ ...S.td, color: "#4b5563" }}>{o.supplierName || "—"}</td>
                     <td style={{ ...S.td, color: "#4b5563", fontSize: 12 }}>{o.entityName || "—"}</td>
+                    <td style={{ ...S.td, color: "#4b5563", fontSize: 12 }}>{o.contractNumber || "—"}</td>
                     <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: "#132a18" }}>{o.amount ? formatCurrency(o.amount) : "—"}</td>
+                    <td style={S.td}>
+                      <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: `${pr.color}15`, color: pr.color }}>{pr.label}</span>
+                    </td>
                     <td style={{ ...S.td, color: "#4b5563", whiteSpace: "nowrap" as const }}>{formatDate(o.deliveryDate)}</td>
                     <td style={S.td}>
                       <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.text, border: `1px solid ${st.border}`, display: "inline-flex", alignItems: "center", gap: 4 }}>
                         <st.icon size={11} /> {st.label}
                       </span>
                     </td>
-                    <td style={{ ...S.td, textAlign: "left" as const }}>
+                    <td style={{ ...S.td, textAlign: "left" as const }} onClick={ev => ev.stopPropagation()}>
                       <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                        <button style={S.iconBtn} onClick={() => setCorrespondenceFor({ id: o.id, label: o.orderNumber, governmentEntityId: o.governmentEntityId ?? null })}
+                          onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = `${G}18`}
+                          onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "transparent"}>
+                          <Mail size={14} color={GD} />
+                        </button>
                         <button style={S.iconBtn} onClick={() => openEdit(o)}
                           onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = `${G}18`}
                           onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "transparent"}>
@@ -218,11 +244,31 @@ export default function PurchaseOrdersList() {
                       {(suppliers as any[]).map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <label style={S.label}>الجهة الحكومية ← الاختصاص ← المسؤول</label>
+                    <EntityDirectoryPicker
+                      value={{ governmentEntityId: form.governmentEntityId, departmentId: form.departmentId, contactId: form.contactId }}
+                      onChange={next => setForm(p => ({ ...p, ...next }))}
+                    />
+                  </div>
                   <div>
-                    <label style={S.label}>الجهة الحكومية</label>
-                    <select style={S.select} value={form.governmentEntityId} onChange={e => setForm(p => ({ ...p, governmentEntityId: e.target.value }))}>
-                      <option value="">اختر الجهة</option>
-                      {(entities as any[]).map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    <label style={S.label}>رقم العقد</label>
+                    <select style={S.select} value={form.contractId} onChange={e => setForm(p => ({ ...p, contractId: e.target.value }))}>
+                      <option value="">— بدون —</option>
+                      {(contracts as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.contractNumber}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={S.label}>الشركة المشاركة</label>
+                    <select style={S.select} value={form.companyId} onChange={e => setForm(p => ({ ...p, companyId: e.target.value }))}>
+                      <option value="">— اختر الشركة —</option>
+                      {(companies as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={S.label}>الأولوية</label>
+                    <select style={S.select} value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))}>
+                      {Object.entries(PRIORITY_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                     </select>
                   </div>
                   <div style={{ gridColumn: "1 / -1" }}>
@@ -256,6 +302,16 @@ export default function PurchaseOrdersList() {
             </div>
           </div>
         </>
+      )}
+      {correspondenceFor && (
+        <CorrespondenceSheet
+          open={!!correspondenceFor}
+          onOpenChange={(o) => !o && setCorrespondenceFor(null)}
+          sourceType="purchase_order"
+          sourceId={correspondenceFor.id}
+          recordLabel={correspondenceFor.label}
+          governmentEntityId={correspondenceFor.governmentEntityId}
+        />
       )}
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
     </div>

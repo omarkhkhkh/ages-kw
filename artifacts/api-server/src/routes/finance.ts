@@ -46,18 +46,32 @@ router.get("/summary", async (req: Request, res: Response) => {
 router.get("/income", async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
   try {
+    const { contractId, maintenanceWorkOrderId, transportationOrderId } = req.query;
+    const conditions: string[] = [];
+    const params: any[] = [];
+    if (contractId) { params.push(Number(contractId)); conditions.push(`fi.contract_id = $${params.length}`); }
+    if (maintenanceWorkOrderId) { params.push(Number(maintenanceWorkOrderId)); conditions.push(`fi.maintenance_work_order_id = $${params.length}`); }
+    if (transportationOrderId) { params.push(Number(transportationOrderId)); conditions.push(`fi.transportation_order_id = $${params.length}`); }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const { rows } = await pool.query(`
       SELECT
         fi.id, fi.contract_id AS "contractId", fi.employee_id AS "employeeId",
+        fi.maintenance_work_order_id AS "maintenanceWorkOrderId",
+        fi.transportation_order_id AS "transportationOrderId",
         fi.description, fi.amount, fi.date, fi.category, fi.notes,
         fi.created_at AS "createdAt",
         u.full_name AS "employeeName",
-        c.contract_number AS "contractNumber"
+        c.contract_number AS "contractNumber",
+        wo.order_number AS "maintenanceOrderNumber",
+        to2.order_number AS "transportationOrderNumber"
       FROM finance_income fi
       LEFT JOIN users u ON u.id = fi.employee_id
       LEFT JOIN contracts c ON c.id = fi.contract_id
+      LEFT JOIN maintenance_work_orders wo ON wo.id = fi.maintenance_work_order_id
+      LEFT JOIN transportation_orders to2 ON to2.id = fi.transportation_order_id
+      ${where}
       ORDER BY fi.date DESC, fi.created_at DESC
-    `);
+    `, params);
     return res.json(rows);
   } catch {
     return res.status(500).json({ error: "فشل في جلب الإيرادات" });
@@ -67,11 +81,13 @@ router.get("/income", async (req: Request, res: Response) => {
 router.post("/income", async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
   try {
-    const { contractId, employeeId, description, amount, date, category, notes } = req.body as any;
+    const { contractId, employeeId, maintenanceWorkOrderId, transportationOrderId, description, amount, date, category, notes } = req.body as any;
     if (!description?.trim() || !amount || !date) return res.status(400).json({ error: "الوصف والمبلغ والتاريخ مطلوبة" });
     const [row] = await db.insert(financeIncomeTable).values({
       contractId: contractId ? Number(contractId) : null,
       employeeId: employeeId ? Number(employeeId) : null,
+      maintenanceWorkOrderId: maintenanceWorkOrderId ? Number(maintenanceWorkOrderId) : null,
+      transportationOrderId: transportationOrderId ? Number(transportationOrderId) : null,
       description: description.trim(),
       amount: String(amount),
       date,
@@ -89,7 +105,7 @@ router.patch("/income/:id", async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
   try {
     const id = Number(req.params.id);
-    const { description, amount, date, category, notes, contractId, employeeId } = req.body as any;
+    const { description, amount, date, category, notes, contractId, employeeId, maintenanceWorkOrderId, transportationOrderId } = req.body as any;
     const updates: any = { updatedAt: new Date() };
     if (description !== undefined) updates.description = description;
     if (amount !== undefined) updates.amount = String(amount);
@@ -98,6 +114,8 @@ router.patch("/income/:id", async (req: Request, res: Response) => {
     if (notes !== undefined) updates.notes = notes;
     if (contractId !== undefined) updates.contractId = contractId ? Number(contractId) : null;
     if (employeeId !== undefined) updates.employeeId = employeeId ? Number(employeeId) : null;
+    if (maintenanceWorkOrderId !== undefined) updates.maintenanceWorkOrderId = maintenanceWorkOrderId ? Number(maintenanceWorkOrderId) : null;
+    if (transportationOrderId !== undefined) updates.transportationOrderId = transportationOrderId ? Number(transportationOrderId) : null;
     const [row] = await db.update(financeIncomeTable).set(updates).where(eq(financeIncomeTable.id, id)).returning();
     if (!row) return res.status(404).json({ error: "السجل غير موجود" });
     return res.json(row);
@@ -122,12 +140,38 @@ router.delete("/income/:id", async (req: Request, res: Response) => {
 router.get("/expenses", async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
   try {
+    const { contractId, purchaseOrderId, maintenanceWorkOrderId, transportationOrderId, vehicleId, workerId } = req.query;
+    const conditions: string[] = [];
+    const params: any[] = [];
+    if (contractId) { params.push(Number(contractId)); conditions.push(`fe.contract_id = $${params.length}`); }
+    if (purchaseOrderId) { params.push(Number(purchaseOrderId)); conditions.push(`fe.purchase_order_id = $${params.length}`); }
+    if (maintenanceWorkOrderId) { params.push(Number(maintenanceWorkOrderId)); conditions.push(`fe.maintenance_work_order_id = $${params.length}`); }
+    if (transportationOrderId) { params.push(Number(transportationOrderId)); conditions.push(`fe.transportation_order_id = $${params.length}`); }
+    if (vehicleId) { params.push(Number(vehicleId)); conditions.push(`fe.vehicle_id = $${params.length}`); }
+    if (workerId) { params.push(Number(workerId)); conditions.push(`fe.worker_id = $${params.length}`); }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
     const { rows } = await pool.query(`
-      SELECT id, description, amount, due_date AS "dueDate", paid_date AS "paidDate",
-             status, category, vendor, notes, created_at AS "createdAt"
-      FROM finance_expenses
-      ORDER BY COALESCE(due_date, '9999-12-31'::date) ASC, created_at DESC
-    `);
+      SELECT fe.id, fe.contract_id AS "contractId", fe.purchase_order_id AS "purchaseOrderId",
+             fe.maintenance_work_order_id AS "maintenanceWorkOrderId",
+             fe.transportation_order_id AS "transportationOrderId", fe.vehicle_id AS "vehicleId",
+             fe.worker_id AS "workerId",
+             fe.description, fe.amount,
+             fe.due_date AS "dueDate", fe.paid_date AS "paidDate",
+             fe.status, fe.category, fe.vendor, fe.notes, fe.created_at AS "createdAt",
+             c.contract_number AS "contractNumber", po.order_number AS "purchaseOrderNumber",
+             mwo.order_number AS "maintenanceWorkOrderNumber",
+             to2.order_number AS "transportationOrderNumber", fv.plate_number AS "vehiclePlateNumber",
+             w.full_name AS "workerName"
+      FROM finance_expenses fe
+      LEFT JOIN contracts c ON c.id = fe.contract_id
+      LEFT JOIN direct_purchase_orders po ON po.id = fe.purchase_order_id
+      LEFT JOIN maintenance_work_orders mwo ON mwo.id = fe.maintenance_work_order_id
+      LEFT JOIN transportation_orders to2 ON to2.id = fe.transportation_order_id
+      LEFT JOIN fleet_vehicles fv ON fv.id = fe.vehicle_id
+      LEFT JOIN workers w ON w.id = fe.worker_id
+      ${where}
+      ORDER BY COALESCE(fe.due_date, '9999-12-31'::date) ASC, fe.created_at DESC
+    `, params);
     return res.json(rows);
   } catch {
     return res.status(500).json({ error: "فشل في جلب المصروفات" });
@@ -137,9 +181,15 @@ router.get("/expenses", async (req: Request, res: Response) => {
 router.post("/expenses", async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
   try {
-    const { description, amount, dueDate, paidDate, status, category, vendor, notes } = req.body as any;
+    const { contractId, purchaseOrderId, maintenanceWorkOrderId, transportationOrderId, vehicleId, workerId, description, amount, dueDate, paidDate, status, category, vendor, notes } = req.body as any;
     if (!description?.trim() || !amount) return res.status(400).json({ error: "الوصف والمبلغ مطلوبان" });
     const [row] = await db.insert(financeExpensesTable).values({
+      contractId: contractId ? Number(contractId) : null,
+      purchaseOrderId: purchaseOrderId ? Number(purchaseOrderId) : null,
+      maintenanceWorkOrderId: maintenanceWorkOrderId ? Number(maintenanceWorkOrderId) : null,
+      transportationOrderId: transportationOrderId ? Number(transportationOrderId) : null,
+      vehicleId: vehicleId ? Number(vehicleId) : null,
+      workerId: workerId ? Number(workerId) : null,
       description: description.trim(),
       amount: String(amount),
       dueDate: dueDate || null,
@@ -160,8 +210,14 @@ router.patch("/expenses/:id", async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
   try {
     const id = Number(req.params.id);
-    const { description, amount, dueDate, paidDate, status, category, vendor, notes } = req.body as any;
+    const { contractId, purchaseOrderId, maintenanceWorkOrderId, transportationOrderId, vehicleId, workerId, description, amount, dueDate, paidDate, status, category, vendor, notes } = req.body as any;
     const updates: any = { updatedAt: new Date() };
+    if (contractId !== undefined) updates.contractId = contractId ? Number(contractId) : null;
+    if (purchaseOrderId !== undefined) updates.purchaseOrderId = purchaseOrderId ? Number(purchaseOrderId) : null;
+    if (maintenanceWorkOrderId !== undefined) updates.maintenanceWorkOrderId = maintenanceWorkOrderId ? Number(maintenanceWorkOrderId) : null;
+    if (transportationOrderId !== undefined) updates.transportationOrderId = transportationOrderId ? Number(transportationOrderId) : null;
+    if (vehicleId !== undefined) updates.vehicleId = vehicleId ? Number(vehicleId) : null;
+    if (workerId !== undefined) updates.workerId = workerId ? Number(workerId) : null;
     if (description !== undefined) updates.description = description;
     if (amount !== undefined) updates.amount = String(amount);
     if (dueDate !== undefined) updates.dueDate = dueDate || null;
@@ -403,6 +459,44 @@ router.get("/expenses/by-category", async (req: Request, res: Response) => {
 });
 
 /* ══════════════════════════════════════
+   EXPENSES BY MODULE (admin only)
+══════════════════════════════════════ */
+router.get("/expenses/by-module", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    const { rows } = await pool.query(`
+      SELECT
+        CASE
+          WHEN fe.maintenance_work_order_id IS NOT NULL THEN 'maintenance'
+          WHEN fe.transportation_order_id IS NOT NULL OR fe.vehicle_id IS NOT NULL THEN 'transportation'
+          WHEN fe.worker_id IS NOT NULL AND w.assigned_module = 'maintenance' THEN 'maintenance'
+          WHEN fe.worker_id IS NOT NULL AND w.assigned_module = 'transportation' THEN 'transportation'
+          WHEN fe.contract_id IS NOT NULL THEN 'contract'
+          WHEN fe.purchase_order_id IS NOT NULL THEN 'purchase_order'
+          ELSE 'other'
+        END AS module,
+        COUNT(*)::int                                                          AS count,
+        COALESCE(SUM(fe.amount),0)::numeric                                    AS total,
+        COALESCE(SUM(CASE WHEN fe.status='paid'    THEN fe.amount ELSE 0 END),0)::numeric AS paid,
+        COALESCE(SUM(CASE WHEN fe.status='pending' THEN fe.amount ELSE 0 END),0)::numeric AS pending,
+        COALESCE(SUM(CASE WHEN fe.status='overdue' THEN fe.amount ELSE 0 END),0)::numeric AS overdue
+      FROM finance_expenses fe
+      LEFT JOIN workers w ON w.id = fe.worker_id
+      GROUP BY module
+      ORDER BY total DESC
+    `);
+    const grandTotal = rows.reduce((s: number, r: any) => s + Number(r.total), 0);
+    const data = rows.map((r: any) => ({
+      ...r,
+      pct: grandTotal > 0 ? ((Number(r.total) / grandTotal) * 100).toFixed(1) : "0.0",
+    }));
+    return res.json({ rows: data, grandTotal });
+  } catch {
+    return res.status(500).json({ error: "فشل في جلب التوزيع حسب الوحدة" });
+  }
+});
+
+/* ══════════════════════════════════════
    FILTERED EXPENSES EXPORT (admin only)
 ══════════════════════════════════════ */
 router.get("/export/expenses-filtered", async (req: Request, res: Response) => {
@@ -427,7 +521,7 @@ router.get("/export/expenses-filtered", async (req: Request, res: Response) => {
 
     // Translate status/category to Arabic
     const AR_STATUS: Record<string,string> = { pending: "قيد الانتظار", paid: "مدفوعة", overdue: "متأخرة" };
-    const AR_CAT: Record<string,string> = { general:"عام",salary:"رواتب",rent:"إيجار",utilities:"مرافق",maintenance:"صيانة",tax:"ضرائب",other:"أخرى" };
+    const AR_CAT: Record<string,string> = { general:"عام",salary:"رواتب",rent:"إيجار",utilities:"مرافق",maintenance:"صيانة",tax:"ضرائب",labor:"عمالة",residency:"إقامة",fuel:"بنزين",vehicle_service:"سيرفس مركبة",other:"أخرى" };
     const translated = rows.map((r: any) => ({
       ...r,
       "الحالة": AR_STATUS[r["الحالة"]] ?? r["الحالة"],
@@ -491,7 +585,7 @@ router.get("/export/income-statement", async (req: Request, res: Response) => {
              COALESCE(SUM(CASE WHEN status='overdue' THEN amount ELSE 0 END),0)::numeric AS "المتأخر (د.ك)"
       FROM finance_expenses GROUP BY category ORDER BY "الإجمالي (د.ك)" DESC
     `);
-    const AR_ECAT: Record<string,string> = { general:"عام",salary:"رواتب",rent:"إيجار",utilities:"مرافق",maintenance:"صيانة",tax:"ضرائب",other:"أخرى" };
+    const AR_ECAT: Record<string,string> = { general:"عام",salary:"رواتب",rent:"إيجار",utilities:"مرافق",maintenance:"صيانة",tax:"ضرائب",labor:"عمالة",residency:"إقامة",fuel:"بنزين",vehicle_service:"سيرفس مركبة",other:"أخرى" };
     const grandExpTotal = expCat.reduce((s: number, r: any) => s + Number(r["الإجمالي (د.ك)"]), 0);
     const expCatAr = expCat.map((r: any) => ({
       "الفئة": AR_ECAT[r["الفئة"]] ?? r["الفئة"],

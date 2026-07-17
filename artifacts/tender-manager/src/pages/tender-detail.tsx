@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { useParams, useLocation } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useParams, useLocation, Link } from "wouter";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { companiesApi } from "@/lib/api";
 import {
   useGetTender,
   useUpdateTender,
@@ -16,12 +17,16 @@ import {
   ArrowRight, Save, Trash2, Clock, Building, FileText,
   CheckCircle2, AlertTriangle, User, Loader2,
   BookOpen, Calculator, Users, Package, ChevronDown,
-  DollarSign, TrendingUp, Trophy, Pencil, X, AlertCircle,
+  DollarSign, TrendingUp, Trophy, Pencil, X, AlertCircle, Mail, ListChecks,
 } from "lucide-react";
 import FileUpload from "@/components/file-upload";
 import BidResultPanel from "@/components/bid-result-panel";
 import TenderCompetitorAnalysis from "@/components/tender-competitor-analysis";
+import CorrespondenceListPanel from "@/components/correspondence/correspondence-list-panel";
 import { useAuth } from "@/contexts/auth";
+import EntityDirectoryPicker from "@/components/entity-directory-picker";
+import LinkedPricingSheets from "@/components/linked-pricing-sheets";
+import LinkedTasks from "@/components/linked-tasks";
 
 /* ── theme ── */
 const G  = "#D4A534";
@@ -114,8 +119,29 @@ export default function TenderDetail() {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [savingFields, setSavingFields] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<"details" | "bid" | "analysis">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "bid" | "analysis" | "pricing" | "correspondence" | "tasks">("details");
   const initialized = useRef(false);
+
+  const { data: companies = [] } = useQuery<any[]>({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
+
+  // Competitors with a history at this tender's government entity — only while the tender is still live
+  const entityId = (tender as any)?.governmentEntityId ?? null;
+  const tenderDecided = ["won", "lost", "cancelled"].includes(String((tender as any)?.status ?? ""));
+  const { data: entityCompetitors = [] } = useQuery<any[]>({
+    queryKey: ["entity-competitors", entityId],
+    queryFn: async () => {
+      const r = await fetch(`/api/analytics/competitors/by-entity/${entityId}`, { credentials: "include" });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    enabled: !!entityId && !tenderDecided,
+    staleTime: 5 * 60_000,
+  });
+  const threatCompetitors = entityCompetitors.filter((c: any) => {
+    const wins = Number(c.wins) || 0;
+    const total = Number(c.total_bids) || 0;
+    return wins >= 2 || (wins >= 1 && total > 0 && wins / total >= 0.3);
+  });
 
   useEffect(() => {
     if (tender && !initialized.current) {
@@ -123,9 +149,14 @@ export default function TenderDetail() {
         tenderNumber: tender.tenderNumber || "",
         projectName: tender.projectName || "",
         governmentEntity: tender.governmentEntity || "",
+        governmentEntityId: (tender as any).governmentEntityId || "",
+        departmentId: (tender as any).departmentId || "",
+        contactId: (tender as any).contactId || "",
         tenderType: tender.tenderType || "",
         announcementDate: tender.announcementDate ? tender.announcementDate.split("T")[0] : "",
         deadline: tender.deadline ? tender.deadline.split("T")[0] : "",
+        preliminaryMeetingHeld: (tender as any).preliminaryMeetingHeld ?? false,
+        preliminaryMeetingDate: (tender as any).preliminaryMeetingDate ? (tender as any).preliminaryMeetingDate.split("T")[0] : "",
         bondValue: tender.bondValue || "",
         docsValue: tender.docsValue || "",
         responsibleEngineer: tender.responsibleEngineer || "",
@@ -134,6 +165,7 @@ export default function TenderDetail() {
         profitPercentage: tender.profitPercentage || "",
         winner: tender.winner || "",
         notes: tender.notes || "",
+        companyId: (tender as any).companyId || "",
         fileConditions: (tender as any).fileConditions ?? null,
         filePricing:    (tender as any).filePricing    ?? null,
         fileSuppliers:  (tender as any).fileSuppliers  ?? null,
@@ -196,6 +228,10 @@ export default function TenderDetail() {
       docsValue:        formData.docsValue         ? Number(formData.docsValue)        : null,
       offerValue:       formData.offerValue        ? Number(formData.offerValue)       : null,
       profitPercentage: formData.profitPercentage  ? Number(formData.profitPercentage) : null,
+      companyId:        formData.companyId         ? Number(formData.companyId)        : null,
+      governmentEntityId: formData.governmentEntityId ? Number(formData.governmentEntityId) : null,
+      departmentId:       formData.departmentId       ? Number(formData.departmentId)       : null,
+      contactId:          formData.contactId          ? Number(formData.contactId)          : null,
     };
     updateTender.mutate(
       { id, data: payload as any },
@@ -244,6 +280,9 @@ export default function TenderDetail() {
     ["details",  "تفاصيل المناقصة", FileText],
     ["bid",      "فض العطاء",       Trophy],
     ["analysis", "تحليل المنافسة",  TrendingUp],
+    ["pricing",  "التسعير",          Calculator],
+    ["correspondence", "المراسلات", Mail],
+    ["tasks", "المهام المرتبطة", ListChecks],
   ];
 
   /* ── doc cards config ── */
@@ -404,6 +443,31 @@ export default function TenderDetail() {
         })}
       </div>
 
+      {/* ══ HIGH-THREAT COMPETITOR ALERT ══ */}
+      {threatCompetitors.length > 0 && (
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "13px 18px", background: "#fffbeb", border: "1.5px solid #fbbf24", borderRadius: 14, marginBottom: 18 }}>
+          <AlertTriangle size={20} color="#d97706" style={{ flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <div style={{ fontWeight: 700, color: "#92400e", fontSize: 14 }}>
+              ⚠️ منافسون خطرون متوقعون لهذه الجهة الحكومية
+            </div>
+            <div style={{ fontSize: 12, color: "#a16207", marginTop: 4, display: "flex", flexWrap: "wrap", gap: "4px 6px", alignItems: "center" }}>
+              {threatCompetitors.map((c: any, i: number) => (
+                <span key={c.competitor_id}>
+                  <Link href={`/competitor-intelligence/c/${c.competitor_id}`}
+                    style={{ color: "#92400e", fontWeight: 800, textDecoration: "underline" }}>
+                    {c.company_name}
+                  </Link>
+                  {" "}(فاز {c.wins} من {c.total_bids} {Number(c.total_bids) >= 3 && Number(c.total_bids) <= 10 ? "جلسات" : "جلسة"}
+                  {c.avg_diff_pct != null && <> بفارق متوسط {Number(c.avg_diff_pct) >= 0 ? "+" : ""}{Number(c.avg_diff_pct).toFixed(1)}%</>})
+                  {i < threatCompetitors.length - 1 && <span style={{ color: "#d6b25e", margin: "0 2px" }}> · </span>}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ══ BID TAB ══ */}
       {activeTab === "bid" && (
         <div>
@@ -415,6 +479,27 @@ export default function TenderDetail() {
       {activeTab === "analysis" && (
         <div>
           <TenderCompetitorAnalysis tenderId={id} />
+        </div>
+      )}
+
+      {/* ══ PRICING TAB ══ */}
+      {activeTab === "pricing" && (
+        <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "18px 20px" }}>
+          <LinkedPricingSheets entityType="tender" entityId={id} />
+        </div>
+      )}
+
+      {/* ══ TASKS TAB ══ */}
+      {activeTab === "tasks" && (
+        <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "18px 20px" }}>
+          <LinkedTasks entityType="tender" entityId={id} />
+        </div>
+      )}
+
+      {/* ══ CORRESPONDENCE TAB ══ */}
+      {activeTab === "correspondence" && (
+        <div>
+          <CorrespondenceListPanel sourceType="tender" sourceId={id} governmentEntityId={(tender as any)?.governmentEntityId ?? null} />
         </div>
       )}
 
@@ -434,8 +519,19 @@ export default function TenderDetail() {
                     <div><FieldLabel>رقم المناقصة</FieldLabel><SI ltr name="tenderNumber" value={formData.tenderNumber} onChange={handleChange} /></div>
                     <div><FieldLabel>نوع المناقصة</FieldLabel><SI name="tenderType" value={formData.tenderType} onChange={handleChange} placeholder="عامة / محدودة / ..." /></div>
                     <div style={{ gridColumn: "1/-1" }}><FieldLabel>اسم المشروع</FieldLabel><SI name="projectName" value={formData.projectName} onChange={handleChange} /></div>
-                    <div style={{ gridColumn: "1/-1" }}><FieldLabel>الجهة الحكومية</FieldLabel><SI name="governmentEntity" value={formData.governmentEntity} onChange={handleChange} /></div>
+                    <div style={{ gridColumn: "1/-1" }}><FieldLabel>الجهة الحكومية ← الاختصاص ← المسؤول</FieldLabel>
+                      <EntityDirectoryPicker
+                        value={{ governmentEntityId: formData.governmentEntityId, departmentId: formData.departmentId, contactId: formData.contactId }}
+                        onChange={next => setFormData((p: any) => ({ ...p, ...next }))}
+                      />
+                    </div>
                     <div style={{ gridColumn: "1/-1" }}><FieldLabel>المهندس المسؤول</FieldLabel><SI name="responsibleEngineer" value={formData.responsibleEngineer} onChange={handleChange} /></div>
+                    <div style={{ gridColumn: "1/-1" }}><FieldLabel>الشركة المشاركة</FieldLabel>
+                      <SS name="companyId" value={formData.companyId} onChange={handleChange}>
+                        <option value="">— اختر الشركة —</option>
+                        {companies.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </SS>
+                    </div>
                     <div style={{ gridColumn: "1/-1" }}><FieldLabel>الحالة</FieldLabel>
                       <SS name="status" value={formData.status} onChange={handleChange}>
                         {Object.entries(STATUS_ARABIC).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -451,7 +547,11 @@ export default function TenderDetail() {
                       <InfoRow label="اسم المشروع" value={<span style={{ fontSize: 15, fontWeight: 700 }}>{tender.projectName}</span>} />
                     </div>
                     <InfoRow label="الجهة الحكومية" value={tender.governmentEntity} />
+                    {((tender as any).departmentName || (tender as any).contactName) && (
+                      <InfoRow label="الاختصاص / المسؤول" value={[(tender as any).departmentName, (tender as any).contactName].filter(Boolean).join(" ← ")} />
+                    )}
                     <InfoRow label="المهندس المسؤول" value={tender.responsibleEngineer} />
+                    <InfoRow label="الشركة المشاركة" value={companies.find((c: any) => c.id === (tender as any).companyId)?.name || "—"} />
                     <div style={{ gridColumn: "1/-1" }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8" }}>حالة التقديم</span>
                       <div style={{ marginTop: 5 }}>
@@ -595,14 +695,30 @@ export default function TenderDetail() {
                   <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                     <div><FieldLabel>تاريخ الإعلان</FieldLabel><SI type="date" name="announcementDate" value={formData.announcementDate} onChange={handleChange} /></div>
                     <div><FieldLabel>آخر موعد للتقديم</FieldLabel><SI type="date" name="deadline" value={formData.deadline} onChange={handleChange} /></div>
+                    <div>
+                      <FieldLabel>الاجتماع التمهيدي</FieldLabel>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#374151", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={!!formData.preliminaryMeetingHeld}
+                          onChange={e => setFormData((prev: any) => ({ ...prev, preliminaryMeetingHeld: e.target.checked, preliminaryMeetingDate: e.target.checked ? prev.preliminaryMeetingDate : "" }))}
+                          style={{ width: 16, height: 16, accentColor: "#D4A534", cursor: "pointer" }}
+                        />
+                        هل عُقد الاجتماع التمهيدي؟
+                      </label>
+                    </div>
+                    {formData.preliminaryMeetingHeld && (
+                      <div><FieldLabel>تاريخ الاجتماع التمهيدي</FieldLabel><SI type="date" name="preliminaryMeetingDate" value={formData.preliminaryMeetingDate} onChange={handleChange} /></div>
+                    )}
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                    {[
+                    {(() => { const rows = [
                       { label: "تاريخ الإعلان",       val: tender.announcementDate, urgent: false },
                       { label: "آخر موعد للتقديم",    val: tender.deadline,         urgent },
-                    ].map((d, i) => (
-                      <div key={d.label} style={{ padding: "12px 0", borderBottom: i === 0 ? "1px solid #f1f5f9" : "none", display: "flex", flexDirection: "column", gap: 4 }}>
+                      ...((tender as any).preliminaryMeetingHeld ? [{ label: "تاريخ الاجتماع التمهيدي", val: (tender as any).preliminaryMeetingDate, urgent: false }] : []),
+                    ]; return rows.map((d, i) => (
+                      <div key={d.label} style={{ padding: "12px 0", borderBottom: i < rows.length - 1 ? "1px solid #f1f5f9" : "none", display: "flex", flexDirection: "column", gap: 4 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8" }}>{d.label}</span>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                           <span style={{ fontSize: 14, fontWeight: 700, color: d.urgent ? "#dc2626" : "#1e293b" }}>
@@ -613,7 +729,7 @@ export default function TenderDetail() {
                           )}
                         </div>
                       </div>
-                    ))}
+                    )); })()}
                     {/* countdown bar */}
                     {daysLeft !== null && daysLeft >= 0 && (
                       <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #f1f5f9" }}>

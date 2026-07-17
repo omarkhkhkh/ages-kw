@@ -10,6 +10,7 @@ import {
 } from "@workspace/db";
 import { pool } from "@workspace/db";
 import { requireAdmin } from "../middleware/auth";
+import { insertAutomationTask } from "./task-automation";
 
 const router = Router();
 
@@ -47,10 +48,16 @@ router.get("/", async (req: Request, res: Response) => {
         c.final_bond_issue_date as "finalBondIssueDate",
         c.final_bond_expiry_date as "finalBondExpiryDate",
         c.final_bond_status as "finalBondStatus",
-        ge.name as "entityName", t.tender_number as "tenderNumber"
+        c.company_id as "companyId",
+        c.department_id as "departmentId", c.contact_id as "contactId",
+        ge.name as "entityName", t.tender_number as "tenderNumber", co.name as "companyName",
+        dep.name as "departmentName", gc.name as "contactName"
       FROM contracts c
       LEFT JOIN government_entities ge ON c.government_entity_id = ge.id
       LEFT JOIN tenders t ON c.tender_id = t.id
+      LEFT JOIN companies co ON c.company_id = co.id
+      LEFT JOIN departments dep ON c.department_id = dep.id
+      LEFT JOIN government_contacts gc ON c.contact_id = gc.id
     `;
 
     const params: any[] = [];
@@ -106,6 +113,13 @@ router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertContractSchema.parse(req.body);
     const [contract] = await db.insert(contractsTable).values(data).returning();
+    if (contract.signDate) {
+      insertAutomationTask({
+        title: `متابعة تنفيذ عقد موقّع: ${contract.contractNumber}`,
+        sourceType: "contract_signed", sourceId: contract.id, triggerKey: "signed",
+        linkedEntityType: "contract", linkedEntityId: contract.id,
+      }).catch(() => {});
+    }
     return res.status(201).json(contract);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
@@ -127,6 +141,13 @@ router.patch("/:id", async (req: Request, res: Response) => {
       .where(eq(contractsTable.id, id))
       .returning();
     if (!contract) return res.status(404).json({ error: "العقد غير موجود" });
+    if (contract.signDate) {
+      insertAutomationTask({
+        title: `متابعة تنفيذ عقد موقّع: ${contract.contractNumber}`,
+        sourceType: "contract_signed", sourceId: contract.id, triggerKey: "signed",
+        linkedEntityType: "contract", linkedEntityId: contract.id,
+      }).catch(() => {});
+    }
     return res.json(contract);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
@@ -145,6 +166,83 @@ router.delete("/:id", async (req: Request, res: Response) => {
     return res.status(204).send();
   } catch {
     return res.status(500).json({ error: "فشل في حذف العقد" });
+  }
+});
+
+/* ═══════════════════════════════════════════
+   PROFITABILITY (Contract Cost Center)
+   Aggregates linked purchase orders, transport orders, and expenses
+   against the contract value to compute a live profit margin.
+═══════════════════════════════════════════ */
+router.get("/:id/profitability", async (req: Request, res: Response) => {
+  try {
+    const contractId = Number(req.params.id);
+    const userId = req.session.userId!;
+    const isAdmin = req.session.role === "admin";
+    if (!await canAccessContract(contractId, userId, isAdmin))
+      return res.status(403).json({ error: "لا تملك صلاحية الوصول إلى هذا العقد" });
+
+    const [contractRows, poRows, transportRows, expenseRows, incomeRows] = await Promise.all([
+      pool.query(`SELECT contract_value AS "contractValue" FROM contracts WHERE id = $1`, [contractId]),
+      pool.query(
+        `SELECT po.id, po.order_number AS "orderNumber", po.description, po.amount,
+                s.name AS "supplierName"
+         FROM direct_purchase_orders po
+         LEFT JOIN suppliers s ON s.id = po.supplier_id
+         WHERE po.contract_id = $1
+         ORDER BY po.order_date DESC NULLS LAST, po.created_at DESC`,
+        [contractId]
+      ),
+      pool.query(
+        `SELECT id, order_number AS "orderNumber", description, value, delivery_date AS "deliveryDate", status
+         FROM transportation_orders WHERE contract_id = $1 ORDER BY created_at DESC`,
+        [contractId]
+      ),
+      pool.query(
+        `SELECT id, description, amount, category, status, due_date AS "dueDate"
+         FROM finance_expenses WHERE contract_id = $1 ORDER BY created_at DESC`,
+        [contractId]
+      ),
+      pool.query(
+        `SELECT id, description, amount, date, category
+         FROM finance_income WHERE contract_id = $1 ORDER BY date DESC`,
+        [contractId]
+      ),
+    ]);
+
+    if (!contractRows.rows.length) return res.status(404).json({ error: "العقد غير موجود" });
+
+    const contractValue = Number(contractRows.rows[0].contractValue) || 0;
+    const purchases = poRows.rows;
+    const transport = transportRows.rows;
+    const expenses = expenseRows.rows;
+    const income = incomeRows.rows;
+
+    const sum = (arr: any[], key: string) => arr.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+    const purchasesTotal = sum(purchases, "amount");
+    const transportTotal = sum(transport, "value");
+    const expensesTotal = sum(expenses, "amount");
+    const incomeTotal = sum(income, "amount");
+
+    const byCategoryMap: Record<string, number> = {};
+    for (const e of expenses) byCategoryMap[e.category || "أخرى"] = (byCategoryMap[e.category || "أخرى"] || 0) + (Number(e.amount) || 0);
+    const expensesByCategory = Object.entries(byCategoryMap).map(([category, total]) => ({ category, total }));
+
+    const totalCost = purchasesTotal + transportTotal + expensesTotal;
+    const profit = contractValue - totalCost;
+    const profitPct = contractValue > 0 ? (profit / contractValue) * 100 : 0;
+
+    return res.json({
+      contractValue,
+      purchases: { total: purchasesTotal, rows: purchases },
+      transport: { total: transportTotal, rows: transport },
+      expenses: { total: expensesTotal, byCategory: expensesByCategory, rows: expenses },
+      income: { total: incomeTotal, rows: income },
+      totalCost, profit, profitPct,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في حساب ربحية العقد" });
   }
 });
 

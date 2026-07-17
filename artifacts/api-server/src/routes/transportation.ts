@@ -7,10 +7,13 @@ import {
   insertTransportationSchema,
   updateTransportationSchema,
   suppliersTable,
+  contractsTable,
   transportTeamsTable,
   transportTeamMembersTable,
   transportTasksTable,
+  insertTransportationBudgetSchema,
 } from "@workspace/db";
+import { insertAutomationTask } from "./task-automation";
 
 const router = Router();
 
@@ -33,6 +36,7 @@ router.get("/", async (req: Request, res: Response) => {
         id: transportationTable.id,
         orderNumber: transportationTable.orderNumber,
         supplierId: transportationTable.supplierId,
+        contractId: transportationTable.contractId,
         description: transportationTable.description,
         origin: transportationTable.origin,
         destination: transportationTable.destination,
@@ -42,12 +46,16 @@ router.get("/", async (req: Request, res: Response) => {
         status: transportationTable.status,
         vehicleInfo: transportationTable.vehicleInfo,
         notes: transportationTable.notes,
+        actualDeliveryDate: transportationTable.actualDeliveryDate,
+        completionNotes: transportationTable.completionNotes,
         createdAt: transportationTable.createdAt,
         updatedAt: transportationTable.updatedAt,
         supplierName: suppliersTable.name,
+        contractNumber: contractsTable.contractNumber,
       })
       .from(transportationTable)
-      .leftJoin(suppliersTable, eq(transportationTable.supplierId, suppliersTable.id));
+      .leftJoin(suppliersTable, eq(transportationTable.supplierId, suppliersTable.id))
+      .leftJoin(contractsTable, eq(transportationTable.contractId, contractsTable.id));
 
     const results = status
       ? await base.where(eq(transportationTable.status, status as string))
@@ -294,6 +302,209 @@ router.patch("/:id/location", async (req: Request, res: Response) => {
     return res.json(row);
   } catch {
     return res.status(500).json({ error: "فشل في تحديث الموقع" });
+  }
+});
+
+/* ══════════════════════════════════════
+   ORDER COMPLETION — static path, before /:id
+══════════════════════════════════════ */
+
+// PATCH /transportation/:id/complete — mark an order delivered with an actual
+// delivery date + optional completion notes (distinct from the planned deliveryDate)
+router.patch("/:id/complete", async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { actualDeliveryDate, completionNotes } = req.body as any;
+    if (!actualDeliveryDate) {
+      return res.status(400).json({ error: "تاريخ التسليم الفعلي مطلوب" });
+    }
+    const [row] = await db
+      .update(transportationTable)
+      .set({
+        status: "delivered",
+        actualDeliveryDate,
+        completionNotes: completionNotes || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(transportationTable.id, id))
+      .returning();
+    if (!row) return res.status(404).json({ error: "أمر النقل غير موجود" });
+    insertAutomationTask({
+      title: `متابعة ما بعد وصول شحنة: ${row.orderNumber ?? id}`,
+      sourceType: "transport_completed", sourceId: id, triggerKey: "completed",
+      linkedEntityType: "transportationOrder", linkedEntityId: id,
+    }).catch(() => {});
+    return res.json(row);
+  } catch {
+    return res.status(500).json({ error: "فشل في إتمام أمر النقل" });
+  }
+});
+
+// POST /transportation/:id/log-income — copy the order's value into finance_income as an actual recorded income entry
+router.post("/:id/log-income", async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const [order] = await db.select().from(transportationTable).where(eq(transportationTable.id, id));
+    if (!order) return res.status(404).json({ error: "أمر النقل غير موجود" });
+    if (!order.value) return res.status(400).json({ error: "لا توجد قيمة مسجّلة على هذا الأمر" });
+
+    const { rows } = await pool.query(
+      `INSERT INTO finance_income (contract_id, transportation_order_id, description, amount, date, category, created_by)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE, 'contract', $5)
+       RETURNING id, amount, date`,
+      [order.contractId ?? null, id, `فاتورة أمر نقل رقم ${order.orderNumber ?? id}`, order.value, req.session.userId!]
+    );
+    return res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في تسجيل الإيراد" });
+  }
+});
+
+/* ══════════════════════════════════════
+   BUDGETS (الميزانية) — static paths, before /:id
+══════════════════════════════════════ */
+
+router.get("/budgets", async (req: Request, res: Response) => {
+  try {
+    const { year } = req.query as Record<string, string>;
+    const conditions: string[] = [];
+    const params: any[] = [];
+    if (year) { params.push(Number(year)); conditions.push(`year = $${params.length}`); }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    const { rows } = await pool.query(
+      `SELECT id, year, month, amount, notes FROM transportation_budgets ${where} ORDER BY year DESC, month ASC`,
+      params
+    );
+    return res.json(rows);
+  } catch {
+    return res.status(500).json({ error: "فشل في جلب الميزانية" });
+  }
+});
+
+router.post("/budgets", async (req: Request, res: Response) => {
+  try {
+    const data = insertTransportationBudgetSchema.parse(req.body);
+    const { rows } = await pool.query(
+      `INSERT INTO transportation_budgets (year, month, amount, notes)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (year, month) DO UPDATE SET amount = EXCLUDED.amount, notes = EXCLUDED.notes, updated_at = now()
+       RETURNING id, year, month, amount, notes`,
+      [data.year, data.month, data.amount, data.notes ?? null]
+    );
+    return res.status(201).json(rows[0]);
+  } catch (err: any) {
+    if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
+    return res.status(500).json({ error: "فشل في حفظ الميزانية" });
+  }
+});
+
+router.get("/budgets/summary", async (req: Request, res: Response) => {
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const [monthly, income, capex, capexList, byType, byVehicle, byOrder, byWorkerCost] = await Promise.all([
+      pool.query(
+        `SELECT gs.month, COALESCE(b.amount, 0)::numeric AS budget,
+           COALESCE((
+             SELECT SUM(fe.amount) FROM finance_expenses fe
+             LEFT JOIN workers w ON w.id = fe.worker_id
+             WHERE EXTRACT(YEAR FROM fe.created_at)::int = $1
+               AND EXTRACT(MONTH FROM fe.created_at)::int = gs.month
+               AND (fe.transportation_order_id IS NOT NULL OR fe.vehicle_id IS NOT NULL
+                    OR (fe.worker_id IS NOT NULL AND w.assigned_module = 'transportation'))
+           ), 0)::numeric AS spent
+         FROM generate_series(1, 12) AS gs(month)
+         LEFT JOIN transportation_budgets b ON b.year = $1 AND b.month = gs.month
+         ORDER BY gs.month`,
+        [year]
+      ),
+      pool.query(
+        `SELECT EXTRACT(MONTH FROM fi.date)::int AS month, COALESCE(SUM(fi.amount), 0)::numeric AS income
+         FROM finance_income fi
+         WHERE fi.transportation_order_id IS NOT NULL AND EXTRACT(YEAR FROM fi.date)::int = $1
+         GROUP BY month`,
+        [year]
+      ),
+      pool.query(
+        `SELECT EXTRACT(MONTH FROM fv.purchase_date)::int AS month, COALESCE(SUM(fv.purchase_value), 0)::numeric AS capex
+         FROM fleet_vehicles fv
+         WHERE fv.purchase_date IS NOT NULL AND EXTRACT(YEAR FROM fv.purchase_date)::int = $1
+         GROUP BY month`,
+        [year]
+      ),
+      pool.query(
+        `SELECT fv.id, fv.plate_number AS "plateNumber", fv.make_model AS "makeModel",
+                fv.purchase_date AS "purchaseDate", fv.purchase_value AS "purchaseValue"
+         FROM fleet_vehicles fv
+         WHERE fv.purchase_date IS NOT NULL AND EXTRACT(YEAR FROM fv.purchase_date)::int = $1
+         ORDER BY fv.purchase_date DESC`,
+        [year]
+      ),
+      pool.query(
+        `SELECT CASE WHEN fe.transportation_order_id IS NOT NULL THEN 'أمر نقل' ELSE 'صيانة مركبة' END AS label,
+                COALESCE(SUM(fe.amount), 0)::numeric AS total
+         FROM finance_expenses fe
+         WHERE (fe.transportation_order_id IS NOT NULL OR fe.vehicle_id IS NOT NULL)
+           AND EXTRACT(YEAR FROM fe.created_at)::int = $1
+         GROUP BY label ORDER BY total DESC`,
+        [year]
+      ),
+      pool.query(
+        `SELECT fv.plate_number AS label, COALESCE(SUM(fe.amount), 0)::numeric AS total
+         FROM finance_expenses fe
+         JOIN fleet_vehicles fv ON fv.id = fe.vehicle_id
+         WHERE EXTRACT(YEAR FROM fe.created_at)::int = $1
+         GROUP BY fv.plate_number ORDER BY total DESC LIMIT 10`,
+        [year]
+      ),
+      pool.query(
+        `SELECT to2.order_number AS label, COALESCE(SUM(fe.amount), 0)::numeric AS total
+         FROM finance_expenses fe
+         JOIN transportation_orders to2 ON to2.id = fe.transportation_order_id
+         WHERE EXTRACT(YEAR FROM fe.created_at)::int = $1
+         GROUP BY to2.order_number ORDER BY total DESC LIMIT 10`,
+        [year]
+      ),
+      pool.query(
+        `SELECT w.full_name AS label, COALESCE(SUM(fe.amount), 0)::numeric AS total
+         FROM finance_expenses fe
+         JOIN workers w ON w.id = fe.worker_id
+         WHERE w.assigned_module = 'transportation' AND EXTRACT(YEAR FROM fe.created_at)::int = $1
+         GROUP BY w.full_name ORDER BY total DESC LIMIT 10`,
+        [year]
+      ),
+    ]);
+
+    const incomeByMonth: Record<number, number> = {};
+    for (const r of income.rows) incomeByMonth[r.month] = Number(r.income);
+    const capexByMonth: Record<number, number> = {};
+    for (const r of capex.rows) capexByMonth[r.month] = Number(r.capex);
+
+    const monthlyRows = monthly.rows.map((r: any) => {
+      const monthIncome = incomeByMonth[r.month] ?? 0;
+      const spent = Number(r.spent);
+      return { ...r, income: monthIncome, net: monthIncome - spent, capex: capexByMonth[r.month] ?? 0 };
+    });
+
+    const annualBudget = monthlyRows.reduce((s: number, r: any) => s + Number(r.budget), 0);
+    const annualSpent = monthlyRows.reduce((s: number, r: any) => s + Number(r.spent), 0);
+    const annualIncome = monthlyRows.reduce((s: number, r: any) => s + Number(r.income), 0);
+    const annualCapex = monthlyRows.reduce((s: number, r: any) => s + Number(r.capex), 0);
+
+    return res.json({
+      year,
+      annualBudget, annualSpent, annualRemaining: annualBudget - annualSpent,
+      annualIncome, annualCapex, annualNet: annualIncome - annualSpent,
+      monthly: monthlyRows,
+      capexList: capexList.rows,
+      byType: byType.rows,
+      byVehicle: byVehicle.rows,
+      byOrder: byOrder.rows,
+      byWorkerCost: byWorkerCost.rows,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في جلب ملخص الميزانية" });
   }
 });
 

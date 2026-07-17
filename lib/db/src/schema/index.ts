@@ -1,5 +1,6 @@
 export * from "./tenders";
 export * from "./government-entities";
+export * from "./entity-directory";
 export * from "./suppliers";
 export * from "./rfq-requests";
 export * from "./direct-purchase-orders";
@@ -19,3 +20,9 @@ export * from "./company-documents";
 export * from "./government-registrations";
 export * from "./competitors";
 export * from "./bid-results";
+export * from "./correspondence";
+export * from "./vehicles";
+export * from "./residency";
+export * from "./maintenance";
+export * from "./research";
+export * from "./pricing";

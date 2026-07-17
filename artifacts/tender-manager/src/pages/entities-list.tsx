@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { entitiesApi } from "@/lib/api";
+import { useLocation } from "wouter";
+import { entitiesApi, companiesApi } from "@/lib/api";
 import {
   Building2, Plus, Pencil, Trash2, X, Check, Download, Search,
   Phone, Mail, MapPin, User, Globe, LayoutGrid, List,
-  ExternalLink,
+  ExternalLink, Users,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { exportEntitiesToExcel } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
+import CorrespondenceSheet from "@/components/correspondence/correspondence-sheet";
+import { CompanyChips } from "@/components/company-switcher";
 
 const G  = "#D4A534";
 const GL = "#E8BE55";
@@ -18,8 +21,7 @@ const GR = "#132a18";
 const ENTITY_TYPES = ["وزارة", "هيئة", "مؤسسة", "شركة حكومية", "جامعة", "أخرى"];
 
 const emptyForm = {
-  name: "", type: "", contactPerson: "",
-  phone: "", email: "", website: "", address: "", notes: "",
+  name: "", type: "", website: "", address: "", notes: "", codePrefix: "",
 };
 
 const TYPE_COLORS: Record<string, { color: string; bg: string; border: string }> = {
@@ -62,9 +64,9 @@ function ContactRow({ icon: Icon, text, href, color = "#6b7280" }: { icon: any; 
 }
 
 /* ── Entity Card ── */
-function EntityCard({ entity, canEdit, onEdit, onDelete }: {
+function EntityCard({ entity, canEdit, onEdit, onDelete, onCorrespondence, onManageDirectory }: {
   entity: any; canEdit: boolean;
-  onEdit: (e: any) => void; onDelete: (id: number) => void;
+  onEdit: (e: any) => void; onDelete: (id: number) => void; onCorrespondence: (e: any) => void; onManageDirectory: (e: any) => void;
 }) {
   const ts = getTypeStyle(entity.type);
   const website = entity.website
@@ -93,6 +95,18 @@ function EntityCard({ entity, canEdit, onEdit, onDelete }: {
               <span style={{ display: "inline-block", marginTop: 4, padding: "2px 9px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: ts.bg, color: ts.color, border: `1px solid ${ts.border}` }}>{entity.type}</span>
             )}
           </div>
+        </div>
+        <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+          <button style={S.iconBtn} onClick={() => onManageDirectory(entity)} title="إدارة الاختصاصات والمسؤولين"
+            onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = `${G}18`}
+            onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = "transparent"}>
+            <Users size={13} color={GD} />
+          </button>
+          <button style={S.iconBtn} onClick={() => onCorrespondence(entity)} title="المراسلات"
+            onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = `${G}18`}
+            onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = "transparent"}>
+            <Mail size={13} color={GD} />
+          </button>
         </div>
         {canEdit && (
           <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
@@ -160,6 +174,7 @@ export default function EntitiesList() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const [showForm, setShowForm] = useState(false);
   const [editId,   setEditId]   = useState<number | null>(null);
@@ -167,10 +182,20 @@ export default function EntitiesList() {
   const [search,   setSearch]   = useState("");
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const [filterType, setFilterType] = useState("");
+  const [correspondenceFor, setCorrespondenceFor] = useState<{ id: number; label: string } | null>(null);
+  const [activeCompanyId, setActiveCompanyId] = useState<number | null>(null);
+
+  const { data: companies = [] } = useQuery<any[]>({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
+
+  useEffect(() => {
+    if (activeCompanyId === null && companies.length > 0) setActiveCompanyId(companies[0].id);
+    if (activeCompanyId !== null && !companies.some((c: any) => c.id === activeCompanyId)) setActiveCompanyId(companies[0]?.id ?? null);
+  }, [companies, activeCompanyId]);
 
   const { data: entities = [], isLoading } = useQuery({
-    queryKey: ["government-entities"],
-    queryFn: () => entitiesApi.list(),
+    queryKey: ["government-entities", activeCompanyId],
+    queryFn: () => entitiesApi.list(activeCompanyId),
+    enabled: !!activeCompanyId,
   });
 
   const isAdmin = user?.role === "admin";
@@ -196,13 +221,14 @@ export default function EntitiesList() {
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
   const openEdit  = (e: any) => {
     setEditId(e.id);
-    setForm({ name: e.name, type: e.type || "", contactPerson: e.contactPerson || "", phone: e.phone || "", email: e.email || "", website: e.website || "", address: e.address || "", notes: e.notes || "" });
+    setForm({ name: e.name, type: e.type || "", website: e.website || "", address: e.address || "", notes: e.notes || "", codePrefix: e.codePrefix || "" });
     setShowForm(true);
   };
   const handleSubmit = (ev: React.FormEvent) => {
     ev.preventDefault();
-    if (!form.name.trim()) return;
-    editId ? updateM.mutate({ id: editId, data: form }) : createM.mutate(form);
+    if (!form.name.trim() || !activeCompanyId) return;
+    const data = { ...form, companyId: activeCompanyId, codePrefix: form.codePrefix.trim() ? form.codePrefix.trim().toUpperCase() : null };
+    editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data);
   };
 
   const filtered = (entities as any[]).filter((e: any) => {
@@ -244,7 +270,7 @@ export default function EntitiesList() {
               <Download size={15} /> تصدير
             </button>
           )}
-          {canEdit && (
+          {canEdit && activeCompanyId && (
             <button style={{ display: "flex", alignItems: "center", gap: 6, background: `linear-gradient(135deg,${GL},${GD})`, color: "white", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: `0 4px 14px ${G}44`, fontFamily: "inherit" }} onClick={() => { closeForm(); setShowForm(true); }}>
               <Plus size={15} /> إضافة جهة
             </button>
@@ -252,6 +278,20 @@ export default function EntitiesList() {
         </div>
       </div>
 
+      {/* ── Companies ── */}
+      <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "14px 16px", marginBottom: 20, boxShadow: "0 2px 10px rgba(0,0,0,0.04)" }}>
+        <div style={{ fontSize: 11, fontWeight: 800, color: "#9ca3af", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>الشركات</div>
+        <CompanyChips activeId={activeCompanyId} onSelect={setActiveCompanyId} canEdit={canEdit} isAdmin={isAdmin} showDocCount={false} hideAddButton />
+      </div>
+
+      {companies.length === 0 ? (
+        <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", boxShadow: "0 2px 16px rgba(0,0,0,0.05)", padding: 60, textAlign: "center" }}>
+          <Building2 size={40} style={{ margin: "0 auto 12px", display: "block", opacity: 0.25 }} />
+          <p style={{ color: "#6b7280", fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>لا توجد شركات مضافة بعد</p>
+          <p style={{ color: "#9ca3af", fontSize: 12.5, margin: 0 }}>أضف شركة من الأعلى لتبدأ بإدارة جهاتها الحكومية</p>
+        </div>
+      ) : (
+      <>
       {/* ── Stats strip ── */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" as const }}>
         {[
@@ -307,7 +347,7 @@ export default function EntitiesList() {
                 </div>
               )
               : filtered.map((e: any) => (
-                <EntityCard key={e.id} entity={e} canEdit={canEdit} onEdit={openEdit} onDelete={id => deleteM.mutate(id)} />
+                <EntityCard key={e.id} entity={e} canEdit={canEdit} onEdit={openEdit} onDelete={id => deleteM.mutate(id)} onCorrespondence={ent => setCorrespondenceFor({ id: ent.id, label: ent.name })} onManageDirectory={ent => navigate(`/entities/${ent.id}`)} />
               ))}
         </div>
       )}
@@ -381,8 +421,20 @@ export default function EntitiesList() {
                               : <span style={{ color: "#d1d5db" }}>—</span>}
                           </td>
                           <td style={{ ...S.td, textAlign: "left" as const }}>
+                            <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                              <button style={S.iconBtn} onClick={() => navigate(`/entities/${e.id}`)} title="إدارة الاختصاصات والمسؤولين"
+                                onMouseEnter={ev => (ev.currentTarget as HTMLButtonElement).style.background = `${G}18`}
+                                onMouseLeave={ev => (ev.currentTarget as HTMLButtonElement).style.background = "transparent"}>
+                                <Users size={14} color={GD} />
+                              </button>
+                              <button style={S.iconBtn} onClick={() => setCorrespondenceFor({ id: e.id, label: e.name })} title="المراسلات"
+                                onMouseEnter={ev => (ev.currentTarget as HTMLButtonElement).style.background = `${G}18`}
+                                onMouseLeave={ev => (ev.currentTarget as HTMLButtonElement).style.background = "transparent"}>
+                                <Mail size={14} color={GD} />
+                              </button>
+                            </div>
                             {canEdit && (
-                              <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                              <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
                                 <button style={S.iconBtn} onClick={() => openEdit(e)} title="تعديل"
                                   onMouseEnter={ev => (ev.currentTarget as HTMLButtonElement).style.background = `${G}18`}
                                   onMouseLeave={ev => (ev.currentTarget as HTMLButtonElement).style.background = "transparent"}>
@@ -403,6 +455,8 @@ export default function EntitiesList() {
             </table>
           </div>
         </div>
+      )}
+      </>
       )}
 
       {/* ══════════════ DRAWER ══════════════ */}
@@ -428,18 +482,6 @@ export default function EntitiesList() {
                       {ENTITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label style={S.label}>الشخص المسؤول</label>
-                    <input style={S.input} value={form.contactPerson} onChange={e => setForm(p => ({ ...p, contactPerson: e.target.value }))} placeholder="اسم المسؤول" />
-                  </div>
-                  <div>
-                    <label style={S.label}><Phone size={10} style={{ display: "inline", marginLeft: 4 }} />الهاتف</label>
-                    <input style={S.input} value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} placeholder="+965 XXXX XXXX" dir="ltr" />
-                  </div>
-                  <div>
-                    <label style={S.label}><Mail size={10} style={{ display: "inline", marginLeft: 4 }} />البريد الإلكتروني</label>
-                    <input style={S.input} value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="example@gov.kw" dir="ltr" />
-                  </div>
                   <div style={{ gridColumn: "1 / -1" }}>
                     <label style={S.label}><Globe size={10} style={{ display: "inline", marginLeft: 4 }} />الموقع الإلكتروني</label>
                     <input style={S.input} value={form.website} onChange={e => setForm(p => ({ ...p, website: e.target.value }))} placeholder="www.example.gov.kw" dir="ltr" />
@@ -448,9 +490,17 @@ export default function EntitiesList() {
                     <label style={S.label}><MapPin size={10} style={{ display: "inline", marginLeft: 4 }} />العنوان</label>
                     <input style={S.input} value={form.address} onChange={e => setForm(p => ({ ...p, address: e.target.value }))} placeholder="العنوان" />
                   </div>
+                  <div>
+                    <label style={S.label}>بادئة ترقيم المراسلات</label>
+                    <input style={{ ...S.input, direction: "ltr" as const }} value={form.codePrefix} onChange={e => setForm(p => ({ ...p, codePrefix: e.target.value }))} placeholder="مثال: MOE" maxLength={10} />
+                  </div>
                   <div style={{ gridColumn: "1 / -1" }}>
                     <label style={S.label}>ملاحظات</label>
                     <textarea style={{ ...S.input, height: 72, resize: "vertical" as const }} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="ملاحظات إضافية" />
+                  </div>
+                  <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: "#fdf8ec", border: "1px solid #f0e4b0", fontSize: 11.5, color: "#8a6a1f" }}>
+                    <Users size={13} />
+                    إدارة الاختصاصات والمسؤولين وأرقام التواصل تتم من زر "إدارة الاختصاصات" على بطاقة الجهة بعد الحفظ.
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
@@ -463,6 +513,16 @@ export default function EntitiesList() {
             </div>
           </div>
         </>
+      )}
+      {correspondenceFor && (
+        <CorrespondenceSheet
+          open={!!correspondenceFor}
+          onOpenChange={(o) => !o && setCorrespondenceFor(null)}
+          sourceType="government_entity"
+          sourceId={correspondenceFor.id}
+          recordLabel={correspondenceFor.label}
+          governmentEntityId={correspondenceFor.id}
+        />
       )}
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
     </div>

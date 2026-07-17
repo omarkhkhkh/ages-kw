@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, maintenanceApi, purchaseOrdersApi, vehiclesApi } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import * as XLSX from "xlsx";
 import {
@@ -38,8 +38,8 @@ const EXPENSE_STATUS: Record<string, { label: string; color: string; bg: string;
 
 const INCOME_CATS = ["contract", "other", "bonus", "penalty"];
 const INCOME_CAT_AR: Record<string, string> = { contract: "عقد", other: "أخرى", bonus: "مكافأة", penalty: "غرامة" };
-const EXPENSE_CATS = ["general", "salary", "rent", "utilities", "maintenance", "tax", "other"];
-const EXPENSE_CAT_AR: Record<string, string> = { general: "عام", salary: "رواتب", rent: "إيجار", utilities: "مرافق", maintenance: "صيانة", tax: "ضرائب", other: "أخرى" };
+const EXPENSE_CATS = ["general", "salary", "rent", "utilities", "maintenance", "tax", "customs", "customs_clearance", "installation", "labor", "residency", "fuel", "vehicle_service", "other"];
+const EXPENSE_CAT_AR: Record<string, string> = { general: "عام", salary: "رواتب", rent: "إيجار", utilities: "مرافق", maintenance: "صيانة", tax: "ضرائب", customs: "جمارك", customs_clearance: "تخليص جمركي", installation: "تركيب", labor: "عمالة", residency: "إقامة", fuel: "بنزين", vehicle_service: "سيرفس مركبة", other: "أخرى" };
 
 /* ═══════════════════════════════════════════════════
    TYPES
@@ -50,7 +50,13 @@ interface IncomeRow {
   createdAt: string; employeeName: string | null; contractNumber: string | null;
 }
 interface ExpenseRow {
-  id: number; description: string; amount: string; dueDate: string | null;
+  id: number; contractId: number | null; contractNumber: string | null;
+  purchaseOrderId: number | null; purchaseOrderNumber: string | null;
+  maintenanceWorkOrderId: number | null; maintenanceWorkOrderNumber: string | null;
+  transportationOrderId: number | null; transportationOrderNumber: string | null;
+  vehicleId: number | null; vehiclePlateNumber: string | null;
+  workerId: number | null; workerName: string | null;
+  description: string; amount: string; dueDate: string | null;
   paidDate: string | null; status: string; category: string; vendor: string | null;
   notes: string | null; createdAt: string;
 }
@@ -71,6 +77,7 @@ interface ContractDir { id: number; contractNumber: string; }
    TAB 1 — SUMMARY (الرصيد)
 ═══════════════════════════════════════════════════ */
 interface CatBreakdown { category: string; count: number; total: string; paid: string; pending: string; overdue: string; pct: string; }
+interface ModuleBreakdown { module: string; count: number; total: string; paid: string; pending: string; overdue: string; pct: string; }
 
 function SummaryTab() {
   const { data: summary, isLoading } = useQuery<Summary>({
@@ -81,9 +88,15 @@ function SummaryTab() {
     queryKey: ["finance-expenses-by-cat"],
     queryFn: () => apiFetch("/api/finance/expenses/by-category"),
   });
+  const { data: moduleData } = useQuery<{ rows: ModuleBreakdown[]; grandTotal: number }>({
+    queryKey: ["finance-expenses-by-module"],
+    queryFn: () => apiFetch("/api/finance/expenses/by-module"),
+  });
 
-  const AR_ECAT: Record<string,string> = { general:"عام",salary:"رواتب",rent:"إيجار",utilities:"مرافق",maintenance:"صيانة",tax:"ضرائب",other:"أخرى" };
-  const CAT_COLORS: Record<string,string> = { general:"#6b7280",salary:"#7c3aed",rent:"#d97706",utilities:"#2563eb",maintenance:"#ea580c",tax:"#dc2626",other:"#374151" };
+  const AR_ECAT: Record<string,string> = { general:"عام",salary:"رواتب",rent:"إيجار",utilities:"مرافق",maintenance:"صيانة",tax:"ضرائب",customs:"جمارك",customs_clearance:"تخليص جمركي",installation:"تركيب",labor:"عمالة",residency:"إقامة",fuel:"بنزين",vehicle_service:"سيرفس مركبة",other:"أخرى" };
+  const CAT_COLORS: Record<string,string> = { general:"#6b7280",salary:"#7c3aed",rent:"#d97706",utilities:"#2563eb",maintenance:"#ea580c",tax:"#dc2626",customs:"#0891b2",customs_clearance:"#0e7490",installation:"#16a34a",labor:"#a16207",residency:"#0d9488",fuel:"#ca8a04",vehicle_service:"#4338ca",other:"#374151" };
+  const AR_MODULE: Record<string,string> = { maintenance:"الصيانة", transportation:"النقل والمركبات", contract:"العقود", purchase_order:"أوامر الشراء", other:"أخرى" };
+  const MODULE_COLORS: Record<string,string> = { maintenance:"#ea580c", transportation:"#2563eb", contract:"#7c3aed", purchase_order:"#0891b2", other:"#374151" };
 
   const metrics = summary ? [
     { label: "إجمالي الإيرادات",     value: summary.totalIncome,  color: "#16a34a", bg: "#f0fdf4", border: "#bbf7d0", icon: TrendingUp    },
@@ -197,6 +210,37 @@ function SummaryTab() {
         )}
       </div>
 
+      {/* ── Expenses by module (control-center) breakdown ── */}
+      {moduleData && moduleData.rows.length > 0 && (
+        <div style={{ ...card(), padding: "22px 26px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+            <Scale size={18} color={G} />
+            <span style={{ fontSize: 14, fontWeight: 800, color: GR }}>توزيع المصروفات حسب الوحدة</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: 14 }}>
+            {moduleData.rows.map(r => {
+              const color = MODULE_COLORS[r.module] ?? "#6b7280";
+              const pct   = Number(r.pct);
+              return (
+                <div key={r.module}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color }}>{AR_MODULE[r.module] ?? r.module}</span>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <span style={{ fontSize: 11, color: "#9ca3af" }}>{r.count} فاتورة</span>
+                      <span style={{ fontSize: 12, color: "#374151", direction: "ltr" }}>{kwd(r.total)}</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color, minWidth: 38, textAlign: "right" }}>{pct.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 4, background: "#f3f4f6", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 4, transition: "width 0.6s" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ── Pending / Overdue alert strip ── */}
       {summary && (Number(summary.totalPending) > 0 || Number(summary.totalOverdue) > 0) && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
@@ -246,6 +290,11 @@ function IncomeTab({ isAdmin }: { isAdmin: boolean }) {
   const { data: users = [] } = useQuery<UserDir[]>({
     queryKey: ["users-directory"],
     queryFn: () => apiFetch("/api/users/directory"),
+    enabled: isAdmin,
+  });
+  const { data: contracts = [] } = useQuery<ContractDir[]>({
+    queryKey: ["contracts", "all"],
+    queryFn: () => apiFetch("/api/contracts"),
     enabled: isAdmin,
   });
 
@@ -355,6 +404,13 @@ function IncomeTab({ isAdmin }: { isAdmin: boolean }) {
                 {users.map(u => <option key={u.id} value={u.id}>{u.fullName}</option>)}
               </select>
             </div>
+            <div>
+              <label style={lbl}>العقد المرتبط</label>
+              <select value={form.contractId} onChange={e => setForm((f: any) => ({ ...f, contractId: e.target.value }))} style={inp}>
+                <option value="">— بدون —</option>
+                {contracts.map(c => <option key={c.id} value={c.id}>{c.contractNumber}</option>)}
+              </select>
+            </div>
             <div style={{ gridColumn: "1/-1" }}>
               <label style={lbl}>الملاحظات</label>
               <textarea value={form.notes} onChange={e => setForm((f: any) => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات إضافية..." style={{ ...inp, height: 60, resize: "vertical" } as any} onFocus={focus} onBlur={blur} />
@@ -383,7 +439,7 @@ function IncomeTab({ isAdmin }: { isAdmin: boolean }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "2px solid #f0ead8", background: "#fdf8ec" }}>
-                  {["التاريخ","الوصف","المبلغ","الفئة","الموظف","الملاحظات",""].map(h => (
+                  {["التاريخ","الوصف","المبلغ","الفئة","العقد","الموظف","الملاحظات",""].map(h => (
                     <th key={h} style={{ padding: "12px 14px", textAlign: "right", fontWeight: 800, color: "#374151", fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -395,6 +451,7 @@ function IncomeTab({ isAdmin }: { isAdmin: boolean }) {
                     <td style={{ padding: "11px 14px", color: GR, fontWeight: 700 }}>{row.description}</td>
                     <td style={{ padding: "11px 14px", color: "#16a34a", fontWeight: 800, direction: "ltr", textAlign: "right", whiteSpace: "nowrap" }}>{kwd(row.amount)}</td>
                     <td style={{ padding: "11px 14px" }}><span style={{ padding: "3px 10px", borderRadius: 10, background: "#f0fdf4", color: "#16a34a", fontSize: 11, fontWeight: 700 }}>{INCOME_CAT_AR[row.category] ?? row.category}</span></td>
+                    <td style={{ padding: "11px 14px", color: "#6b7280" }}>{row.contractNumber ?? "—"}</td>
                     <td style={{ padding: "11px 14px", color: "#6b7280" }}>{row.employeeName ?? "—"}</td>
                     <td style={{ padding: "11px 14px", color: "#9ca3af", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.notes ?? "—"}</td>
                     <td style={{ padding: "11px 14px" }}>
@@ -417,8 +474,8 @@ function IncomeTab({ isAdmin }: { isAdmin: boolean }) {
 /* ═══════════════════════════════════════════════════
    TAB 3 — EXPENSES (المصروفات)
 ═══════════════════════════════════════════════════ */
-const expenseEmpty = { description: "", amount: "", dueDate: "", paidDate: "", status: "pending", category: "general", vendor: "", notes: "" };
-const CAT_COLORS_EXP: Record<string,string> = { general:"#6b7280",salary:"#7c3aed",rent:"#d97706",utilities:"#2563eb",maintenance:"#ea580c",tax:"#dc2626",other:"#374151" };
+const expenseEmpty = { contractId: "", purchaseOrderId: "", maintenanceWorkOrderId: "", transportationOrderId: "", vehicleId: "", workerId: "", description: "", amount: "", dueDate: "", paidDate: "", status: "pending", category: "general", vendor: "", notes: "" };
+const CAT_COLORS_EXP: Record<string,string> = { general:"#6b7280",salary:"#7c3aed",rent:"#d97706",utilities:"#2563eb",maintenance:"#ea580c",tax:"#dc2626",customs:"#0891b2",customs_clearance:"#0e7490",installation:"#16a34a",labor:"#a16207",residency:"#0d9488",fuel:"#ca8a04",vehicle_service:"#4338ca",other:"#374151" };
 
 function ExpensesTab({ isAdmin }: { isAdmin: boolean }) {
   const qc = useQueryClient();
@@ -444,6 +501,36 @@ function ExpensesTab({ isAdmin }: { isAdmin: boolean }) {
     queryFn: () => apiFetch("/api/finance/expenses/by-category"),
     enabled: isAdmin,
   });
+  const { data: contracts = [] } = useQuery<ContractDir[]>({
+    queryKey: ["contracts", "all"],
+    queryFn: () => apiFetch("/api/contracts"),
+    enabled: isAdmin,
+  });
+  const { data: purchaseOrders = [] } = useQuery<any[]>({
+    queryKey: ["purchase-orders", "all"],
+    queryFn: () => purchaseOrdersApi.list(),
+    enabled: isAdmin,
+  });
+  const { data: workOrders = [] } = useQuery<any[]>({
+    queryKey: ["maintenance-work-orders", "all"],
+    queryFn: () => maintenanceApi.workOrders.list(),
+    enabled: isAdmin,
+  });
+  const { data: transportOrders = [] } = useQuery<any[]>({
+    queryKey: ["transportation", "all"],
+    queryFn: () => apiFetch("/api/transportation"),
+    enabled: isAdmin,
+  });
+  const { data: vehicles = [] } = useQuery<any[]>({
+    queryKey: ["vehicles", "all"],
+    queryFn: () => vehiclesApi.list(),
+    enabled: isAdmin,
+  });
+  const { data: workers = [] } = useQuery<any[]>({
+    queryKey: ["residency-workers", "all"],
+    queryFn: () => apiFetch("/api/residency/workers"),
+    enabled: isAdmin,
+  });
 
   /* ── totals from raw data ── */
   const pending = expenses.filter(e => e.status === "pending").reduce((s, e) => s + Number(e.amount), 0);
@@ -467,7 +554,15 @@ function ExpensesTab({ isAdmin }: { isAdmin: boolean }) {
 
   const closeForm = () => { setShowForm(false); setEditing(null); setForm({ ...expenseEmpty }); };
   const handleSave = () => {
-    const payload = { ...form, amount: Number(form.amount), dueDate: form.dueDate || null, paidDate: form.paidDate || null };
+    const payload = {
+      ...form, amount: Number(form.amount), dueDate: form.dueDate || null, paidDate: form.paidDate || null,
+      contractId: form.contractId || null,
+      purchaseOrderId: form.purchaseOrderId || null,
+      maintenanceWorkOrderId: form.maintenanceWorkOrderId || null,
+      transportationOrderId: form.transportationOrderId || null,
+      vehicleId: form.vehicleId || null,
+      workerId: form.workerId || null,
+    };
     if (editing) updateMut.mutate({ id: editing.id, data: payload });
     else createMut.mutate(payload);
   };
@@ -699,6 +794,48 @@ function ExpensesTab({ isAdmin }: { isAdmin: boolean }) {
               <label style={lbl}>المورد / الجهة</label>
               <input value={form.vendor} onChange={e => setForm((f: any) => ({ ...f, vendor: e.target.value }))} placeholder="اسم المورد أو الجهة" style={inp} onFocus={focus} onBlur={blur} />
             </div>
+            <div>
+              <label style={lbl}>العقد المرتبط</label>
+              <select value={form.contractId} onChange={e => setForm((f: any) => ({ ...f, contractId: e.target.value }))} style={inp}>
+                <option value="">— بدون —</option>
+                {contracts.map(c => <option key={c.id} value={c.id}>{c.contractNumber}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>أمر الشراء المرتبط</label>
+              <select value={form.purchaseOrderId} onChange={e => setForm((f: any) => ({ ...f, purchaseOrderId: e.target.value }))} style={inp}>
+                <option value="">— بدون —</option>
+                {purchaseOrders.map((p: any) => <option key={p.id} value={p.id}>{p.orderNumber}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>أمر الصيانة المرتبط</label>
+              <select value={form.maintenanceWorkOrderId} onChange={e => setForm((f: any) => ({ ...f, maintenanceWorkOrderId: e.target.value }))} style={inp}>
+                <option value="">— بدون —</option>
+                {workOrders.map((w: any) => <option key={w.id} value={w.id}>{w.orderNumber}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>أمر النقل المرتبط</label>
+              <select value={form.transportationOrderId} onChange={e => setForm((f: any) => ({ ...f, transportationOrderId: e.target.value }))} style={inp}>
+                <option value="">— بدون —</option>
+                {transportOrders.map((t: any) => <option key={t.id} value={t.id}>{t.orderNumber}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>المركبة المرتبطة</label>
+              <select value={form.vehicleId} onChange={e => setForm((f: any) => ({ ...f, vehicleId: e.target.value }))} style={inp}>
+                <option value="">— بدون —</option>
+                {vehicles.map((v: any) => <option key={v.id} value={v.id}>{v.plateNumber}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>العامل المرتبط</label>
+              <select value={form.workerId} onChange={e => setForm((f: any) => ({ ...f, workerId: e.target.value }))} style={inp}>
+                <option value="">— بدون —</option>
+                {workers.map((w: any) => <option key={w.id} value={w.id}>{w.fullName}</option>)}
+              </select>
+            </div>
             <div style={{ gridColumn: "1/-1" }}>
               <label style={lbl}>الملاحظات</label>
               <textarea value={form.notes} onChange={e => setForm((f: any) => ({ ...f, notes: e.target.value }))} placeholder="ملاحظات..." style={{ ...inp, height: 60, resize: "vertical" } as any} onFocus={focus} onBlur={blur} />
@@ -730,7 +867,7 @@ function ExpensesTab({ isAdmin }: { isAdmin: boolean }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: "2px solid #f0ead8", background: "#fdf8ec" }}>
-                  {["الوصف","المبلغ","الحالة","الاستحقاق","الدفع","الجهة","الفئة",""].map(h => (
+                  {["الوصف","المبلغ","الحالة","الاستحقاق","الدفع","الجهة","الفئة","العقد",""].map(h => (
                     <th key={h} style={{ padding: "12px 14px", textAlign: "right", fontWeight: 800, color: "#374151", fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -757,12 +894,13 @@ function ExpensesTab({ isAdmin }: { isAdmin: boolean }) {
                           {EXPENSE_CAT_AR[row.category] ?? row.category}
                         </span>
                       </td>
+                      <td style={{ padding: "11px 14px", color: "#6b7280" }}>{row.contractNumber ?? "—"}</td>
                       <td style={{ padding: "11px 14px" }}>
                         <div style={{ display: "flex", gap: 5 }}>
                           {row.status !== "paid" && (
                             <button onClick={() => markPaid(row)} style={{ padding: "4px 8px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#16a34a", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>✓ دفع</button>
                           )}
-                          <button onClick={() => { setEditing(row); setShowForm(false); setForm({ description: row.description, amount: row.amount, dueDate: row.dueDate ?? "", paidDate: row.paidDate ?? "", status: row.status, category: row.category, vendor: row.vendor ?? "", notes: row.notes ?? "" }); }}
+                          <button onClick={() => { setEditing(row); setShowForm(false); setForm({ description: row.description, amount: row.amount, dueDate: row.dueDate ?? "", paidDate: row.paidDate ?? "", status: row.status, category: row.category, vendor: row.vendor ?? "", notes: row.notes ?? "", contractId: row.contractId ?? "", purchaseOrderId: row.purchaseOrderId ?? "", maintenanceWorkOrderId: row.maintenanceWorkOrderId ?? "", transportationOrderId: row.transportationOrderId ?? "", vehicleId: row.vehicleId ?? "", workerId: row.workerId ?? "" }); }}
                             style={{ padding: "4px 8px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#2563eb", cursor: "pointer", fontFamily: "inherit" }}><Pencil size={12} /></button>
                           <button onClick={() => { if (confirm("حذف هذه الفاتورة؟")) deleteMut.mutate(row.id); }}
                             style={{ padding: "4px 8px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#fff1f2", border: "1px solid #fecaca", color: "#dc2626", cursor: "pointer", fontFamily: "inherit" }}><Trash2 size={12} /></button>
@@ -782,7 +920,7 @@ function ExpensesTab({ isAdmin }: { isAdmin: boolean }) {
                     <td style={{ padding: "10px 14px", fontWeight: 900, color: "#dc2626", direction: "ltr", textAlign: "right", fontSize: 13 }}>
                       {kwd(filtered.reduce((s,e) => s + Number(e.amount), 0))}
                     </td>
-                    <td colSpan={6} style={{ padding: "10px 14px" }}>
+                    <td colSpan={7} style={{ padding: "10px 14px" }}>
                       <div style={{ display: "flex", gap: 16, fontSize: 11 }}>
                         <span style={{ color: "#d97706", fontWeight: 700 }}>انتظار: {kwd(filtered.filter(e=>e.status==="pending").reduce((s,e)=>s+Number(e.amount),0))}</span>
                         <span style={{ color: "#16a34a", fontWeight: 700 }}>مدفوع: {kwd(filtered.filter(e=>e.status==="paid").reduce((s,e)=>s+Number(e.amount),0))}</span>

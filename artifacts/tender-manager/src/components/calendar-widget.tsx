@@ -1,11 +1,11 @@
 import { useState, useMemo } from "react";
-import { ChevronRight, ChevronLeft, CalendarDays, Briefcase, FileText, FolderOpen, ListChecks, ShoppingCart, ShieldAlert, FileSignature } from "lucide-react";
+import { ChevronRight, ChevronLeft, CalendarDays, Briefcase, FileText, FolderOpen, ListChecks, ShoppingCart, ShieldAlert, FileSignature, Mail } from "lucide-react";
 
 /* ─────────────────── Types ─────────────────── */
 export interface CalendarEvent {
   id: string;
   date: Date;
-  type: "tender" | "contract" | "project" | "task" | "rfq" | "guarantee" | "purchase";
+  type: "tender" | "contract" | "project" | "task" | "rfq" | "guarantee" | "purchase" | "correspondence";
   title: string;
   subLabel: string;
   priority?: string;
@@ -27,6 +27,7 @@ export const EVENT_META: Record<CalendarEvent["type"], {
   rfq:       { color: "#b45309", bg: "#fefce8", border: "#fde68a", label: "طلب عروض", icon: Briefcase },
   guarantee: { color: "#dc2626", bg: "#fff1f2", border: "#fecaca", label: "ضمان بنكي", icon: ShieldAlert },
   purchase:  { color: "#0891b2", bg: "#ecfeff", border: "#a5f3fc", label: "أمر شراء", icon: ShoppingCart },
+  correspondence: { color: "#be185d", bg: "#fdf2f8", border: "#fbcfe8", label: "خطاب", icon: Mail },
 };
 
 const PRIORITY_AR: Record<string, string> = {

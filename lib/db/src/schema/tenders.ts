@@ -2,6 +2,8 @@ import { pgTable, serial, text, numeric, boolean, timestamp, date, integer } fro
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { governmentEntitiesTable } from "./government-entities";
+import { companiesTable } from "./company-documents";
+import { departmentsTable, governmentContactsTable } from "./entity-directory";
 
 export const tendersTable = pgTable("tenders", {
   id: serial("id").primaryKey(),
@@ -9,12 +11,17 @@ export const tendersTable = pgTable("tenders", {
   // Legacy text field kept for backward compat; prefer governmentEntityId going forward
   governmentEntity: text("government_entity"),
   governmentEntityId: integer("government_entity_id").references(() => governmentEntitiesTable.id, { onDelete: "set null" }),
+  departmentId: integer("department_id").references(() => departmentsTable.id, { onDelete: "set null" }), // الاختصاص
+  contactId: integer("contact_id").references(() => governmentContactsTable.id, { onDelete: "set null" }), // المسؤول
+  companyId: integer("company_id").references(() => companiesTable.id, { onDelete: "set null" }), // الشركة المشاركة
   projectName: text("project_name").notNull(),
   tenderType: text("tender_type"),
   referenceNumber: text("reference_number"),
   competitionType: text("competition_type"), // عامة، محدودة، مباشرة
   announcementDate: date("announcement_date"),
   deadline: date("deadline"),
+  preliminaryMeetingHeld: boolean("preliminary_meeting_held").notNull().default(false), // هل عُقد الاجتماع التمهيدي
+  preliminaryMeetingDate: date("preliminary_meeting_date"), // تاريخ الاجتماع التمهيدي
   executionDuration: integer("execution_duration"), // بالأيام
   bondValue: numeric("bond_value", { precision: 15, scale: 2 }),
   docsValue: numeric("docs_value", { precision: 15, scale: 2 }),

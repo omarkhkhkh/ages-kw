@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { eq, ilike, or, sql, and } from "drizzle-orm";
-import { db, tendersTable, pool } from "@workspace/db";
+import { db, tendersTable, departmentsTable, governmentContactsTable, pool } from "@workspace/db";
+import { insertAutomationTask } from "./task-automation";
 
 const router = Router();
 
@@ -9,10 +10,16 @@ function formatTender(t: typeof tendersTable.$inferSelect) {
     id: t.id,
     tenderNumber: t.tenderNumber,
     governmentEntity: t.governmentEntity,
+    governmentEntityId: t.governmentEntityId,
+    departmentId: t.departmentId,
+    contactId: t.contactId,
+    companyId: t.companyId,
     projectName: t.projectName,
     tenderType: t.tenderType,
     announcementDate: t.announcementDate,
     deadline: t.deadline,
+    preliminaryMeetingHeld: t.preliminaryMeetingHeld,
+    preliminaryMeetingDate: t.preliminaryMeetingDate,
     bondValue: t.bondValue !== null ? Number(t.bondValue) : null,
     docsValue: t.docsValue !== null ? Number(t.docsValue) : null,
     responsibleEngineer: t.responsibleEngineer,
@@ -194,7 +201,19 @@ router.get("/:id", async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  res.json(formatTender(rows[0]));
+  const tender = rows[0];
+  let departmentName: string | null = null;
+  let contactName: string | null = null;
+  if (tender.departmentId) {
+    const [dept] = await db.select().from(departmentsTable).where(eq(departmentsTable.id, tender.departmentId));
+    departmentName = dept?.name ?? null;
+  }
+  if (tender.contactId) {
+    const [contact] = await db.select().from(governmentContactsTable).where(eq(governmentContactsTable.id, tender.contactId));
+    contactName = contact?.name ?? null;
+  }
+
+  res.json({ ...formatTender(tender), departmentName, contactName });
 });
 
 // POST /api/tenders
@@ -216,10 +235,16 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
     .values({
       tenderNumber: String(body.tenderNumber),
       governmentEntity: body.governmentEntity ? String(body.governmentEntity) : null,
+      governmentEntityId: body.governmentEntityId ? Number(body.governmentEntityId) : null,
+      departmentId: body.departmentId ? Number(body.departmentId) : null,
+      contactId: body.contactId ? Number(body.contactId) : null,
+      companyId: body.companyId ? Number(body.companyId) : null,
       projectName: String(body.projectName),
       tenderType: body.tenderType ? String(body.tenderType) : null,
       announcementDate: body.announcementDate ? String(body.announcementDate) : null,
       deadline: body.deadline ? String(body.deadline) : null,
+      preliminaryMeetingHeld: Boolean(body.preliminaryMeetingHeld ?? false),
+      preliminaryMeetingDate: body.preliminaryMeetingDate ? String(body.preliminaryMeetingDate) : null,
       bondValue: body.bondValue != null ? String(body.bondValue) : null,
       docsValue: body.docsValue != null ? String(body.docsValue) : null,
       responsibleEngineer: body.responsibleEngineer ? String(body.responsibleEngineer) : null,
@@ -231,6 +256,12 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
       notes: body.notes ? String(body.notes) : null,
     })
     .returning();
+
+  insertAutomationTask({
+    title: `متابعة مناقصة جديدة: ${rows[0].projectName}`,
+    sourceType: "tender_created", sourceId: rows[0].id, triggerKey: "created",
+    linkedEntityType: "tender", linkedEntityId: rows[0].id, dueDate: rows[0].deadline,
+  }).catch(() => {});
 
   res.status(201).json(formatTender(rows[0]));
 });
@@ -260,10 +291,16 @@ router.patch("/:id", async (req: Request, res: Response): Promise<void> => {
 
   if (body.tenderNumber !== undefined) updates.tenderNumber = String(body.tenderNumber);
   if (body.governmentEntity !== undefined) updates.governmentEntity = body.governmentEntity ? String(body.governmentEntity) : null;
+  if (body.governmentEntityId !== undefined) updates.governmentEntityId = body.governmentEntityId ? Number(body.governmentEntityId) : null;
+  if (body.departmentId !== undefined) updates.departmentId = body.departmentId ? Number(body.departmentId) : null;
+  if (body.contactId !== undefined) updates.contactId = body.contactId ? Number(body.contactId) : null;
+  if (body.companyId !== undefined) updates.companyId = body.companyId ? Number(body.companyId) : null;
   if (body.projectName !== undefined) updates.projectName = String(body.projectName);
   if (body.tenderType !== undefined) updates.tenderType = body.tenderType ? String(body.tenderType) : null;
   if (body.announcementDate !== undefined) updates.announcementDate = body.announcementDate ? String(body.announcementDate) : null;
   if (body.deadline !== undefined) updates.deadline = body.deadline ? String(body.deadline) : null;
+  if (body.preliminaryMeetingHeld !== undefined) updates.preliminaryMeetingHeld = Boolean(body.preliminaryMeetingHeld);
+  if (body.preliminaryMeetingDate !== undefined) updates.preliminaryMeetingDate = body.preliminaryMeetingDate ? String(body.preliminaryMeetingDate) : null;
   if (body.bondValue !== undefined) updates.bondValue = body.bondValue != null ? String(body.bondValue) : null;
   if (body.docsValue !== undefined) updates.docsValue = body.docsValue != null ? String(body.docsValue) : null;
   if (body.responsibleEngineer !== undefined) updates.responsibleEngineer = body.responsibleEngineer ? String(body.responsibleEngineer) : null;

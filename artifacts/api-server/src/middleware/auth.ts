@@ -22,6 +22,14 @@ declare module "express-session" {
     accessPo: boolean;
     accessTransportation: boolean;
     accessFinance: boolean;
+    accessCorrespondence: boolean;
+    accessResidency: boolean;
+    accessMaintenance: boolean;
+    accessResearch: boolean;
+    accessPricing: boolean;
+    accessTasks: boolean;
+    taskViewScope: string;
+    taskCanApprove: boolean;
   }
 }
 
@@ -68,6 +76,12 @@ const MODULE_LABELS: Record<string, string> = {
   accessPo:             "أوامر الشراء المباشر",
   accessTransportation: "النقل والتوزيع",
   accessFinance:        "الإدارة المالية",
+  accessCorrespondence: "المراسلات",
+  accessResidency:      "إدارة الإقامات",
+  accessMaintenance:    "إدارة الصيانة",
+  accessResearch:       "البحث والتطوير",
+  accessPricing:        "التسعير",
+  accessTasks:          "المهام / مركز العمليات",
 };
 
 const MODULE_KEY_MAP: Record<string, string> = {
@@ -81,13 +95,20 @@ const MODULE_KEY_MAP: Record<string, string> = {
   accessPo:             "po",
   accessTransportation: "transportation",
   accessFinance:        "finance",
+  accessCorrespondence: "correspondence",
+  accessResidency:      "residency",
+  accessMaintenance:    "maintenance",
+  accessResearch:       "research",
+  accessPricing:        "pricing",
+  accessTasks:          "tasks",
 };
 
 // Factory: creates middleware that checks session access to a specific module.
 // Admins bypass all module restrictions. Blocked attempts are logged to activity_logs.
 export function requireModule(field: keyof Pick<Express.Request["session"],
   "accessTenders" | "accessEntities" | "accessSuppliers" | "accessProjects" |
-  "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo" | "accessTransportation" | "accessFinance"
+  "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo" | "accessTransportation" | "accessFinance" |
+  "accessCorrespondence" | "accessResidency" | "accessMaintenance" | "accessResearch" | "accessPricing" | "accessTasks"
 >) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.session?.userId) {

@@ -47,3 +47,17 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Local object storage (uploaded files)
+artifacts/api-server/uploads/
+artifacts/uploads/
+
+# Environment variables — never commit secrets
+.env
+.env.*
+
+# Logs
+*.log
+
+# Claude Code local session data / worktrees
+.claude/

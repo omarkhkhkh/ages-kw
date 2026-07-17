@@ -1,18 +1,23 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { contractsApi, entitiesApi } from "@/lib/api";
+import { contractsApi, companiesApi } from "@/lib/api";
 import {
   FileSignature, Plus, Pencil, Trash2, X, Check, Download,
   Building2, Banknote, CalendarDays, CheckCircle2, XCircle, Clock,
   LayoutGrid, Paperclip, Upload, Shield, MessageSquare, ChevronDown,
   AlertTriangle, Eye, EyeOff, Send, FileText, Trash,
-  Landmark, Save,
+  Landmark, Save, Mail, TrendingUp, TrendingDown, Truck, ShoppingCart, Loader2,
+  Info, Users, UserCheck, StickyNote, ClipboardList, Calculator,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { exportContractsToExcel } from "@/lib/export";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import CorrespondenceSheet from "@/components/correspondence/correspondence-sheet";
 import { useListTenders } from "@workspace/api-client-react";
+import EntityDirectoryPicker from "@/components/entity-directory-picker";
+import LinkedPricingSheets from "@/components/linked-pricing-sheets";
+import LinkedTasks from "@/components/linked-tasks";
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -32,7 +37,7 @@ const STAT_CARDS = [
 ];
 
 const emptyForm = {
-  tenderId: "", contractNumber: "", governmentEntityId: "",
+  tenderId: "", contractNumber: "", governmentEntityId: "" as string | number | null, departmentId: "" as string | number | null, contactId: "" as string | number | null, companyId: "",
   contractValue: "", signDate: "", startDate: "", endDate: "",
   status: "active", notes: "",
   // final bond
@@ -54,7 +59,7 @@ function formatBytes(n: number) {
 }
 
 /* ─── Contract Form Modal ─── */
-function ContractModal({ open, editId, form, setForm, onClose, onSubmit, isPending, entities, tenders }: any) {
+function ContractModal({ open, editId, form, setForm, onClose, onSubmit, isPending, tenders, companies }: any) {
   if (!open) return null;
   const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 13, color: "#1e2a1e", background: "#fafaf8", outline: "none", fontFamily: "inherit", transition: "border-color 0.15s,box-shadow 0.15s" };
   const lbl: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 700, color: GR, marginBottom: 5 };
@@ -88,8 +93,15 @@ function ContractModal({ open, editId, form, setForm, onClose, onSubmit, isPendi
               <div><label style={lbl}>رقم العقد <span style={{ color: "#dc2626" }}>*</span></label><input value={form.contractNumber} onChange={f("contractNumber")} placeholder="CONT-2025-001" dir="ltr" required style={inp} onFocus={focus} onBlur={blur} /></div>
               <div><label style={lbl}>الحالة</label><select value={form.status} onChange={f("status")} style={{ ...inp, height: 42 }} onFocus={focus} onBlur={blur}>{Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
               <div><label style={lbl}>المناقصة المرتبطة</label><select value={form.tenderId} onChange={f("tenderId")} style={{ ...inp, height: 42 }} onFocus={focus} onBlur={blur}><option value="">— اختر المناقصة —</option>{(tenders as any[]).map((t: any) => <option key={t.id} value={t.id}>{t.tenderNumber} · {t.projectName}</option>)}</select></div>
-              <div><label style={lbl}>الجهة الحكومية</label><select value={form.governmentEntityId} onChange={f("governmentEntityId")} style={{ ...inp, height: 42 }} onFocus={focus} onBlur={blur}><option value="">— اختر الجهة —</option>{(entities as any[]).map((e: any) => <option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
+              <div><label style={lbl}>الشركة المشاركة</label><select value={form.companyId} onChange={f("companyId")} style={{ ...inp, height: 42 }} onFocus={focus} onBlur={blur}><option value="">— اختر الشركة —</option>{(companies as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
               <div><label style={lbl}>قيمة العقد (د.ك)</label><input type="number" value={form.contractValue} onChange={f("contractValue")} min="0" dir="ltr" placeholder="0.000" style={inp} onFocus={focus} onBlur={blur} /></div>
+              <div style={{ gridColumn: "1/-1" }}>
+                <label style={lbl}>الجهة الحكومية ← الاختصاص ← المسؤول</label>
+                <EntityDirectoryPicker
+                  value={{ governmentEntityId: form.governmentEntityId, departmentId: form.departmentId, contactId: form.contactId }}
+                  onChange={next => setForm((p: any) => ({ ...p, ...next }))}
+                />
+              </div>
             </div>
           </div>
           <div style={{ height: 1, background: "linear-gradient(90deg,transparent,#f0ead8,transparent)", marginBottom: 22 }} />
@@ -151,18 +163,49 @@ function ContractModal({ open, editId, form, setForm, onClose, onSubmit, isPendi
   );
 }
 
+/* ─── Profitability tab helpers ─── */
+function ProfitStat({ label, value, color, icon: Icon }: { label: string; value: number; color: string; icon: any }) {
+  return (
+    <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "12px 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+        <Icon size={13} color={color} />
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280" }}>{label}</span>
+      </div>
+      <div style={{ fontSize: 15, fontWeight: 900, color, direction: "ltr" as const, textAlign: "right" as const }}>{formatCurrency(value)}</div>
+    </div>
+  );
+}
+
+function ProfitSection({ title, icon: Icon, empty, isEmpty, children }: { title: string; icon: any; empty: string; isEmpty: boolean; children: React.ReactNode }) {
+  return (
+    <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "12px 14px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+        <Icon size={13} color={GD} />
+        <span style={{ fontSize: 12, fontWeight: 800, color: "#9ca3af" }}>{title}</span>
+      </div>
+      {isEmpty ? <div style={{ textAlign: "center", padding: "12px 0", color: "#94a3b8", fontSize: 12 }}>{empty}</div> : children}
+    </div>
+  );
+}
+
 /* ─── Contract Detail Drawer ─── */
 function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }: {
   contract: any; onClose: () => void; isAdmin: boolean;
   currentUserId: number; employees: any[];
 }) {
-  const [activeTab, setActiveTab] = useState<"bond" | "docs" | "perms" | "comments">("bond");
+  const [activeTab, setActiveTab] = useState<"overview" | "profitability" | "bond" | "pricing" | "tasks" | "docs" | "perms" | "comments">("overview");
   const qc = useQueryClient();
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [selectedEmployee, setSelectedEmployee] = useState(employees[0]?.id ?? "");
+
+  const { data: profitability, isLoading: profitLoading } = useQuery({
+    queryKey: ["contract-profitability", contract.id],
+    queryFn: () => contractsApi.getProfitability(contract.id),
+    enabled: isAdmin,
+  });
 
   const { data: docs = [], isLoading: docsLoading } = useQuery({
     queryKey: ["contract-docs", contract.id],
@@ -260,7 +303,11 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
   };
 
   const TABS = [
+    { id: "overview", label: "نظرة عامة",  icon: Info,      badge: 0 },
+    ...(isAdmin ? [{ id: "profitability", label: "الربحية", icon: TrendingUp, badge: 0 }] : []),
     { id: "bond",     label: "الكفالة النهائية", icon: Landmark,       badge: 0 },
+    { id: "pricing",  label: "التسعير",           icon: Calculator,     badge: 0 },
+    { id: "tasks",    label: "المهام",             icon: ClipboardList,  badge: 0 },
     { id: "docs",     label: "المرفقات",         icon: Paperclip,      badge: (docs as any[]).length },
     ...(isAdmin ? [{ id: "perms", label: "الصلاحيات", icon: Shield, badge: 0 }] : []),
     { id: "comments", label: "التعليقات",        icon: MessageSquare, badge: !isAdmin ? unreadCount : (comments as any[]).length },
@@ -343,6 +390,138 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
         {/* Content */}
         <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
 
+          {/* ── Overview Tab (all core contract fields) ── */}
+          {activeTab === "overview" && (() => {
+            const st = STATUS_MAP[contract.status] || STATUS_MAP.active;
+            const InfoRow = ({ icon: Icon, label, value }: { icon: any; label: string; value: React.ReactNode }) => (
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 0", borderBottom: "1px solid #f9fafb" }}>
+                <div style={{ width: 30, height: 30, borderRadius: 8, background: `${G}12`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Icon size={14} color={GD} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 700, marginBottom: 2 }}>{label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#374151", wordBreak: "break-word" }}>{value ?? "—"}</div>
+                </div>
+              </div>
+            );
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderRadius: 12, background: st.bg, border: `1.5px solid ${st.color}25` }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: st.color, display: "flex", alignItems: "center", gap: 6 }}>
+                    <st.icon size={14} />{st.label}
+                  </span>
+                  {contract.contractValue && (
+                    <span style={{ fontSize: 14, fontWeight: 900, color: GR, fontFamily: "monospace" }}>{formatCurrency(contract.contractValue)}</span>
+                  )}
+                </div>
+
+                <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "4px 14px" }}>
+                  <InfoRow icon={Building2}     label="الجهة الحكومية"   value={contract.entityName} />
+                  <InfoRow icon={ClipboardList} label="الاختصاص"        value={contract.departmentName} />
+                  <InfoRow icon={UserCheck}     label="المسؤول"          value={contract.contactName} />
+                  <InfoRow icon={Users}         label="الشركة المشاركة" value={contract.companyName} />
+                  <InfoRow icon={FileSignature} label="المناقصة المرتبطة" value={contract.tenderNumber} />
+                </div>
+
+                <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "4px 14px" }}>
+                  <InfoRow icon={CalendarDays} label="تاريخ التوقيع" value={contract.signDate ? formatDate(contract.signDate) : null} />
+                  <InfoRow icon={CalendarDays} label="تاريخ البدء"   value={contract.startDate ? formatDate(contract.startDate) : null} />
+                  <InfoRow icon={CalendarDays} label="تاريخ الانتهاء" value={contract.endDate ? formatDate(contract.endDate) : null} />
+                </div>
+
+                {contract.notes && (
+                  <div style={{ background: "#fdfaf5", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                      <StickyNote size={13} color={GD} />
+                      <span style={{ fontSize: 11, fontWeight: 800, color: "#9ca3af" }}>ملاحظات</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: "#374151", lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{contract.notes}</div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Profitability Tab (Contract Cost Center) ── */}
+          {activeTab === "profitability" && (
+            profitLoading ? (
+              <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
+                <Loader2 size={22} color={G} style={{ animation: "spin 1s linear infinite" }} />
+              </div>
+            ) : !profitability ? (
+              <div style={{ textAlign: "center", padding: "32px 0", color: "#94a3b8", fontSize: 13 }}>تعذّر تحميل بيانات الربحية</div>
+            ) : (() => {
+              const p = profitability as any;
+              const isProfit = p.profit >= 0;
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {/* Stat cards */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <ProfitStat label="قيمة العقد" value={p.contractValue} color={GR} icon={FileSignature} />
+                    <ProfitStat label="المشتريات" value={p.purchases.total} color="#7c3aed" icon={ShoppingCart} />
+                    <ProfitStat label="النقل" value={p.transport.total} color="#2563eb" icon={Truck} />
+                    <ProfitStat label="المصروفات" value={p.expenses.total} color="#d97706" icon={Banknote} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    <ProfitStat label="إجمالي التكلفة" value={p.totalCost} color="#dc2626" icon={TrendingDown} />
+                    <div style={{ background: isProfit ? "#f0fdf4" : "#fff1f2", border: `1.5px solid ${isProfit ? "#bbf7d0" : "#fecaca"}`, borderRadius: 14, padding: "12px 14px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                        {isProfit ? <TrendingUp size={13} color="#16a34a" /> : <TrendingDown size={13} color="#dc2626" />}
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280" }}>الربح ({p.profitPct.toFixed(1)}%)</span>
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 900, color: isProfit ? "#16a34a" : "#dc2626", direction: "ltr" as const, textAlign: "right" as const }}>
+                        {formatCurrency(p.profit)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Expense category breakdown */}
+                  {p.expenses.byCategory.length > 0 && (
+                    <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "12px 14px" }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "#9ca3af", marginBottom: 8 }}>المصروفات حسب الفئة</div>
+                      {p.expenses.byCategory.map((c: any) => (
+                        <div key={c.category} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid #f9fafb", fontSize: 12 }}>
+                          <span style={{ color: "#374151" }}>{c.category}</span>
+                          <span style={{ fontWeight: 700, color: "#d97706", direction: "ltr" as const }}>{formatCurrency(c.total)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Linked transport trips */}
+                  <ProfitSection title={`رحلات النقل المرتبطة (${p.transport.rows.length})`} icon={Truck} empty="لا توجد رحلات نقل مرتبطة" isEmpty={p.transport.rows.length === 0}>
+                    {p.transport.rows.map((r: any) => (
+                      <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f9fafb", fontSize: 12 }}>
+                        <span style={{ color: "#374151" }}>{r.orderNumber ?? r.description}</span>
+                        <span style={{ fontWeight: 700, color: "#2563eb", direction: "ltr" as const }}>{r.value ? formatCurrency(r.value) : "—"}</span>
+                      </div>
+                    ))}
+                  </ProfitSection>
+
+                  {/* Linked expenses */}
+                  <ProfitSection title={`المصروفات المرتبطة (${p.expenses.rows.length})`} icon={Banknote} empty="لا توجد مصروفات مرتبطة" isEmpty={p.expenses.rows.length === 0}>
+                    {p.expenses.rows.map((r: any) => (
+                      <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f9fafb", fontSize: 12 }}>
+                        <span style={{ color: "#374151" }}>{r.description}</span>
+                        <span style={{ fontWeight: 700, color: "#d97706", direction: "ltr" as const }}>{formatCurrency(r.amount)}</span>
+                      </div>
+                    ))}
+                  </ProfitSection>
+
+                  {/* Linked purchase orders */}
+                  <ProfitSection title={`أوامر الشراء المرتبطة (${p.purchases.rows.length})`} icon={ShoppingCart} empty="لا توجد أوامر شراء مرتبطة" isEmpty={p.purchases.rows.length === 0}>
+                    {p.purchases.rows.map((r: any) => (
+                      <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #f9fafb", fontSize: 12 }}>
+                        <span style={{ color: "#374151" }}>{r.orderNumber} {r.supplierName ? `— ${r.supplierName}` : ""}</span>
+                        <span style={{ fontWeight: 700, color: "#7c3aed", direction: "ltr" as const }}>{r.amount ? formatCurrency(r.amount) : "—"}</span>
+                      </div>
+                    ))}
+                  </ProfitSection>
+                </div>
+              );
+            })()
+          )}
+
           {/* ── Bond Tab ── */}
           {activeTab === "bond" && (() => {
             const bond = contract;
@@ -412,6 +591,16 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
               </div>
             );
           })()}
+
+          {/* ── Pricing Tab ── */}
+          {activeTab === "pricing" && (
+            <LinkedPricingSheets entityType="contract" entityId={contract.id} />
+          )}
+
+          {/* ── Tasks Tab ── */}
+          {activeTab === "tasks" && (
+            <LinkedTasks entityType="contract" entityId={contract.id} />
+          )}
 
           {/* ── Documents Tab ── */}
           {activeTab === "docs" && (
@@ -655,11 +844,12 @@ export default function ContractsList() {
   const [form,        setForm]        = useState({ ...emptyForm });
   const [tab,         setTab]         = useState("all");
   const [openDrawer,  setOpenDrawer]  = useState<any | null>(null);
+  const [correspondenceFor, setCorrespondenceFor] = useState<{ id: number; label: string; governmentEntityId: number | null } | null>(null);
 
   const { data: allContracts = [] } = useQuery({ queryKey: ["contracts", "all"], queryFn: () => contractsApi.list(undefined) });
   const statusFilter = tab !== "all" ? tab : undefined;
   const { data: contracts = [], isLoading } = useQuery({ queryKey: ["contracts", tab], queryFn: () => contractsApi.list(statusFilter) });
-  const { data: entities  = [] } = useQuery({ queryKey: ["government-entities"], queryFn: () => entitiesApi.list() });
+  const { data: companies = [] } = useQuery({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
   const { data: tenders   = [] } = useListTenders({});
 
   // Employees list for permissions & comments (admin fetches all users)
@@ -696,7 +886,8 @@ export default function ContractsList() {
     setEditId(c.id);
     setForm({
       tenderId: c.tenderId || "", contractNumber: c.contractNumber,
-      governmentEntityId: c.governmentEntityId || "", contractValue: c.contractValue || "",
+      governmentEntityId: c.governmentEntityId || "", departmentId: c.departmentId || "", contactId: c.contactId || "",
+      companyId: c.companyId || "", contractValue: c.contractValue || "",
       signDate: c.signDate || "", startDate: c.startDate || "", endDate: c.endDate || "",
       status: c.status, notes: c.notes || "",
       finalBondValue: c.finalBondValue || "", finalBondNumber: c.finalBondNumber || "",
@@ -712,7 +903,13 @@ export default function ContractsList() {
       ...form,
       tenderId:            form.tenderId            ? Number(form.tenderId)            : null,
       governmentEntityId:  form.governmentEntityId  ? Number(form.governmentEntityId)  : null,
-      contractValue:       form.contractValue        ? Number(form.contractValue)        : null,
+      departmentId:        form.departmentId         ? Number(form.departmentId)        : null,
+      contactId:           form.contactId            ? Number(form.contactId)           : null,
+      companyId:           form.companyId            ? Number(form.companyId)           : null,
+      contractValue:       form.contractValue        ? String(form.contractValue)        : null,
+      signDate:            form.signDate             || null,
+      startDate:           form.startDate            || null,
+      endDate:             form.endDate              || null,
       finalBondValue:      form.finalBondValue       ? String(form.finalBondValue)       : null,
       finalBondNumber:     form.finalBondNumber      || null,
       finalBondBank:       form.finalBondBank        || null,
@@ -728,7 +925,18 @@ export default function ContractsList() {
   return (
     <div dir="rtl" style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif", display: "flex", flexDirection: "column", gap: 22 }}>
 
-      <ContractModal open={showForm} editId={editId} form={form} setForm={setForm} onClose={closeForm} onSubmit={handleSubmit} isPending={createM.isPending || updateM.isPending} entities={entities} tenders={tenders} />
+      <ContractModal open={showForm} editId={editId} form={form} setForm={setForm} onClose={closeForm} onSubmit={handleSubmit} isPending={createM.isPending || updateM.isPending} tenders={tenders} companies={companies} />
+
+      {correspondenceFor && (
+        <CorrespondenceSheet
+          open={!!correspondenceFor}
+          onOpenChange={(o) => !o && setCorrespondenceFor(null)}
+          sourceType="contract"
+          sourceId={correspondenceFor.id}
+          recordLabel={correspondenceFor.label}
+          governmentEntityId={correspondenceFor.governmentEntityId}
+        />
+      )}
 
       {openDrawer && (
         <ContractDrawer
@@ -891,6 +1099,9 @@ export default function ContractsList() {
                           {/* Attachments indicator */}
                           <button onClick={() => { setOpenDrawer(c); }} title="المرفقات والتعليقات" style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 8px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#f8fafc", color: "#64748b", border: "1px solid #e2e8f0", cursor: "pointer", fontFamily: "inherit" }}>
                             <Paperclip size={11} />
+                          </button>
+                          <button onClick={() => setCorrespondenceFor({ id: c.id, label: c.contractNumber, governmentEntityId: c.governmentEntityId ?? null })} title="المراسلات" style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 8px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#f8fafc", color: "#64748b", border: "1px solid #e2e8f0", cursor: "pointer", fontFamily: "inherit" }}>
+                            <Mail size={11} />
                           </button>
 
                           {(isAdmin || user?.canEdit) && (

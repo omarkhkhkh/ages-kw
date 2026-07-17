@@ -31,6 +31,14 @@ const USER_SELECT = {
   accessPo: usersTable.accessPo,
   accessTransportation: usersTable.accessTransportation,
   accessFinance: usersTable.accessFinance,
+  accessCorrespondence: usersTable.accessCorrespondence,
+  accessResidency: usersTable.accessResidency,
+  accessMaintenance: usersTable.accessMaintenance,
+  accessResearch: usersTable.accessResearch,
+  accessPricing: usersTable.accessPricing,
+  accessTasks: usersTable.accessTasks,
+  taskViewScope: usersTable.taskViewScope,
+  taskCanApprove: usersTable.taskCanApprove,
   isActive: usersTable.isActive,
   createdAt: usersTable.createdAt,
   lastLogin: usersTable.lastLogin,
@@ -49,6 +57,8 @@ router.post("/users", async (req, res) => {
     canView, canDownload, canUpload, canEdit,
     accessTenders, accessEntities, accessSuppliers, accessProjects,
     accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation, accessFinance,
+    accessCorrespondence, accessResidency, accessMaintenance, accessResearch, accessPricing,
+    accessTasks, taskViewScope, taskCanApprove,
   } = req.body as any;
 
   if (!username || !fullName || !password) {
@@ -81,6 +91,14 @@ router.post("/users", async (req, res) => {
       accessPo: accessPo ?? true,
       accessTransportation: accessTransportation ?? true,
       accessFinance: accessFinance ?? true,
+      accessCorrespondence: accessCorrespondence ?? true,
+      accessResidency: accessResidency ?? true,
+      accessMaintenance: accessMaintenance ?? true,
+      accessResearch: accessResearch ?? true,
+      accessPricing: accessPricing ?? true,
+      accessTasks: accessTasks ?? true,
+      taskViewScope: taskViewScope ?? "own",
+      taskCanApprove: taskCanApprove ?? false,
     })
     .returning(USER_SELECT);
 
@@ -95,6 +113,8 @@ router.patch("/users/:id", async (req, res) => {
     canView, canDownload, canUpload, canEdit,
     accessTenders, accessEntities, accessSuppliers, accessProjects,
     accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation, accessFinance,
+    accessCorrespondence, accessResidency, accessMaintenance, accessResearch, accessPricing,
+    accessTasks, taskViewScope, taskCanApprove,
   } = req.body as any;
 
   const updates: Partial<typeof usersTable.$inferInsert> = {};
@@ -115,6 +135,14 @@ router.patch("/users/:id", async (req, res) => {
   if (accessPo !== undefined) updates.accessPo = accessPo;
   if (accessTransportation !== undefined) updates.accessTransportation = accessTransportation;
   if (accessFinance !== undefined) updates.accessFinance = accessFinance;
+  if (accessCorrespondence !== undefined) updates.accessCorrespondence = accessCorrespondence;
+  if (accessResidency !== undefined) updates.accessResidency = accessResidency;
+  if (accessMaintenance !== undefined) updates.accessMaintenance = accessMaintenance;
+  if (accessResearch !== undefined) updates.accessResearch = accessResearch;
+  if (accessPricing !== undefined) updates.accessPricing = accessPricing;
+  if (accessTasks !== undefined) updates.accessTasks = accessTasks;
+  if (taskViewScope !== undefined) updates.taskViewScope = taskViewScope;
+  if (taskCanApprove !== undefined) updates.taskCanApprove = taskCanApprove;
 
   if (password) {
     if (password.length < 6) {

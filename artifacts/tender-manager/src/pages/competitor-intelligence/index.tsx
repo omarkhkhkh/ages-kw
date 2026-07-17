@@ -7,11 +7,12 @@ import { Link } from "wouter";
 import {
   Trophy, TrendingUp, Target, BarChart3, Calendar,
   Loader2, ChevronLeft, Search, X, ArrowUpDown,
-  ShieldAlert, Flame, AlertTriangle,
+  ShieldAlert, Flame, AlertTriangle, Lightbulb,
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, Cell,
   CartesianGrid, XAxis, YAxis, Tooltip,
+  PieChart, Pie, Legend,
 } from "recharts";
 import { formatCurrency } from "@/lib/utils";
 
@@ -98,6 +99,12 @@ export default function CompetitorIntelligence() {
     staleTime: 10 * 60_000,
   });
 
+  const { data: bestSectors = [] } = useQuery<any[]>({
+    queryKey: ["competitor-best-sectors"],
+    queryFn: () => apiFetch("/api/analytics/competitors/best-sectors"),
+    staleTime: 10 * 60_000,
+  });
+
   /* ── client-side filter + sort ── */
   const displayed = useMemo(() => {
     let list = [...summary];
@@ -144,6 +151,45 @@ export default function CompetitorIntelligence() {
   /* ── Stats ── */
   const totalCompetitors = summary.length;
   const topThreat = summary.find(c => c.wins > 0);
+
+  /* ── Auto-generated insights (from already-loaded data, no extra requests) ── */
+  const insights = useMemo(() => {
+    const out: { text: React.ReactNode; color: string }[] = [];
+    const byWins = [...summary].sort((a, b) =>
+      (b.wins - a.wins) ||
+      ((b.total_bids ? b.wins / b.total_bids : 0) - (a.total_bids ? a.wins / a.total_bids : 0))
+    );
+    const threat = byWins[0];
+    if (threat && threat.wins > 0) {
+      const wr = threat.total_bids ? Math.round((threat.wins / threat.total_bids) * 100) : 0;
+      out.push({
+        color: "#dc2626",
+        text: <>أخطر منافس حاليًا: <strong>{threat.company_name}</strong> — فاز <strong>{threat.wins}</strong> من {threat.total_bids} مواجهة (نسبة فوز {wr}%){threat.avg_diff_pct != null && <> بمتوسط فارق سعري {Number(threat.avg_diff_pct) >= 0 ? "+" : ""}{Number(threat.avg_diff_pct).toFixed(1)}% عنّا</>}.</>,
+      });
+    }
+    const bestSector = bestSectors[0];
+    if (bestSector && Number(bestSector.total_bids) > 0) {
+      out.push({
+        color: "#16a34a",
+        text: <>أقوى قطاعاتنا: <strong>{bestSector.sector}</strong> بنسبة فوز <strong>{bestSector.win_rate_pct}%</strong> ({bestSector.wins}/{bestSector.total_bids} فوز).</>,
+      });
+    }
+    if (gapData?.total_sessions > 0) {
+      const tightPct = Math.round(((gapData.gap_lt_1pct ?? 0) / gapData.total_sessions) * 100);
+      if (tightPct >= 30) {
+        out.push({
+          color: "#7c3aed",
+          text: <>السوق شديد التنافسية: <strong>{tightPct}%</strong> من الجلسات حُسمت بفارق أقل من 1% بين المركزين الأول والثاني.</>,
+        });
+      } else {
+        out.push({
+          color: "#7c3aed",
+          text: <>متوسط الفارق بين المركزين الأول والثاني <strong>{gapData.avg_gap_pct}%</strong> عبر {gapData.total_sessions} جلسة محللة.</>,
+        });
+      }
+    }
+    return out;
+  }, [summary, bestSectors, gapData]);
 
   const S = {
     card: { background: "white", borderRadius: 14, padding: "18px 20px", boxShadow: "0 1px 6px rgba(0,0,0,0.06)", border: "1.5px solid #f3f4f6" } as any,
@@ -269,6 +315,64 @@ export default function CompetitorIntelligence() {
           )}
         </div>
       </div>
+
+      {/* ── Best Sectors ── */}
+      {bestSectors.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+          <div style={S.card}>
+            <p style={{ fontSize: 13, fontWeight: 800, color: GR, margin: "0 0 14px" }}>أفضل القطاعات (حسب نوع الجهة الحكومية)</p>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={bestSectors} layout="vertical" margin={{ left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
+                <YAxis type="category" dataKey="sector" tick={{ fontSize: 11 }} width={110} />
+                <Tooltip contentStyle={{ fontSize: 12, fontFamily: "Cairo,sans-serif", direction: "rtl" }}
+                  formatter={(v: any, name: string, props: any) => [`${v}% (${props.payload.wins}/${props.payload.total_bids} فوز)`, "نسبة الفوز"]} />
+                <Bar dataKey="win_rate_pct" fill={G} radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          {bestSectors.some((s: any) => Number(s.wins) > 0) && (
+            <div style={S.card}>
+              <p style={{ fontSize: 13, fontWeight: 800, color: GR, margin: "0 0 14px" }}>توزيع فوزاتنا حسب القطاع</p>
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie
+                    data={bestSectors.filter((s: any) => Number(s.wins) > 0)}
+                    dataKey="wins" nameKey="sector"
+                    innerRadius={50} outerRadius={80} paddingAngle={3}>
+                    {bestSectors.filter((s: any) => Number(s.wins) > 0).map((_: any, i: number) => (
+                      <Cell key={i} fill={["#D4A534", "#2563eb", "#16a34a", "#7c3aed", "#dc2626", "#0891b2"][i % 6]} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={{ fontSize: 12, fontFamily: "Cairo,sans-serif", direction: "rtl" }}
+                    formatter={(v: any, name: any) => [`${v} فوز`, name]} />
+                  <Legend wrapperStyle={{ fontSize: 11, fontFamily: "Cairo,sans-serif" }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Auto Insights ── */}
+      {insights.length > 0 && (
+        <div style={S.card}>
+          <p style={{ fontSize: 13, fontWeight: 800, color: GR, margin: "0 0 12px", display: "flex", alignItems: "center", gap: 7 }}>
+            <Lightbulb size={15} color={G} /> رؤى تلقائية
+            <span style={{ fontSize: 10, background: "#f1f5f9", color: "#64748b", padding: "1px 8px", borderRadius: 10, fontWeight: 700 }}>
+              مولّدة من البيانات المسجّلة
+            </span>
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {insights.map((ins, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 12px", borderRadius: 8, background: "#f9fafb", borderRight: `3px solid ${ins.color}` }}>
+                <p style={{ margin: 0, fontSize: 13, color: "#374151", lineHeight: 1.7 }}>{ins.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Leaderboard ── */}
       <div style={{ background: "white", borderRadius: 16, boxShadow: "0 2px 12px rgba(0,0,0,0.07)", overflow: "hidden", border: "1px solid #e2e8f0" }}>

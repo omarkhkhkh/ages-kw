@@ -24,7 +24,13 @@ interface UserRow {
   accessTenders: boolean; accessEntities: boolean; accessSuppliers: boolean;
   accessProjects: boolean; accessGuarantees: boolean; accessContracts: boolean;
   accessRfq: boolean; accessPo: boolean; accessTransportation: boolean;
-  accessFinance: boolean;
+  accessFinance: boolean; accessCorrespondence: boolean; accessResidency: boolean;
+  accessMaintenance: boolean;
+  accessResearch: boolean;
+  accessPricing: boolean;
+  accessTasks: boolean;
+  taskViewScope: string;
+  taskCanApprove: boolean;
   isActive: boolean; createdAt: string; lastLogin: string | null;
 }
 
@@ -39,6 +45,12 @@ const MODULES = [
   { key: "accessPo",             label: "أوامر الشراء المباشر",  icon: "🛒" },
   { key: "accessTransportation", label: "النقل والتوزيع",         icon: "🚚" },
   { key: "accessFinance",        label: "الإدارة المالية",         icon: "💰" },
+  { key: "accessCorrespondence", label: "المراسلات",                icon: "✉️" },
+  { key: "accessResidency",      label: "إدارة الإقامات",           icon: "🪪" },
+  { key: "accessMaintenance",    label: "إدارة الصيانة",            icon: "🔧" },
+  { key: "accessResearch",       label: "البحث والتطوير",           icon: "🔬" },
+  { key: "accessPricing",        label: "التسعير",                    icon: "🧮" },
+  { key: "accessTasks",          label: "المهام / مركز العمليات",    icon: "🗂" },
 ] as const;
 
 const GLOBAL_PERMS = [
@@ -54,6 +66,9 @@ const defaultForm = {
   accessTenders: true, accessEntities: true, accessSuppliers: true,
   accessProjects: true, accessGuarantees: true, accessContracts: true,
   accessRfq: true, accessPo: true, accessTransportation: true, accessFinance: true,
+  accessCorrespondence: true, accessResidency: true, accessMaintenance: true, accessResearch: true,
+  accessPricing: true,
+  accessTasks: true, taskViewScope: "own", taskCanApprove: false,
 };
 
 /* ── Toggle switch ── */
@@ -201,6 +216,27 @@ function UserModal({ open, editing, form, setForm, newPass, setNewPass, onClose,
                   <span style={{ fontSize: 12, fontWeight: 600, color: (data as any)[key] ? "#16a34a" : "#9ca3af" }}>{label}</span>
                 </div>
               ))}
+            </div>
+          </div>
+
+          <Divider />
+
+          {/* Operations Center permissions */}
+          <div>
+            <SectionTitle>صلاحيات مركز إدارة العمليات</SectionTitle>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={lbl}>نطاق عرض المهام</label>
+                <select value={(data as any).taskViewScope ?? "own"} onChange={e => set("taskViewScope", e.target.value)} style={inp} onFocus={focus} onBlur={blur}>
+                  <option value="own">مهامي فقط</option>
+                  <option value="department">مهام القسم</option>
+                  <option value="all">جميع المهام</option>
+                </select>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: (data as any).taskCanApprove ? "#f0fdf4" : "#f9fafb", border: `1.5px solid ${(data as any).taskCanApprove ? "#bbf7d0" : "#e5e7eb"}` }}>
+                <Toggle checked={(data as any).taskCanApprove} onChange={v => set("taskCanApprove", v)} />
+                <span style={{ fontSize: 12, fontWeight: 600, color: (data as any).taskCanApprove ? "#16a34a" : "#9ca3af" }}>صلاحية اعتماد المهام</span>
+              </div>
             </div>
           </div>
 
@@ -940,6 +976,14 @@ export default function AdminUsers() {
           accessRfq: editing.accessRfq, accessPo: editing.accessPo,
           accessTransportation: editing.accessTransportation,
           accessFinance: editing.accessFinance,
+          accessCorrespondence: editing.accessCorrespondence,
+          accessResidency: editing.accessResidency,
+          accessMaintenance: editing.accessMaintenance,
+          accessResearch: editing.accessResearch,
+          accessPricing: editing.accessPricing,
+          accessTasks: editing.accessTasks,
+          taskViewScope: editing.taskViewScope,
+          taskCanApprove: editing.taskCanApprove,
           ...(newPass ? { password: newPass } : {}),
         },
       });

@@ -19,6 +19,9 @@ export interface Tender {
   announcementDate?: string | null;
   /** @nullable */
   deadline?: string | null;
+  preliminaryMeetingHeld?: boolean;
+  /** @nullable */
+  preliminaryMeetingDate?: string | null;
   /** @nullable */
   bondValue?: number | null;
   /** @nullable */

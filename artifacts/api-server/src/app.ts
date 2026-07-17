@@ -50,16 +50,24 @@ const allowedOrigins = [
 ];
 
 app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow same-origin requests (no Origin header) and allowed origins
-      if (!origin || allowedOrigins.some((o) => origin.startsWith(o))) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS: origin ${origin} not allowed`));
+  cors((req, callback) => {
+    const origin = req.headers.origin;
+    let allowed = !origin; // no Origin header = same-origin/curl
+    if (!allowed && origin) {
+      // المتصفح يرسل Origin حتى للطلبات من نفس النطاق (module scripts بـ crossorigin،
+      // وكل POST) — إن طابق مضيف الطلب نفسه فهو ليس طلبًا عابرًا للنطاقات أصلًا
+      try {
+        allowed = new URL(origin).host === req.headers.host;
+      } catch {
+        allowed = false;
       }
-    },
-    credentials: true,
+      if (!allowed) allowed = allowedOrigins.some((o) => origin.startsWith(o));
+    }
+    if (allowed) {
+      callback(null, { origin: true, credentials: true });
+    } else {
+      callback(new Error(`CORS: origin ${origin} not allowed`));
+    }
   }),
 );
 app.use(express.json());

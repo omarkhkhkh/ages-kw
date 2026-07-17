@@ -13,6 +13,7 @@ import {
 import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
 import { useAuth } from "@/contexts/auth";
+import { useI18n } from "@/contexts/i18n";
 import { contractsApi, correspondenceApi, apiFetch } from "@/lib/api";
 import { CalendarWidget, type CalendarEvent } from "@/components/calendar-widget";
 import CorrespondenceDashboardWidget from "@/components/correspondence-dashboard-widget";
@@ -32,32 +33,33 @@ const PRIORITY_COLORS: Record<string, { color: string; bg: string; icon: any }> 
   urgent: { color: "#7c3aed", bg: "#f5f3ff",  icon: AlertTriangle },
 };
 const STATUS_COLORS_TASK: Record<string, { color: string; bg: string; label: string }> = {
-  pending:     { color: "#d97706", bg: "#fffbeb", label: "قيد الانتظار" },
-  in_progress: { color: "#2563eb", bg: "#eff6ff", label: "جارٍ التنفيذ" },
-  completed:   { color: "#16a34a", bg: "#f0fdf4", label: "مكتملة" },
-  cancelled:   { color: "#6b7280", bg: "#f9fafb", label: "ملغاة" },
+  pending:     { color: "#d97706", bg: "#fffbeb", label: "dash.st.pending" },
+  in_progress: { color: "#2563eb", bg: "#eff6ff", label: "dash.st.in_progress" },
+  completed:   { color: "#16a34a", bg: "#f0fdf4", label: "dash.st.completed" },
+  cancelled:   { color: "#6b7280", bg: "#f9fafb", label: "dash.st.cancelled" },
 };
 
-/* ─── module shortcuts ─── */
+/* ─── module shortcuts (label = مفتاح ترجمة) ─── */
 const MODULES = [
-  { href: "/tenders",           label: "سجل المناقصات",        icon: FileText,      accent: "#D4A534", bg: "#fdf8ec" },
-  { href: "/entities",          label: "الجهات الحكومية",      icon: Building2,     accent: "#1a7a3a", bg: "#edf7f0" },
-  { href: "/suppliers",         label: "الموردون",             icon: Users,         accent: "#2563eb", bg: "#eff6ff" },
-  { href: "/projects",          label: "المشاريع",             icon: FolderOpen,    accent: "#7c3aed", bg: "#f5f3ff" },
-  { href: "/guarantees",        label: "الكفالات البنكية",     icon: ShieldCheck,   accent: "#dc2626", bg: "#fff1f2" },
-  { href: "/contracts",         label: "العقود",               icon: FileSignature, accent: "#0891b2", bg: "#ecfeff" },
-  { href: "/rfq",               label: "طلبات عروض الأسعار",  icon: ClipboardList, accent: "#d97706", bg: "#fffbeb" },
-  { href: "/purchase-orders",   label: "أوامر الشراء المباشر",icon: ShoppingCart,  accent: "#16a34a", bg: "#f0fdf4" },
-  { href: "/company-docs",      label: "وثائق الشركة",         icon: FileCheck,     accent: "#0891b2", bg: "#ecfeff" },
-  { href: "/gov-registrations", label: "تسجيلات الجهات",       icon: Landmark,      accent: "#7c3aed", bg: "#f5f3ff" },
-  { href: "/calendar",          label: "جدول الأعمال",         icon: Calendar,      accent: "#9333ea", bg: "#faf5ff" },
-  { href: "/correspondence",    label: "المراسلات",            icon: Mail,          accent: "#be185d", bg: "#fdf2f8" },
+  { href: "/tenders",           label: "dash.mod.tenders",        icon: FileText,      accent: "#D4A534", bg: "#fdf8ec" },
+  { href: "/entities",          label: "dash.mod.entities",       icon: Building2,     accent: "#1a7a3a", bg: "#edf7f0" },
+  { href: "/suppliers",         label: "dash.mod.suppliers",      icon: Users,         accent: "#2563eb", bg: "#eff6ff" },
+  { href: "/projects",          label: "dash.mod.projects",       icon: FolderOpen,    accent: "#7c3aed", bg: "#f5f3ff" },
+  { href: "/guarantees",        label: "dash.mod.guarantees",     icon: ShieldCheck,   accent: "#dc2626", bg: "#fff1f2" },
+  { href: "/contracts",         label: "dash.mod.contracts",      icon: FileSignature, accent: "#0891b2", bg: "#ecfeff" },
+  { href: "/rfq",               label: "dash.mod.rfq",            icon: ClipboardList, accent: "#d97706", bg: "#fffbeb" },
+  { href: "/purchase-orders",   label: "dash.mod.po",             icon: ShoppingCart,  accent: "#16a34a", bg: "#f0fdf4" },
+  { href: "/company-docs",      label: "dash.mod.docs",           icon: FileCheck,     accent: "#0891b2", bg: "#ecfeff" },
+  { href: "/gov-registrations", label: "dash.mod.regs",           icon: Landmark,      accent: "#7c3aed", bg: "#f5f3ff" },
+  { href: "/calendar",          label: "dash.mod.calendar",       icon: Calendar,      accent: "#9333ea", bg: "#faf5ff" },
+  { href: "/correspondence",    label: "dash.mod.correspondence", icon: Mail,          accent: "#be185d", bg: "#fdf2f8" },
 ];
 
 export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useGetTenderStats();
   const { data: recentTenders, isLoading: tendersLoading } = useListTenders({});
   const { user } = useAuth();
+  const { t, dir, locale } = useI18n();
   const [, navigate] = useLocation();
   const isAdmin = user?.role === "admin";
 
@@ -205,56 +207,56 @@ export default function Dashboard() {
 
   const greeting = () => {
     const h = new Date().getHours();
-    if (h < 12) return "صباح الخير";
-    if (h < 17) return "مساء الخير";
-    return "مساء النور";
+    if (h < 12) return t("dash.morning");
+    if (h < 17) return t("dash.afternoon");
+    return t("dash.evening");
   };
 
   const statCards = [
     {
-      title: "إجمالي المناقصات",
+      title: t("dash.totalTenders"),
       value: stats?.total ?? 0,
       icon: FileText,
       accent: G,
       bg: "#fdf8ec",
-      sub: "مناقصة مسجّلة",
+      sub: t("dash.totalTendersSub"),
     },
     {
-      title: "مناقصات عاجلة",
+      title: t("dash.urgent"),
       value: stats?.urgentCount ?? 0,
       icon: AlertCircle,
       accent: "#dc2626",
       bg: "#fff1f2",
-      sub: "تستحق المتابعة",
+      sub: t("dash.urgentSub"),
     },
     {
-      title: "رست علينا",
+      title: t("dash.won"),
       value: stats?.wonCount ?? 0,
       icon: Trophy,
       accent: "#16a34a",
       bg: "#f0fdf4",
-      sub: "مناقصة ناجحة",
+      sub: t("dash.wonSub"),
     },
     {
-      title: "قيمة العروض",
+      title: t("dash.offerValue"),
       value: formatCurrency(stats?.totalOfferValue),
       icon: Banknote,
       accent: "#0891b2",
       bg: "#ecfeff",
-      sub: "د.ك إجمالي",
+      sub: t("dash.offerValueSub"),
     },
     {
-      title: "نسبة النجاح",
+      title: t("dash.winRate"),
       value: `${(stats?.winRate ?? 0).toFixed(1)}%`,
       icon: Percent,
       accent: "#7c3aed",
       bg: "#f5f3ff",
-      sub: "معدل الفوز",
+      sub: t("dash.winRateSub"),
     },
   ];
 
   return (
-    <div dir="rtl" style={{ fontFamily: "'Cairo', 'IBM Plex Sans Arabic', sans-serif", display: "flex", flexDirection: "column", gap: 28 }}>
+    <div dir={dir} style={{ fontFamily: "'Cairo', 'IBM Plex Sans Arabic', sans-serif", display: "flex", flexDirection: "column", gap: 28 }}>
 
       {/* ── Header ── */}
       <div style={{
@@ -286,10 +288,10 @@ export default function Dashboard() {
             {greeting()} ،
           </p>
           <h1 style={{ color: "white", fontSize: 24, fontWeight: 800, margin: 0 }}>
-            {user?.fullName ?? "مرحباً"}
+            {user?.fullName ?? t("dash.welcome")}
           </h1>
           <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13, margin: "6px 0 0" }}>
-            نظرة عامة على حالة المناقصات والأعمال الجارية
+            {t("dash.overview")}
           </p>
         </div>
         <div style={{
@@ -299,7 +301,7 @@ export default function Dashboard() {
           display: "flex", alignItems: "center", gap: 8,
         }}>
           <TrendingUp size={18} color={GL} />
-          <span style={{ color: GL, fontSize: 13, fontWeight: 700 }}>لوحة التحكم</span>
+          <span style={{ color: GL, fontSize: 13, fontWeight: 700 }}>{t("dash.controlPanel")}</span>
         </div>
       </div>
 
@@ -371,10 +373,10 @@ export default function Dashboard() {
                 <Bell size={20} color="#d97706" />
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#92400e" }}>وثائق الشركة</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#92400e" }}>{t("dash.companyDocs")}</div>
                 <div style={{ fontSize: 12, color: "#a16207", marginTop: 2 }}>
-                  {docStats?.expired > 0 && <span style={{ color: "#dc2626", fontWeight: 700 }}>{docStats.expired} منتهية • </span>}
-                  {docStats?.expiring30 > 0 && <span style={{ color: "#ea580c" }}>{docStats.expiring30} تنتهي خلال 30 يوم</span>}
+                  {docStats?.expired > 0 && <span style={{ color: "#dc2626", fontWeight: 700 }}>{docStats.expired} {t("dash.expired")} • </span>}
+                  {docStats?.expiring30 > 0 && <span style={{ color: "#ea580c" }}>{docStats.expiring30} {t("dash.expiring30")}</span>}
                 </div>
               </div>
               <FileCheck size={16} color="#d97706" />
@@ -390,10 +392,10 @@ export default function Dashboard() {
                 <Bell size={20} color="#ea580c" />
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#9a3412" }}>تسجيلات الجهات</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#9a3412" }}>{t("dash.govRegs")}</div>
                 <div style={{ fontSize: 12, color: "#c2410c", marginTop: 2 }}>
-                  {regStats?.expired > 0 && <span style={{ color: "#dc2626", fontWeight: 700 }}>{regStats.expired} منتهية • </span>}
-                  {regStats?.expiring30 > 0 && <span style={{ color: "#ea580c" }}>{regStats.expiring30} تنتهي خلال 30 يوم</span>}
+                  {regStats?.expired > 0 && <span style={{ color: "#dc2626", fontWeight: 700 }}>{regStats.expired} {t("dash.expired")} • </span>}
+                  {regStats?.expiring30 > 0 && <span style={{ color: "#ea580c" }}>{regStats.expiring30} {t("dash.expiring30")}</span>}
                 </div>
               </div>
               <Landmark size={16} color="#ea580c" />
@@ -406,7 +408,7 @@ export default function Dashboard() {
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
           <div style={{ width: 4, height: 22, borderRadius: 2, background: `linear-gradient(180deg, ${GL}, ${GD})` }} />
-          <h2 style={{ fontSize: 17, fontWeight: 800, color: "#132a18", margin: 0 }}>الوحدات الرئيسية</h2>
+          <h2 style={{ fontSize: 17, fontWeight: 800, color: "#132a18", margin: 0 }}>{t("dash.mainModules")}</h2>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 14 }}>
           {MODULES.map((m) => {
@@ -468,10 +470,10 @@ export default function Dashboard() {
                   color: hasAlert ? "#dc2626" : "#1e2a1e",
                   textAlign: "center", lineHeight: 1.4,
                 }}>
-                  {m.label}
+                  {t(m.label)}
                   {hasAlert && (
                     <div style={{ fontSize: 10, fontWeight: 600, color: "#dc2626", marginTop: 2 }}>
-                      {unreadCount} تعليق جديد
+                      {unreadCount} {t("dash.newComments")}
                     </div>
                   )}
                 </span>
@@ -493,22 +495,22 @@ export default function Dashboard() {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div style={{ width: 4, height: 22, borderRadius: 2, background: `linear-gradient(180deg,${GL},${GD})` }} />
               <h2 style={{ fontSize: 17, fontWeight: 800, color: "#132a18", margin: 0 }}>
-                {isAdmin ? "المهام النشطة" : "مهامي"}
+                {isAdmin ? t("dash.activeTasks") : t("dash.myTasks")}
               </h2>
               {urgentTasks.length > 0 && (
                 <span style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 10, background: "#fff1f2", color: "#dc2626", fontSize: 11, fontWeight: 800, border: "1px solid #fecaca" }}>
-                  <AlertCircle size={11} /> {urgentTasks.length} عاجلة
+                  <AlertCircle size={11} /> {urgentTasks.length} {t("dash.urgentBadge")}
                 </span>
               )}
               {isAdmin && unreadNotes.length > 0 && (
                 <span style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 10px", borderRadius: 10, background: "#fef9c3", color: "#b45309", fontSize: 11, fontWeight: 800, border: "1px solid #fde68a" }}>
-                  <MessageSquare size={11} /> {unreadNotes.length} ملاحظة جديدة
+                  <MessageSquare size={11} /> {unreadNotes.length} {t("dash.newNote")}
                 </span>
               )}
             </div>
             <Link href="/tasks">
               <span style={{ fontSize: 13, color: G, fontWeight: 700, cursor: "pointer", textDecoration: "none" }}>
-                {isAdmin ? "إدارة المهام ←" : "عرض كل مهامي ←"}
+                {isAdmin ? t("dash.manageTasks") : t("dash.viewMyTasks")}
               </span>
             </Link>
           </div>
@@ -534,20 +536,20 @@ export default function Dashboard() {
                       <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                         {hasUnreadNote && (
                           <span style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 8, background: "#fef9c3", color: "#b45309", fontSize: 10, fontWeight: 800, border: "1px solid #fde68a" }}>
-                            <MessageSquare size={9} /> جديد
+                            <MessageSquare size={9} /> {t("dash.new")}
                           </span>
                         )}
                         {isOverdue && (
                           <span style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 8, background: "#fff1f2", color: "#dc2626", fontSize: 10, fontWeight: 800, border: "1px solid #fecaca" }}>
-                            <AlertCircle size={9} /> متأخرة
+                            <AlertCircle size={9} /> {t("dash.overdue")}
                           </span>
                         )}
                       </div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <span style={{ padding: "2px 8px", borderRadius: 8, background: sta.bg, color: sta.color, fontSize: 10, fontWeight: 700 }}>{sta.label}</span>
+                      <span style={{ padding: "2px 8px", borderRadius: 8, background: sta.bg, color: sta.color, fontSize: 10, fontWeight: 700 }}>{t(sta.label)}</span>
                       <span style={{ display: "flex", alignItems: "center", gap: 3, padding: "2px 8px", borderRadius: 8, background: pri.bg, color: pri.color, fontSize: 10, fontWeight: 700 }}>
-                        <PriIcon size={9} /> {task.priority === "urgent" ? "عاجلة" : task.priority === "high" ? "عالية" : task.priority === "medium" ? "متوسطة" : "منخفضة"}
+                        <PriIcon size={9} /> {task.priority === "urgent" ? t("dash.pri.urgent") : task.priority === "high" ? t("dash.pri.high") : task.priority === "medium" ? t("dash.pri.medium") : t("dash.pri.low")}
                       </span>
                       <span style={{ padding: "2px 8px", borderRadius: 8, background: "#f1f5f9", color: "#475569", fontSize: 10, fontWeight: 600 }}>{task.taskType}</span>
                     </div>
@@ -556,8 +558,8 @@ export default function Dashboard() {
                       <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                         <Clock size={10} />
                         {task.dueDate
-                          ? new Date(task.dueDate).toLocaleDateString("ar-KW", { month: "short", day: "numeric" })
-                          : new Date(task.createdAt).toLocaleDateString("ar-KW", { month: "short", day: "numeric" })}
+                          ? new Date(task.dueDate).toLocaleDateString(locale, { month: "short", day: "numeric" })
+                          : new Date(task.createdAt).toLocaleDateString(locale, { month: "short", day: "numeric" })}
                       </span>
                     </div>
                   </div>
@@ -573,11 +575,11 @@ export default function Dashboard() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 4, height: 22, borderRadius: 2, background: `linear-gradient(180deg, ${GL}, ${GD})` }} />
-            <h2 style={{ fontSize: 17, fontWeight: 800, color: "#132a18", margin: 0 }}>أحدث المناقصات</h2>
+            <h2 style={{ fontSize: 17, fontWeight: 800, color: "#132a18", margin: 0 }}>{t("dash.recentTenders")}</h2>
           </div>
           <Link href="/tenders">
             <span style={{ fontSize: 13, color: G, fontWeight: 700, cursor: "pointer", textDecoration: "none" }}>
-              عرض الكل ←
+              {t("common.viewAll")}
             </span>
           </Link>
         </div>
@@ -590,18 +592,18 @@ export default function Dashboard() {
           overflow: "hidden",
         }}>
           {tendersLoading ? (
-            <div style={{ padding: 32, textAlign: "center", color: "#94a3b8", fontSize: 14 }}>جارٍ التحميل...</div>
+            <div style={{ padding: 32, textAlign: "center", color: "#94a3b8", fontSize: 14 }}>{t("common.loading")}</div>
           ) : !recentTenders?.length ? (
             <div style={{ padding: 48, textAlign: "center", color: "#94a3b8", fontSize: 14 }}>
               <FileText size={36} color="#e2d5b0" style={{ margin: "0 auto 12px" }} />
-              <p style={{ margin: 0 }}>لا توجد مناقصات حالياً</p>
+              <p style={{ margin: 0 }}>{t("dash.noTenders")}</p>
             </div>
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "right" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "start" }}>
                 <thead>
                   <tr style={{ background: "#f9f6ee", borderBottom: "1.5px solid #f0ead8" }}>
-                    {["رقم المناقصة", "المشروع", "الجهة", "آخر موعد", "الحالة"].map(h => (
+                    {[t("dash.col.tenderNo"), t("dash.col.project"), t("dash.col.entity"), t("dash.col.deadline"), t("dash.col.status")].map(h => (
                       <th key={h} style={{ padding: "14px 18px", fontWeight: 700, color: "#4a3f1a", fontSize: 12, whiteSpace: "nowrap" }}>
                         {h}
                       </th>

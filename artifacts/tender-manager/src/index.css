@@ -109,6 +109,36 @@
   body { @apply font-sans antialiased bg-background text-foreground; }
 }
 
+/* ═══════════════ Responsive (mobile) global rules ═══════════════ */
+
+/* أي حاوية تحتضن جدولاً مباشرة تصبح قابلة للتمرير أفقيًا بدل كسر التخطيط */
+main *:has(> table) {
+  overflow-x: auto;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+main table { min-width: max-content; }
+
+main img { max-width: 100%; }
+
+@media (max-width: 768px) {
+  /* الشبكات ذات الأعمدة الثابتة (inline styles) تنهار لأعمدة مرنة على الجوال.
+     تُستثنى شبكات التقويم (repeat(7) ) وأي عنصر موسوم data-grid-keep */
+  main [style*="grid-template-columns"]:not([style*="repeat(7"]):not([data-grid-keep]) {
+    grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)) !important;
+  }
+
+  /* منع تكبير iOS التلقائي عند التركيز على الحقول */
+  main input, main select, main textarea {
+    font-size: 16px !important;
+  }
+
+  /* صفوف الأزرار/الفلاتر تلتف بدل تجاوز العرض */
+  main [style*="display: flex"][style*="align-items: center"] {
+    flex-wrap: wrap;
+  }
+}
+
 /* Custom Scrollbar for operations feel */
 ::-webkit-scrollbar {
   width: 8px;

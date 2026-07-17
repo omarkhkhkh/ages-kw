@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/contexts/auth";
+import { useI18n, LangToggle } from "@/contexts/i18n";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 import logoImg from "@/assets/logo.png";
 
@@ -13,6 +14,7 @@ const GREEN_LIGHT = "#1e4028";
 
 export default function Login() {
   const { login } = useAuth();
+  const { t, dir } = useI18n();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -26,7 +28,7 @@ export default function Login() {
     try {
       await login(username, password);
     } catch (err: any) {
-      setError(err.message || "حدث خطأ. حاول مجدداً.");
+      setError(err.message || t("login.error"));
     } finally {
       setLoading(false);
     }
@@ -109,16 +111,16 @@ export default function Login() {
           }} />
 
           <p style={{ color: GOLD_LIGHT, fontSize: 19, fontWeight: 700, margin: 0, letterSpacing: 0.3 }}>
-            نظام إدارة المناقصات والعقود
+            {t("login.systemName")}
           </p>
         </div>
 
         {/* Footer */}
         <p style={{
           position: "absolute", bottom: 22,
-          color: `rgba(212,165,52,0.28)`, fontSize: 11, direction: "rtl",
+          color: `rgba(212,165,52,0.28)`, fontSize: 11, direction: dir === "rtl" ? "rtl" : "ltr",
         }}>
-          © {new Date().getFullYear()} المجموعة العربية للخدمات التعلمية
+          © {new Date().getFullYear()} {t("app.company")}
         </p>
       </div>
 
@@ -128,7 +130,12 @@ export default function Login() {
         background: "#f7f5ef",   /* warm parchment — echoes the gold */
         padding: "48px 24px",
       }}>
-        <div style={{ width: "100%", maxWidth: 380, direction: "rtl" }}>
+        <div style={{ width: "100%", maxWidth: 380, direction: dir === "rtl" ? "rtl" : "ltr" }}>
+
+          {/* Lang toggle */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <LangToggle />
+          </div>
 
           {/* Mobile logo (hidden on desktop via media query) */}
           <div id="login-mobile-logo" style={{ textAlign: "center", marginBottom: 28 }}>
@@ -137,7 +144,7 @@ export default function Login() {
               alt="Arabian Group Logo"
               style={{ width: 160, objectFit: "contain", margin: "0 auto 6px", display: "block" }}
             />
-            <p style={{ color: "#7a6a40", fontSize: 13, margin: 0 }}>نظام إدارة المناقصات والعقود</p>
+            <p style={{ color: "#7a6a40", fontSize: 13, margin: 0 }}>{t("login.systemName")}</p>
           </div>
 
           {/* Form card */}
@@ -157,10 +164,10 @@ export default function Login() {
                 marginBottom: 14,
               }} />
               <h2 style={{ fontSize: 26, fontWeight: 800, color: GREEN_MID, margin: 0 }}>
-                تسجيل الدخول
+                {t("login.title")}
               </h2>
               <p style={{ color: "#8a8070", fontSize: 13, marginTop: 6, marginBottom: 0 }}>
-                أدخل بياناتك للوصول إلى النظام
+                {t("login.subtitle")}
               </p>
             </div>
 
@@ -172,12 +179,12 @@ export default function Login() {
                   display: "block", fontSize: 13, fontWeight: 700,
                   color: GREEN_MID, marginBottom: 6,
                 }}>
-                  اسم المستخدم
+                  {t("login.username")}
                 </label>
                 <input
                   id="login-username"
                   type="text" value={username} onChange={e => setUsername(e.target.value)}
-                  placeholder="أدخل اسم المستخدم" required autoComplete="username"
+                  placeholder={t("login.usernamePh")} required autoComplete="username"
                   style={{
                     width: "100%", boxSizing: "border-box",
                     border: "1.5px solid #e8e0cc", borderRadius: 12,
@@ -203,14 +210,14 @@ export default function Login() {
                   display: "block", fontSize: 13, fontWeight: 700,
                   color: GREEN_MID, marginBottom: 6,
                 }}>
-                  كلمة المرور
+                  {t("login.password")}
                 </label>
                 <div style={{ position: "relative" }}>
                   <input
                     id="login-password"
                     type={showPass ? "text" : "password"}
                     value={password} onChange={e => setPassword(e.target.value)}
-                    placeholder="أدخل كلمة المرور" required autoComplete="current-password"
+                    placeholder={t("login.passwordPh")} required autoComplete="current-password"
                     style={{
                       width: "100%", boxSizing: "border-box",
                       border: "1.5px solid #e8e0cc", borderRadius: 12,
@@ -230,7 +237,7 @@ export default function Login() {
                   />
                   <button
                     type="button" onClick={() => setShowPass(v => !v)}
-                    aria-label={showPass ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+                    aria-label={showPass ? t("login.hidePass") : t("login.showPass")}
                     style={{
                       position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)",
                       background: "none", border: "none", cursor: "pointer",
@@ -286,7 +293,7 @@ export default function Login() {
                       borderTopColor: "white", animation: "spin 0.8s linear infinite",
                       display: "inline-block",
                     }} />
-                  : <><LogIn size={18} /> دخول</>
+                  : <><LogIn size={18} /> {t("login.submit")}</>
                 }
               </button>
             </form>

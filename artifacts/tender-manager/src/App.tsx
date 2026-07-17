@@ -1,8 +1,9 @@
-import { Route, Switch, Router as WouterRouter } from 'wouter';
+import { Route, Switch, Redirect, Router as WouterRouter } from 'wouter';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/toaster';
 
 import { AuthProvider, useAuth } from '@/contexts/auth';
+import { I18nProvider } from '@/contexts/i18n';
 import { Layout } from '@/components/layout';
 import Landing from '@/pages/landing';
 import Login from '@/pages/login';
@@ -104,6 +105,8 @@ function AppRouter() {
     <Layout>
       <Switch>
         <Route path="/" component={Dashboard} />
+        {/* بعد تسجيل الدخول، /login تعيد التوجيه للوحة التحكم بدل صفحة 404 */}
+        <Route path="/login"><Redirect to="/" /></Route>
         <Route path="/tenders">
           <ModuleGuard access={isAdmin || user.accessTenders}><TendersList /></ModuleGuard>
         </Route>
@@ -218,12 +221,14 @@ function AppRouter() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-        <AuthProvider>
-          <AppRouter />
-        </AuthProvider>
-      </WouterRouter>
-      <Toaster />
+      <I18nProvider>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+          <AuthProvider>
+            <AppRouter />
+          </AuthProvider>
+        </WouterRouter>
+        <Toaster />
+      </I18nProvider>
     </QueryClientProvider>
   );
 }

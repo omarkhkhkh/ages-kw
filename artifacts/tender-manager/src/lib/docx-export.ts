@@ -15,6 +15,8 @@ interface DocxLetter {
   senderName?: string | null;
   companyName?: string | null;
   bodyJson?: string | null;
+  /** النسخة النهائية: يُدرج رقم الكتاب على جانب الصفحة (أعلى اليسار — Word لا يدعم التدوير العمودي هنا) */
+  finalNumbered?: boolean;
 }
 
 type TiptapMark = { type: string; attrs?: Record<string, any> };
@@ -176,6 +178,13 @@ export async function buildLetterDocx(letter: DocxLetter): Promise<Blob> {
   const isOutgoing = letter.direction !== "incoming";
 
   const headerChildren: Paragraph[] = [];
+
+  if (letter.finalNumbered) {
+    headerChildren.push(new Paragraph({
+      children: [new TextRun({ text: letter.letterNumber, bold: true, size: 18, font: "Courier New", color: "444444" })],
+      alignment: AlignmentType.LEFT,
+    }));
+  }
 
   if (isOutgoing && letter.recipientName) {
     headerChildren.push(new Paragraph({

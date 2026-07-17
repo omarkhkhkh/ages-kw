@@ -37,6 +37,15 @@ function sessionUser(req: Request) {
   };
 }
 
+/* خصوصية المراسلات: غير المدير بدون صلاحية correspondenceViewAll يرى كتبه فقط.
+   الفرض من جانب السيرفر بشكل غير مشروط — لا يعتمد على أي فلتر يرسله العميل. */
+function canViewAll(req: Request): boolean {
+  return req.session.role === "admin" || !!req.session.correspondenceViewAll;
+}
+function privacyCondition(req: Request): SQL | null {
+  return canViewAll(req) ? null : eq(correspondenceLettersTable.createdByUserId, req.session.userId!);
+}
+
 /* ── LIST / SEARCH ── */
 router.get("/", async (req: Request, res: Response) => {
   try {
@@ -50,6 +59,9 @@ router.get("/", async (req: Request, res: Response) => {
     const offset = parsePositiveInt(req.query.offset as string, 0);
 
     const conditions: SQL[] = [];
+
+    const privacy = privacyCondition(req);
+    if (privacy) conditions.push(privacy);
 
     if (sourceType && sourceId) {
       const col = {
@@ -97,17 +109,20 @@ router.get("/", async (req: Request, res: Response) => {
 });
 
 /* ── DASHBOARD STATS ── */
-router.get("/stats", async (_req: Request, res: Response) => {
+router.get("/stats", async (req: Request, res: Response) => {
   try {
+    const privacy = privacyCondition(req);
+    const privacySql = privacy ?? sql`true`;
+
     const [counts] = await db.select({
       outgoingCount:  sql<number>`count(*) filter (where direction = 'outgoing' and status != 'cancelled')::int`,
       incomingCount:  sql<number>`count(*) filter (where direction = 'incoming' and status != 'cancelled')::int`,
       unanswered:     sql<number>`count(*) filter (where direction = 'incoming' and is_answered = false and status != 'cancelled')::int`,
       pendingApproval: sql<number>`count(*) filter (where approval_status = 'pending' and status != 'cancelled')::int`,
-    }).from(correspondenceLettersTable);
+    }).from(correspondenceLettersTable).where(privacySql);
 
     const latest = await db.select().from(correspondenceLettersTable)
-      .where(sql`${correspondenceLettersTable.status} != 'cancelled'`)
+      .where(and(sql`${correspondenceLettersTable.status} != 'cancelled'`, privacySql))
       .orderBy(desc(correspondenceLettersTable.createdAt)).limit(5);
 
     const deadlineAlerts = await db.select().from(correspondenceLettersTable)
@@ -116,6 +131,7 @@ router.get("/stats", async (_req: Request, res: Response) => {
         sql`${correspondenceLettersTable.deadlineDate} <= current_date + interval '7 days'`,
         eq(correspondenceLettersTable.isAnswered, false),
         sql`${correspondenceLettersTable.status} NOT IN ('closed', 'cancelled')`,
+        privacySql,
       ))
       .orderBy(correspondenceLettersTable.deadlineDate)
       .limit(20);
@@ -133,6 +149,9 @@ router.get("/:id", async (req: Request, res: Response) => {
   try {
     const [letter] = await db.select().from(correspondenceLettersTable).where(eq(correspondenceLettersTable.id, id));
     if (!letter) return res.status(404).json({ error: "الخطاب غير موجود" });
+    if (!canViewAll(req) && letter.createdByUserId !== req.session.userId) {
+      return res.status(403).json({ error: "لا تملك صلاحية الاطلاع على كتب الموظفين الآخرين" });
+    }
     const attachments = await db.select().from(correspondenceAttachmentsTable).where(eq(correspondenceAttachmentsTable.letterId, id));
     return res.json({ ...letter, attachments });
   } catch {

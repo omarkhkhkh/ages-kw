@@ -14,6 +14,8 @@ interface PrintableLetter {
   companyName?: string | null;
   bodyJson?: string | null;
   bodyHtml?: string | null;
+  /** النسخة النهائية المصدَّرة: يُطبع رقم الكتاب عموديًا على حافة الصفحة (بدون تاريخ) */
+  finalNumbered?: boolean;
 }
 
 /**
@@ -82,9 +84,18 @@ export function printLetter(letter: PrintableLetter) {
   .closing { text-align: center; font-weight: 800; margin: ${spacing.closingMarginTop} 0 10px; }
   .closing p { margin: 4px 0; }
   .signature { margin-top: ${spacing.signatureMarginTop}; font-weight: 800; text-align: left; }
+  /* رقم الكتاب عموديًا على حافة الصفحة اليسرى — يظهر فقط في النسخة النهائية */
+  .side-number {
+    position: fixed; top: 2.2cm; left: 0;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+    font-size: 11.5px; font-weight: 800; letter-spacing: 2px;
+    color: #444; font-family: 'Courier New', monospace;
+    border-left: 2px solid #b8963f; padding-left: 4px;
+  }
 </style>
 </head>
 <body>
+  ${letter.finalNumbered ? `<div class="side-number">${escapeHtml(letter.letterNumber)}</div>` : ""}
   ${recipientLine}
   ${attentionLine}
   <p class="greeting">تحية طيبة وبعد ،،،،،</p>

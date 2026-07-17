@@ -13,7 +13,7 @@ import AttachmentsPanel from "./attachments-panel";
 import LinkLetterPrompt from "./link-letter-prompt";
 import {
   X, Save, Send, Printer, FileDown, FileText, Bold, Italic, Underline as UnderlineIcon,
-  List, ListOrdered, Table as TableIcon, Image as ImageIcon, AlignRight, AlignCenter, Loader2, Ban,
+  List, ListOrdered, Table as TableIcon, Image as ImageIcon, AlignRight, AlignCenter, Loader2, Ban, BadgeCheck,
 } from "lucide-react";
 import type { CorrespondenceSourceType } from "./correspondence-list-panel";
 
@@ -230,7 +230,7 @@ export default function LetterEditorDialog({ letterId, sourceType, sourceId, gov
     input.click();
   };
 
-  const exportPayload = () => ({
+  const exportPayload = (finalNumbered = false) => ({
     letterNumber: existing?.letterNumber ?? "(مسودة)",
     subject: form.subject,
     letterDate: form.letterDate,
@@ -240,14 +240,19 @@ export default function LetterEditorDialog({ letterId, sourceType, sourceId, gov
     senderName: form.senderName,
     companyName: form.companyName,
     bodyJson: editor ? JSON.stringify(editor.getJSON()) : null,
+    finalNumbered,
   });
 
   const handlePrint = () => printLetter(exportPayload());
 
-  const handleExportDocx = async () => {
-    const blob = await buildLetterDocx(exportPayload());
-    downloadBlob(blob, `${existing?.letterNumber ?? "خطاب"}.docx`);
+  const handleExportDocx = async (finalNumbered = false) => {
+    const blob = await buildLetterDocx(exportPayload(finalNumbered));
+    downloadBlob(blob, `${existing?.letterNumber ?? "خطاب"}${finalNumbered ? "-نهائي" : ""}.docx`);
   };
+
+  // الكتاب "تم" (أُرسل أو أُغلق) → تتاح النسخة النهائية المرقّمة على جانب الصفحة
+  const isFinalized = existing?.status === "sent" || existing?.status === "closed";
+  const handleFinalPrint = () => printLetter(exportPayload(true));
 
   const toolbarBtn = (active: boolean, onClick: () => void, icon: React.ReactNode, title: string) => (
     <button
@@ -465,8 +470,20 @@ export default function LetterEditorDialog({ letterId, sourceType, sourceId, gov
             </button>
           )}
           <button onClick={handlePrint} style={footerBtnStyle("outline")}><Printer size={13} /> طباعة</button>
-          <button onClick={handleExportDocx} style={footerBtnStyle("outline")}><FileDown size={13} /> تصدير Word</button>
+          <button onClick={() => handleExportDocx(false)} style={footerBtnStyle("outline")}><FileDown size={13} /> تصدير Word</button>
           <button onClick={handlePrint} style={footerBtnStyle("outline")}><FileDown size={13} /> تصدير PDF</button>
+          {isFinalized && (
+            <>
+              <button onClick={handleFinalPrint} title="النسخة النهائية الكاملة برقم الكتاب على جانب الصفحة"
+                style={{ ...footerBtnStyle("outline"), background: "#f0fdf4", borderColor: "#16a34a88", color: "#166534" }}>
+                <BadgeCheck size={13} /> النسخة النهائية (PDF)
+              </button>
+              <button onClick={() => handleExportDocx(true)} title="النسخة النهائية الكاملة برقم الكتاب"
+                style={{ ...footerBtnStyle("outline"), background: "#f0fdf4", borderColor: "#16a34a88", color: "#166534" }}>
+                <BadgeCheck size={13} /> النسخة النهائية (Word)
+              </button>
+            </>
+          )}
           <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || isCancelled} style={footerBtnStyle("secondary")}>
             {saveMutation.isPending ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Save size={13} />} حفظ كمسودة
           </button>

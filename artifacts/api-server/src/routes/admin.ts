@@ -39,6 +39,7 @@ const USER_SELECT = {
   accessTasks: usersTable.accessTasks,
   taskViewScope: usersTable.taskViewScope,
   taskCanApprove: usersTable.taskCanApprove,
+  correspondenceViewAll: usersTable.correspondenceViewAll,
   isActive: usersTable.isActive,
   createdAt: usersTable.createdAt,
   lastLogin: usersTable.lastLogin,
@@ -58,7 +59,7 @@ router.post("/users", async (req, res) => {
     accessTenders, accessEntities, accessSuppliers, accessProjects,
     accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation, accessFinance,
     accessCorrespondence, accessResidency, accessMaintenance, accessResearch, accessPricing,
-    accessTasks, taskViewScope, taskCanApprove,
+    accessTasks, taskViewScope, taskCanApprove, correspondenceViewAll,
   } = req.body as any;
 
   if (!username || !fullName || !password) {
@@ -99,6 +100,7 @@ router.post("/users", async (req, res) => {
       accessTasks: accessTasks ?? true,
       taskViewScope: taskViewScope ?? "own",
       taskCanApprove: taskCanApprove ?? false,
+      correspondenceViewAll: correspondenceViewAll ?? false,
     })
     .returning(USER_SELECT);
 
@@ -114,7 +116,7 @@ router.patch("/users/:id", async (req, res) => {
     accessTenders, accessEntities, accessSuppliers, accessProjects,
     accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation, accessFinance,
     accessCorrespondence, accessResidency, accessMaintenance, accessResearch, accessPricing,
-    accessTasks, taskViewScope, taskCanApprove,
+    accessTasks, taskViewScope, taskCanApprove, correspondenceViewAll,
   } = req.body as any;
 
   const updates: Partial<typeof usersTable.$inferInsert> = {};
@@ -143,6 +145,7 @@ router.patch("/users/:id", async (req, res) => {
   if (accessTasks !== undefined) updates.accessTasks = accessTasks;
   if (taskViewScope !== undefined) updates.taskViewScope = taskViewScope;
   if (taskCanApprove !== undefined) updates.taskCanApprove = taskCanApprove;
+  if (correspondenceViewAll !== undefined) updates.correspondenceViewAll = correspondenceViewAll;
 
   if (password) {
     if (password.length < 6) {

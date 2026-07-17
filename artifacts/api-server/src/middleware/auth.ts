@@ -29,6 +29,7 @@ declare module "express-session" {
     accessPricing: boolean;
     accessTasks: boolean;
     taskViewScope: string;
+    correspondenceViewAll: boolean;
     taskCanApprove: boolean;
   }
 }

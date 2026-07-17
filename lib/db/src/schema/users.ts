@@ -32,6 +32,8 @@ export const usersTable = pgTable("users", {
   accessTasks: boolean("access_tasks").notNull().default(true),
   taskViewScope: text("task_view_scope").notNull().default("own"), // 'own' | 'department' | 'all'
   taskCanApprove: boolean("task_can_approve").notNull().default(false),
+  // خصوصية المراسلات: الموظف يرى كتبه فقط ما لم يمنحه المدير هذه الصلاحية
+  correspondenceViewAll: boolean("correspondence_view_all").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastLogin: timestamp("last_login"),

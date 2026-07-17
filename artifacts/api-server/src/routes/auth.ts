@@ -40,6 +40,7 @@ function buildUserResponse(user: any) {
     accessTasks: user.accessTasks,
     taskViewScope: user.taskViewScope,
     taskCanApprove: user.taskCanApprove,
+    correspondenceViewAll: user.correspondenceViewAll,
   };
 }
 
@@ -82,6 +83,7 @@ router.post("/login", async (req, res) => {
   }
   req.session.taskViewScope = user.taskViewScope ?? "own";
   req.session.taskCanApprove = user.taskCanApprove ?? false;
+  req.session.correspondenceViewAll = user.correspondenceViewAll ?? false;
 
   // Log login activity
   logActivity({
@@ -143,6 +145,7 @@ router.get("/me", (req, res) => {
     accessTasks: req.session.accessTasks ?? true,
     taskViewScope: req.session.taskViewScope ?? "own",
     taskCanApprove: req.session.taskCanApprove ?? false,
+    correspondenceViewAll: req.session.correspondenceViewAll ?? false,
   });
 });
 

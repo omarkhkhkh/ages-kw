@@ -31,6 +31,7 @@ interface UserRow {
   accessTasks: boolean;
   taskViewScope: string;
   taskCanApprove: boolean;
+  correspondenceViewAll: boolean;
   isActive: boolean; createdAt: string; lastLogin: string | null;
 }
 
@@ -68,7 +69,7 @@ const defaultForm = {
   accessRfq: true, accessPo: true, accessTransportation: true, accessFinance: true,
   accessCorrespondence: true, accessResidency: true, accessMaintenance: true, accessResearch: true,
   accessPricing: true,
-  accessTasks: true, taskViewScope: "own", taskCanApprove: false,
+  accessTasks: true, taskViewScope: "own", taskCanApprove: false, correspondenceViewAll: false,
 };
 
 /* ── Toggle switch ── */
@@ -238,6 +239,22 @@ function UserModal({ open, editing, form, setForm, newPass, setNewPass, onClose,
                 <span style={{ fontSize: 12, fontWeight: 600, color: (data as any).taskCanApprove ? "#16a34a" : "#9ca3af" }}>صلاحية اعتماد المهام</span>
               </div>
             </div>
+          </div>
+
+          <Divider />
+
+          {/* Correspondence privacy */}
+          <div>
+            <SectionTitle>خصوصية المراسلات</SectionTitle>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: (data as any).correspondenceViewAll ? "#f0fdf4" : "#f9fafb", border: `1.5px solid ${(data as any).correspondenceViewAll ? "#bbf7d0" : "#e5e7eb"}` }}>
+              <Toggle checked={(data as any).correspondenceViewAll} onChange={v => set("correspondenceViewAll", v)} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: (data as any).correspondenceViewAll ? "#16a34a" : "#9ca3af" }}>
+                الاطلاع على كتب جميع الموظفين
+              </span>
+            </div>
+            <p style={{ fontSize: 11, color: "#9ca3af", margin: "6px 2px 0" }}>
+              بدون هذه الصلاحية يرى الموظف كتبه (التي أنشأها) فقط — المدير يرى الجميع دائمًا.
+            </p>
           </div>
 
           {/* Save */}
@@ -984,6 +1001,7 @@ export default function AdminUsers() {
           accessTasks: editing.accessTasks,
           taskViewScope: editing.taskViewScope,
           taskCanApprove: editing.taskCanApprove,
+          correspondenceViewAll: (editing as any).correspondenceViewAll ?? false,
           ...(newPass ? { password: newPass } : {}),
         },
       });

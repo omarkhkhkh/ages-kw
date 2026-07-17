@@ -31,6 +31,7 @@ export interface AuthUser {
   accessTasks: boolean;
   taskViewScope: "own" | "department" | "all";
   taskCanApprove: boolean;
+  correspondenceViewAll: boolean;
 }
 
 interface AuthContextValue {

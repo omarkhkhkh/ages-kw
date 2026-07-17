@@ -95,9 +95,24 @@ app.use("/api", router);
 // يقدّمها السيرفر نفسه مع SPA fallback — فلا حاجة لخدمة nginx منفصلة.
 const staticDir = process.env.STATIC_DIR ?? path.join(process.cwd(), "public");
 if (fs.existsSync(path.join(staticDir, "index.html"))) {
-  app.use(express.static(staticDir));
+  app.use(
+    express.static(staticDir, {
+      setHeaders: (res, filePath) => {
+        // index.html لا يُخزَّن أبدًا (حتى تصل التحديثات فورًا بعد كل نشرة)،
+        // بينما ملفات assets/ تحمل hash في اسمها فتُخزَّن للأبد بأمان
+        if (filePath.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      },
+    }),
+  );
   app.use((req, res, next) => {
     if (req.method !== "GET" || req.path.startsWith("/api")) return next();
+    // طلب asset قديم غير موجود (نشرة سابقة) — 404 صريح أفضل من إرجاع HTML بنوع خاطئ
+    if (req.path.startsWith("/assets/")) return res.status(404).end();
+    res.setHeader("Cache-Control", "no-cache");
     return res.sendFile(path.join(staticDir, "index.html"));
   });
   logger.info({ staticDir }, "Serving built frontend");

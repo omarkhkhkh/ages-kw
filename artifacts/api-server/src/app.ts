@@ -29,10 +29,19 @@ app.use(
   }),
 );
 
-// Allow requests from the same Replit proxy domain or localhost in dev
-const allowedOrigins = process.env.REPLIT_DEV_DOMAIN
-  ? [`https://${process.env.REPLIT_DEV_DOMAIN}`]
-  : ["http://localhost:21269", "http://localhost:5173"];
+// Allow requests from the same Replit proxy domain or localhost in dev.
+// EXTRA_ALLOWED_ORIGINS (comma-separated) covers Docker/production hosts, e.g.
+// EXTRA_ALLOWED_ORIGINS=http://localhost:8080,https://ages.example.com
+const extraOrigins = (process.env.EXTRA_ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+const allowedOrigins = [
+  ...(process.env.REPLIT_DEV_DOMAIN
+    ? [`https://${process.env.REPLIT_DEV_DOMAIN}`]
+    : ["http://localhost:21269", "http://localhost:5173"]),
+  ...extraOrigins,
+];
 
 app.use(
   cors({
@@ -58,7 +67,8 @@ app.use(
     store: new PgSession({
       pool: sessionPool,
       tableName: "session",
-      createTableIfMissing: false,
+      // ينشئ جدول الجلسات تلقائيًا عند أول إقلاع على قاعدة بيانات جديدة (Docker)
+      createTableIfMissing: true,
     }),
     secret: process.env.SESSION_SECRET ?? (() => { throw new Error("SESSION_SECRET env var is required"); })(),
     resave: false,

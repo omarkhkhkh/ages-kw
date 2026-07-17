@@ -10,12 +10,10 @@
     "@uppy/aws-s3": "^5.0.0",
     "@uppy/core": "^5.0.0",
     "@uppy/dashboard": "^5.0.0",
-    "@uppy/react": "^5.0.0"
+    "@uppy/react": "^5.0.0",
+    "react": "catalog:"
   },
   "devDependencies": {
     "@types/react": "catalog:"
-  },
-  "peerDependencies": {
-    "react": ">=18"
   }
 }

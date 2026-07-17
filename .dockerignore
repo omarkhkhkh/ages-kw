@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.claude
+*.log
+artifacts/api-server/uploads
+artifacts/uploads
+attached_assets
+.env
+.env.*

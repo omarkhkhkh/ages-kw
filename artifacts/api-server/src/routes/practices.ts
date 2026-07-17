@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
-import { desc, ilike, eq, or, sql } from "drizzle-orm";
+import { desc, ilike, eq, or, sql, and } from "drizzle-orm";
 import { db, practicesTable, insertPracticeSchema, updatePracticeSchema } from "@workspace/db";
+import { ownRecordsOnly } from "../middleware/auth";
 
 const router = Router();
 
@@ -10,6 +11,10 @@ router.get("/", async (req: Request, res: Response) => {
     const { status, search } = req.query as Record<string, string>;
 
     const conditions: any[] = [];
+    // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
+    if (ownRecordsOnly(req)) {
+      conditions.push(sql`(${practicesTable.createdByUserId} IS NULL OR ${practicesTable.createdByUserId} = ${req.session.userId})`);
+    }
     if (status && status !== "all") conditions.push(eq(practicesTable.status, status));
     if (search) conditions.push(or(
       ilike(practicesTable.projectName,    `%${search}%`),
@@ -19,8 +24,7 @@ router.get("/", async (req: Request, res: Response) => {
     ));
 
     let query = db.select().from(practicesTable).$dynamic();
-    if (conditions.length === 1) query = query.where(conditions[0]);
-    if (conditions.length >= 2)  query = query.where(sql`(${conditions[0]}) and (${conditions[1]})`);
+    if (conditions.length > 0) query = query.where(and(...conditions));
 
     const rows = await query.orderBy(desc(practicesTable.createdAt));
     return res.json(rows);
@@ -72,7 +76,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertPracticeSchema.parse(req.body);
-    const [row] = await db.insert(practicesTable).values(data).returning();
+    const [row] = await db.insert(practicesTable).values({ ...data, createdByUserId: req.session.userId ?? null }).returning();
     return res.status(201).json(row);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });

@@ -5,6 +5,7 @@ import { tendersTable } from "./tenders";
 import { governmentEntitiesTable } from "./government-entities";
 import { companiesTable } from "./company-documents";
 import { departmentsTable, governmentContactsTable } from "./entity-directory";
+import { usersTable } from "./users";
 
 export const contractsTable = pgTable("contracts", {
   id: serial("id").primaryKey(),
@@ -27,6 +28,7 @@ export const contractsTable = pgTable("contracts", {
   finalBondIssueDate:  date("final_bond_issue_date"),  // تاريخ الإصدار
   finalBondExpiryDate: date("final_bond_expiry_date"), // تاريخ الانتهاء
   finalBondStatus:     text("final_bond_status").default("active"), // active | released | confiscated
+  createdByUserId: integer("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }), // منشئ السجل — لخصوصية العرض
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

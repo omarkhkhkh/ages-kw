@@ -35,6 +35,7 @@ export const directPurchaseOrdersTable = pgTable("direct_purchase_orders", {
   // supplier_approval | po_issued | materials_received | materials_inspected | delivered_to_entity | closed
   poFileUrl: text("po_file_url"),
   notes: text("notes"),
+  createdByUserId: integer("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }), // منشئ السجل — لخصوصية العرض
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

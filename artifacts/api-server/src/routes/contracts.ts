@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { eq, and, sql } from "drizzle-orm";
+import { ownRecordsOnly } from "../middleware/auth";
 import {
   db,
   contractsTable,
@@ -75,6 +76,12 @@ router.get("/", async (req: Request, res: Response) => {
       `);
     }
 
+    // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
+    if (ownRecordsOnly(req)) {
+      params.push(userId);
+      conditions.push(`(c.created_by_user_id IS NULL OR c.created_by_user_id = $${params.length})`);
+    }
+
     if (status && status !== "all") {
       params.push(status);
       conditions.push(`c.status = $${params.length}`);
@@ -112,7 +119,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertContractSchema.parse(req.body);
-    const [contract] = await db.insert(contractsTable).values(data).returning();
+    const [contract] = await db.insert(contractsTable).values({ ...data, createdByUserId: req.session.userId ?? null }).returning();
     if (contract.signDate) {
       insertAutomationTask({
         title: `متابعة تنفيذ عقد موقّع: ${contract.contractNumber}`,

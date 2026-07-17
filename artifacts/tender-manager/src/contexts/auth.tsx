@@ -32,6 +32,8 @@ export interface AuthUser {
   taskViewScope: "own" | "department" | "all";
   taskCanApprove: boolean;
   correspondenceViewAll: boolean;
+  permissions?: Record<string, { view: boolean; add: boolean; edit: boolean; del: boolean }>;
+  recordViewScope?: string;
 }
 
 interface AuthContextValue {

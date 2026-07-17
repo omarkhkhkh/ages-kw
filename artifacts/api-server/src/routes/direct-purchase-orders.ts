@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { eq, and } from "drizzle-orm";
+import { ownRecordsOnly } from "../middleware/auth";
 import {
   db,
   pool,
@@ -46,6 +47,11 @@ router.get("/", async (req: Request, res: Response) => {
     const { status, contractId } = req.query as Record<string, string>;
     const conditions: string[] = [];
     const params: any[] = [];
+    // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
+    if (ownRecordsOnly(req)) {
+      params.push(req.session.userId);
+      conditions.push(`(po.created_by_user_id IS NULL OR po.created_by_user_id = $${params.length})`);
+    }
     if (status) { params.push(status); conditions.push(`po.status = $${params.length}`); }
     if (contractId) { params.push(Number(contractId)); conditions.push(`po.contract_id = $${params.length}`); }
     const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -152,7 +158,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertDirectPurchaseOrderSchema.parse(req.body);
-    const [order] = await db.insert(directPurchaseOrdersTable).values(data).returning();
+    const [order] = await db.insert(directPurchaseOrdersTable).values({ ...data, createdByUserId: req.session.userId ?? null }).returning();
     return res.status(201).json(order);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });

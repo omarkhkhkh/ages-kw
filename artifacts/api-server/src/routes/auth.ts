@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logActivity } from "../middleware/activity-logger";
+import { synthesizePermissions } from "../middleware/auth";
 
 const router = Router();
 
@@ -41,6 +42,8 @@ function buildUserResponse(user: any) {
     taskViewScope: user.taskViewScope,
     taskCanApprove: user.taskCanApprove,
     correspondenceViewAll: user.correspondenceViewAll,
+    permissions: user.permissions ?? synthesizePermissions(user),
+    recordViewScope: user.recordViewScope ?? "own",
   };
 }
 
@@ -84,6 +87,8 @@ router.post("/login", async (req, res) => {
   req.session.taskViewScope = user.taskViewScope ?? "own";
   req.session.taskCanApprove = user.taskCanApprove ?? false;
   req.session.correspondenceViewAll = user.correspondenceViewAll ?? false;
+  req.session.permissions = user.permissions ?? synthesizePermissions(user);
+  req.session.recordViewScope = user.recordViewScope ?? "own";
 
   // Log login activity
   logActivity({
@@ -146,6 +151,8 @@ router.get("/me", (req, res) => {
     taskViewScope: req.session.taskViewScope ?? "own",
     taskCanApprove: req.session.taskCanApprove ?? false,
     correspondenceViewAll: req.session.correspondenceViewAll ?? false,
+    permissions: req.session.permissions ?? synthesizePermissions(req.session as any),
+    recordViewScope: req.session.recordViewScope ?? "own",
   });
 });
 

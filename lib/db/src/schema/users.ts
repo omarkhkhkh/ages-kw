@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -34,6 +34,12 @@ export const usersTable = pgTable("users", {
   taskCanApprove: boolean("task_can_approve").notNull().default(false),
   // خصوصية المراسلات: الموظف يرى كتبه فقط ما لم يمنحه المدير هذه الصلاحية
   correspondenceViewAll: boolean("correspondence_view_all").notNull().default(false),
+  // مصفوفة الصلاحيات الدقيقة: لكل وحدة { view, add, edit, del } — المدير يتجاوزها دائمًا.
+  // null = تُشتق تلقائيًا من الأعمدة القديمة (accessX + canEdit) للتوافق الخلفي.
+  permissions: jsonb("permissions").$type<Record<string, { view: boolean; add: boolean; edit: boolean; del: boolean }>>(),
+  // خصوصية السجلات الرئيسية (مناقصات/ممارسات/عقود/مشاريع/أوامر شراء):
+  // 'own' = يرى سجلاته فقط (والسجلات القديمة بلا منشئ)، 'all' = يرى الكل
+  recordViewScope: text("record_view_scope").notNull().default("own"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lastLogin: timestamp("last_login"),

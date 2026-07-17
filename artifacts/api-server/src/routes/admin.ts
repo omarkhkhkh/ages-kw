@@ -7,6 +7,38 @@ import { activityLogger } from "../middleware/activity-logger";
 
 const router = Router();
 
+/* ── مصفوفة الصلاحيات الدقيقة ── */
+const MODULE_KEYS = [
+  "accessTenders", "accessEntities", "accessSuppliers", "accessProjects",
+  "accessGuarantees", "accessContracts", "accessRfq", "accessPo", "accessTransportation", "accessFinance",
+  "accessCorrespondence", "accessResidency", "accessMaintenance", "accessResearch", "accessPricing", "accessTasks",
+] as const;
+
+type Matrix = Record<string, { view: boolean; add: boolean; edit: boolean; del: boolean }>;
+
+/** يقبل فقط المفاتيح المعروفة والقيم المنطقية — أي شيء آخر يُهمل */
+function sanitizePermissions(raw: any): Matrix | null {
+  if (!raw || typeof raw !== "object") return null;
+  const out: Matrix = {};
+  for (const key of MODULE_KEYS) {
+    const m = raw[key];
+    out[key] = {
+      view: !!m?.view,
+      add: !!m?.add,
+      edit: !!m?.edit,
+      del: !!m?.del,
+    };
+  }
+  return out;
+}
+
+/** أعمدة accessX القديمة تُشتق من "عرض" في المصفوفة (تغذي القائمة الجانبية والتوافق الخلفي) */
+function accessColumnsFromMatrix(matrix: Matrix): Record<string, boolean> {
+  const out: Record<string, boolean> = {};
+  for (const key of MODULE_KEYS) out[key] = matrix[key]?.view ?? false;
+  return out;
+}
+
 // All admin routes require admin role
 router.use(requireAdmin);
 // Log admin mutations (POST/PATCH/DELETE) — mounted before /admin in index.ts so needs explicit attachment here
@@ -40,6 +72,8 @@ const USER_SELECT = {
   taskViewScope: usersTable.taskViewScope,
   taskCanApprove: usersTable.taskCanApprove,
   correspondenceViewAll: usersTable.correspondenceViewAll,
+  permissions: usersTable.permissions,
+  recordViewScope: usersTable.recordViewScope,
   isActive: usersTable.isActive,
   createdAt: usersTable.createdAt,
   lastLogin: usersTable.lastLogin,
@@ -60,6 +94,7 @@ router.post("/users", async (req, res) => {
     accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation, accessFinance,
     accessCorrespondence, accessResidency, accessMaintenance, accessResearch, accessPricing,
     accessTasks, taskViewScope, taskCanApprove, correspondenceViewAll,
+    permissions, recordViewScope,
   } = req.body as any;
 
   if (!username || !fullName || !password) {
@@ -101,6 +136,10 @@ router.post("/users", async (req, res) => {
       taskViewScope: taskViewScope ?? "own",
       taskCanApprove: taskCanApprove ?? false,
       correspondenceViewAll: correspondenceViewAll ?? false,
+      permissions: sanitizePermissions(permissions),
+      recordViewScope: recordViewScope === "all" ? "all" : "own",
+      // إبقاء أعمدة accessX القديمة متزامنة مع "عرض" في المصفوفة (تغذي القائمة الجانبية)
+      ...(permissions ? accessColumnsFromMatrix(sanitizePermissions(permissions)!) : {}),
     })
     .returning(USER_SELECT);
 
@@ -117,6 +156,7 @@ router.patch("/users/:id", async (req, res) => {
     accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation, accessFinance,
     accessCorrespondence, accessResidency, accessMaintenance, accessResearch, accessPricing,
     accessTasks, taskViewScope, taskCanApprove, correspondenceViewAll,
+    permissions, recordViewScope,
   } = req.body as any;
 
   const updates: Partial<typeof usersTable.$inferInsert> = {};
@@ -146,6 +186,12 @@ router.patch("/users/:id", async (req, res) => {
   if (taskViewScope !== undefined) updates.taskViewScope = taskViewScope;
   if (taskCanApprove !== undefined) updates.taskCanApprove = taskCanApprove;
   if (correspondenceViewAll !== undefined) updates.correspondenceViewAll = correspondenceViewAll;
+  if (recordViewScope !== undefined) updates.recordViewScope = recordViewScope === "all" ? "all" : "own";
+  if (permissions !== undefined) {
+    const clean = sanitizePermissions(permissions);
+    updates.permissions = clean;
+    if (clean) Object.assign(updates, accessColumnsFromMatrix(clean));
+  }
 
   if (password) {
     if (password.length < 6) {

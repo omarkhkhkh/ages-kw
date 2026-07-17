@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
+import { ownRecordsOnly } from "../middleware/auth";
 import {
   db,
   projectsTable,
@@ -50,8 +51,15 @@ router.get("/", async (req: Request, res: Response) => {
       .leftJoin(governmentContactsTable, eq(projectsTable.contactId, governmentContactsTable.id))
       .orderBy(projectsTable.createdAt);
 
-    const results = status
-      ? await base.where(eq(projectsTable.status, status as string))
+    const conditions: any[] = [];
+    // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
+    if (ownRecordsOnly(req)) {
+      conditions.push(sql`(${projectsTable.createdByUserId} IS NULL OR ${projectsTable.createdByUserId} = ${req.session.userId})`);
+    }
+    if (status) conditions.push(eq(projectsTable.status, status as string));
+
+    const results = conditions.length
+      ? await base.where(and(...conditions))
       : await base;
     return res.json(results);
   } catch {
@@ -73,7 +81,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertProjectSchema.parse(req.body);
-    const [project] = await db.insert(projectsTable).values(data).returning();
+    const [project] = await db.insert(projectsTable).values({ ...data, createdByUserId: req.session.userId ?? null }).returning();
     return res.status(201).json(project);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });

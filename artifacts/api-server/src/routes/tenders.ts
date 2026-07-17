@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { eq, ilike, or, sql, and } from "drizzle-orm";
 import { db, tendersTable, departmentsTable, governmentContactsTable, pool } from "@workspace/db";
 import { insertAutomationTask } from "./task-automation";
+import { ownRecordsOnly } from "../middleware/auth";
 
 const router = Router();
 
@@ -71,6 +72,13 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
           AND tp.user_id   = ${userId}
           AND tp.can_view  = false
       )` as ReturnType<typeof eq>
+    );
+  }
+
+  // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
+  if (ownRecordsOnly(req)) {
+    conditions.push(
+      sql`(${tendersTable.createdByUserId} IS NULL OR ${tendersTable.createdByUserId} = ${userId})` as ReturnType<typeof eq>
     );
   }
 
@@ -254,6 +262,7 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
       isSubmitted: Boolean(body.isSubmitted ?? false),
       winner: body.winner ? String(body.winner) : null,
       notes: body.notes ? String(body.notes) : null,
+      createdByUserId: req.session.userId ?? null,
     })
     .returning();
 

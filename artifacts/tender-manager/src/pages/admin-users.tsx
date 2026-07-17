@@ -32,7 +32,37 @@ interface UserRow {
   taskViewScope: string;
   taskCanApprove: boolean;
   correspondenceViewAll: boolean;
+  permissions: PermMatrix | null;
+  recordViewScope: string;
   isActive: boolean; createdAt: string; lastLogin: string | null;
+}
+
+/* ── مصفوفة الصلاحيات الدقيقة ── */
+type PermActions = { view: boolean; add: boolean; edit: boolean; del: boolean };
+type PermMatrix = Record<string, PermActions>;
+
+const PERM_ACTIONS = [
+  { key: "view", label: "عرض" },
+  { key: "add",  label: "إضافة" },
+  { key: "edit", label: "تعديل" },
+  { key: "del",  label: "حذف" },
+] as const;
+
+function defaultMatrix(view = true, write = false): PermMatrix {
+  const m: PermMatrix = {};
+  for (const { key } of MODULES) m[key] = { view, add: write, edit: write, del: write };
+  return m;
+}
+
+/** للمستخدمين القدامى بلا مصفوفة: تُشتق من accessX + canEdit (نفس منطق السيرفر) */
+function matrixFromLegacy(u: Partial<UserRow>): PermMatrix {
+  const write = !!u.canEdit;
+  const m: PermMatrix = {};
+  for (const { key } of MODULES) {
+    const has = (u as any)[key] ?? true;
+    m[key] = { view: !!has, add: !!has && write, edit: !!has && write, del: !!has && write };
+  }
+  return m;
 }
 
 const MODULES = [
@@ -70,6 +100,8 @@ const defaultForm = {
   accessCorrespondence: true, accessResidency: true, accessMaintenance: true, accessResearch: true,
   accessPricing: true,
   accessTasks: true, taskViewScope: "own", taskCanApprove: false, correspondenceViewAll: false,
+  permissions: null as PermMatrix | null,
+  recordViewScope: "own",
 };
 
 /* ── Toggle switch ── */
@@ -206,18 +238,100 @@ function UserModal({ open, editing, form, setForm, newPass, setNewPass, onClose,
 
           <Divider />
 
-          {/* Module access */}
+          {/* مصفوفة الصلاحيات الدقيقة */}
           <div>
-            <SectionTitle>الوحدات المتاحة</SectionTitle>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {MODULES.map(({ key, label, icon }) => (
-                <div key={key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: (data as any)[key] ? "#f0fdf4" : "#f9fafb", border: `1.5px solid ${(data as any)[key] ? "#bbf7d0" : "#e5e7eb"}`, transition: "all 0.15s" }}>
-                  <Toggle checked={(data as any)[key]} onChange={v => set(key, v)} />
-                  <span style={{ fontSize: 16 }}>{icon}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: (data as any)[key] ? "#16a34a" : "#9ca3af" }}>{label}</span>
+            <SectionTitle>مصفوفة الصلاحيات — لكل وحدة: عرض / إضافة / تعديل / حذف</SectionTitle>
+            <p style={{ fontSize: 11, color: "#9ca3af", margin: "0 2px 10px" }}>
+              تُفرض من السيرفر تلقائيًا: بدون "عرض" لا تظهر الوحدة إطلاقًا، وكل عملية إضافة/تعديل/حذف تتطلب صلاحيتها. المدير يملك كل الصلاحيات دائمًا.
+            </p>
+            {(() => {
+              const matrix: PermMatrix = (data as any).permissions ?? matrixFromLegacy(data as any);
+              const setCell = (mod: string, action: keyof PermActions, val: boolean) => {
+                const next: PermMatrix = { ...matrix, [mod]: { ...matrix[mod], [action]: val } };
+                // بدون عرض، بقية الصلاحيات بلا معنى — تُصفَّر تلقائيًا
+                if (action === "view" && !val) next[mod] = { view: false, add: false, edit: false, del: false };
+                // منح إضافة/تعديل/حذف يفعّل العرض تلقائيًا
+                if (action !== "view" && val) next[mod] = { ...next[mod], view: true };
+                set("permissions", next);
+              };
+              const setRow = (mod: string, val: boolean) => {
+                set("permissions", { ...matrix, [mod]: { view: val, add: val, edit: val, del: val } });
+              };
+              const setCol = (action: keyof PermActions, val: boolean) => {
+                const next: PermMatrix = { ...matrix };
+                for (const { key } of MODULES) {
+                  next[key] = { ...next[key], [action]: val };
+                  if (action === "view" && !val) next[key] = { view: false, add: false, edit: false, del: false };
+                  if (action !== "view" && val) next[key] = { ...next[key], view: true };
+                }
+                set("permissions", next);
+              };
+              const colAll = (action: keyof PermActions) => MODULES.every(({ key }) => matrix[key]?.[action]);
+              const cellBox = (checked: boolean, onChange: () => void) => (
+                <button type="button" onClick={onChange} style={{
+                  width: 22, height: 22, borderRadius: 6, cursor: "pointer",
+                  border: `1.5px solid ${checked ? "#16a34a" : "#d1d5db"}`,
+                  background: checked ? "#16a34a" : "white",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                  color: "white", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0,
+                }}>{checked ? "✓" : ""}</button>
+              );
+              return (
+                <div style={{ border: "1.5px solid #f0ead8", borderRadius: 14, overflow: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: "#f9f6ee" }}>
+                        <th style={{ padding: "10px 14px", textAlign: "right", fontWeight: 800, color: "#4a3f1a" }}>الوحدة</th>
+                        {PERM_ACTIONS.map(a => (
+                          <th key={a.key} style={{ padding: "10px 8px", textAlign: "center", fontWeight: 800, color: "#4a3f1a", whiteSpace: "nowrap" }}>
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
+                              {a.label}
+                              {cellBox(colAll(a.key as keyof PermActions), () => setCol(a.key as keyof PermActions, !colAll(a.key as keyof PermActions)))}
+                            </div>
+                          </th>
+                        ))}
+                        <th style={{ padding: "10px 8px", textAlign: "center", fontWeight: 800, color: "#4a3f1a" }}>الكل</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {MODULES.map(({ key, label, icon }) => {
+                        const row = matrix[key] ?? { view: false, add: false, edit: false, del: false };
+                        const rowAll = row.view && row.add && row.edit && row.del;
+                        return (
+                          <tr key={key} style={{ borderTop: "1px solid #f3f0e4", background: row.view ? "white" : "#fafafa" }}>
+                            <td style={{ padding: "8px 14px", fontWeight: 700, color: row.view ? "#132a18" : "#9ca3af", whiteSpace: "nowrap" }}>
+                              <span style={{ marginLeft: 6 }}>{icon}</span>{label}
+                            </td>
+                            {PERM_ACTIONS.map(a => (
+                              <td key={a.key} style={{ padding: "8px", textAlign: "center" }}>
+                                {cellBox(!!row[a.key as keyof PermActions], () => setCell(key, a.key as keyof PermActions, !row[a.key as keyof PermActions]))}
+                              </td>
+                            ))}
+                            <td style={{ padding: "8px", textAlign: "center" }}>
+                              {cellBox(rowAll, () => setRow(key, !rowAll))}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              ))}
-            </div>
+              );
+            })()}
+          </div>
+
+          <Divider />
+
+          {/* خصوصية السجلات الرئيسية */}
+          <div>
+            <SectionTitle>خصوصية السجلات (مناقصات / ممارسات / عقود / مشاريع / أوامر شراء)</SectionTitle>
+            <select value={(data as any).recordViewScope ?? "own"} onChange={e => set("recordViewScope", e.target.value)} style={inp} onFocus={focus} onBlur={blur}>
+              <option value="own">يرى سجلاته التي أنشأها فقط (الافتراضي)</option>
+              <option value="all">يرى سجلات جميع الموظفين</option>
+            </select>
+            <p style={{ fontSize: 11, color: "#9ca3af", margin: "6px 2px 0" }}>
+              الفرض من جانب السيرفر — السجلات القديمة التي لا يُعرف منشئها تبقى مرئية للجميع.
+            </p>
           </div>
 
           <Divider />
@@ -1002,11 +1116,16 @@ export default function AdminUsers() {
           taskViewScope: editing.taskViewScope,
           taskCanApprove: editing.taskCanApprove,
           correspondenceViewAll: (editing as any).correspondenceViewAll ?? false,
+          permissions: (editing as any).permissions ?? matrixFromLegacy(editing as any),
+          recordViewScope: (editing as any).recordViewScope ?? "own",
           ...(newPass ? { password: newPass } : {}),
         },
       });
     } else {
-      createMut.mutate(form);
+      createMut.mutate({
+        ...form,
+        permissions: form.permissions ?? defaultMatrix(true, false),
+      });
     }
   };
 

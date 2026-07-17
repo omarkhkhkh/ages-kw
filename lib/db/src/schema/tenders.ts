@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { governmentEntitiesTable } from "./government-entities";
 import { companiesTable } from "./company-documents";
 import { departmentsTable, governmentContactsTable } from "./entity-directory";
+import { usersTable } from "./users";
 
 export const tendersTable = pgTable("tenders", {
   id: serial("id").primaryKey(),
@@ -53,6 +54,7 @@ export const tendersTable = pgTable("tenders", {
   filePricing: text("file_pricing"),         // التسعير
   fileSuppliers: text("file_suppliers"),     // الموردين
   fileOpening: text("file_opening"),         // فض الظروف
+  createdByUserId: integer("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }), // منشئ السجل — لخصوصية العرض
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

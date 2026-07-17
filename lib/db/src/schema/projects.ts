@@ -5,6 +5,7 @@ import { tendersTable } from "./tenders";
 import { governmentEntitiesTable } from "./government-entities";
 import { companiesTable } from "./company-documents";
 import { departmentsTable, governmentContactsTable } from "./entity-directory";
+import { usersTable } from "./users";
 
 export const projectsTable = pgTable("projects", {
   id: serial("id").primaryKey(),
@@ -22,6 +23,7 @@ export const projectsTable = pgTable("projects", {
   projectManager: text("project_manager"),
   completionPercentage: numeric("completion_percentage", { precision: 5, scale: 2 }).default("0"),
   notes: text("notes"),
+  createdByUserId: integer("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }), // منشئ السجل — لخصوصية العرض
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

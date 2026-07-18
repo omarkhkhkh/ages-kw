@@ -83,8 +83,9 @@ export function printLetter(letter: PrintableLetter) {
   @page { size: letter; margin: 0; }
   /* خط الكتاب الرسمي — نفس خطوط نموذج الشركة (Arabic Typesetting/Aldhabi) مع بدائل */
   body { font-family: 'Arabic Typesetting', 'Traditional Arabic', 'Aldhabi', 'Cairo', serif; color: #1a1a1a; direction: rtl; font-size: 14pt; margin: 0; padding: 2.2cm 2.5cm; }
-  /* رأس الكتاب: المرجع أعلى اليمين والتاريخ أعلى اليسار على نفس السطر */
-  .ref-row { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 16px; font-size: 14pt; font-weight: 600; }
+  /* رأس الكتاب: المرجع ثم التاريخ تحته — كلاهما في الجهة اليمنى */
+  .ref-block { margin: 0 0 16px; text-align: right; }
+  .ref-block p { margin: 0 0 2px; font-size: 14pt; font-weight: 600; }
   .recipient { font-size: 16pt; font-weight: 800; margin: 4px 0 0; display: flex; justify-content: space-between; align-items: baseline; }
   .honorific { margin-right: 24px; }
   .attention { font-size: 15pt; }
@@ -101,9 +102,9 @@ export function printLetter(letter: PrintableLetter) {
 </style>
 </head>
 <body>
-  <div class="ref-row">
-    <span>مرجع رقم : ${escapeHtml(letter.letterNumber)}</span>
-    <span>التاريخ: ${escapeHtml(formatLetterDate(letter.letterDate))}</span>
+  <div class="ref-block">
+    <p>مرجع رقم : ${escapeHtml(letter.letterNumber)}</p>
+    <p>التاريخ: ${escapeHtml(formatLetterDate(letter.letterDate))}</p>
   </div>
   ${recipientLine}
   ${attentionLine}

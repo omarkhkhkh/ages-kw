@@ -78,9 +78,11 @@ export function printLetter(letter: PrintableLetter) {
 <meta charset="utf-8" />
 <title>${escapeHtml(letter.letterNumber)}</title>
 <style>
-  @page { size: letter; margin: 2.2cm 2.5cm; }
+  /* هامش الصفحة صفر يمنع المتصفح من طباعة ترويسته (التاريخ/الوقت والعنوان والرابط)
+     — والهوامش الفعلية للكتاب تُطبق عبر padding على الـbody */
+  @page { size: letter; margin: 0; }
   /* خط الكتاب الرسمي — نفس خطوط نموذج الشركة (Arabic Typesetting/Aldhabi) مع بدائل */
-  body { font-family: 'Arabic Typesetting', 'Traditional Arabic', 'Aldhabi', 'Cairo', serif; color: #1a1a1a; direction: rtl; font-size: 14pt; }
+  body { font-family: 'Arabic Typesetting', 'Traditional Arabic', 'Aldhabi', 'Cairo', serif; color: #1a1a1a; direction: rtl; font-size: 14pt; margin: 0; padding: 2.2cm 2.5cm; }
   /* رأس الكتاب: المرجع أعلى اليمين والتاريخ أعلى اليسار على نفس السطر */
   .ref-row { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 16px; font-size: 14pt; font-weight: 600; }
   .recipient { font-size: 16pt; font-weight: 800; margin: 4px 0 0; display: flex; justify-content: space-between; align-items: baseline; }

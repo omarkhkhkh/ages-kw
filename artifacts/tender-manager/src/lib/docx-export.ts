@@ -1,6 +1,6 @@
 import {
   Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType,
-  Table, TableRow, TableCell, ImageRun, WidthType,
+  Table, TableRow, TableCell, ImageRun, WidthType, BorderStyle,
 } from "docx";
 
 const DEFAULT_COMPANY_NAME = "المجموعة العربية للخدمات التعليمية";
@@ -185,16 +185,35 @@ export async function buildLetterDocx(letter: DocxLetter): Promise<Blob> {
     return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
   })();
 
+  // رأس الكتاب: المرجع أعلى اليمين والتاريخ أعلى اليسار على نفس السطر
+  // (جدول بلا حدود بعمودين — أضمن طريقة لمحاذاة الطرفين في Word)
+  const noBorder = { style: BorderStyle.NONE as any, size: 0, color: "FFFFFF" };
+  const cellBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
+  const refHeaderTable = new Table({
+    columnWidths: [4680, 4680],
+    visuallyRightToLeft: true,
+    borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder, insideHorizontal: noBorder, insideVertical: noBorder },
+    rows: [new TableRow({
+      children: [
+        new TableCell({
+          width: { size: 4680, type: WidthType.DXA }, borders: cellBorders,
+          children: [new Paragraph({
+            children: [new TextRun({ text: `مرجع رقم : ${letter.letterNumber}`, size: 28, font: LETTER_FONT })],
+            alignment: AlignmentType.RIGHT, bidirectional: true,
+          })],
+        }),
+        new TableCell({
+          width: { size: 4680, type: WidthType.DXA }, borders: cellBorders,
+          children: [new Paragraph({
+            children: [new TextRun({ text: `التاريخ: ${fmtDate}`, size: 28, font: LETTER_FONT })],
+            alignment: AlignmentType.LEFT, bidirectional: true,
+          })],
+        }),
+      ],
+    })],
+  });
+
   const headerChildren: Paragraph[] = [
-    // رأس الكتاب: المرجع ثم التاريخ (كما في النموذج المعتمد)
-    new Paragraph({
-      children: [new TextRun({ text: `مرجع رقم : ${letter.letterNumber}`, size: 28, font: LETTER_FONT })],
-      bidirectional: true,
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: `التاريخ: ${fmtDate}`, size: 28, font: LETTER_FONT })],
-      bidirectional: true,
-    }),
     new Paragraph({ text: "" }),
   ];
 
@@ -239,7 +258,7 @@ export async function buildLetterDocx(letter: DocxLetter): Promise<Blob> {
           margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
         },
       },
-      children: [...headerChildren, ...bodyChildren, ...closingChildren],
+      children: [refHeaderTable, ...headerChildren, ...bodyChildren, ...closingChildren],
     }],
   });
 

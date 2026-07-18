@@ -81,9 +81,8 @@ export function printLetter(letter: PrintableLetter) {
   @page { size: letter; margin: 2.2cm 2.5cm; }
   /* خط الكتاب الرسمي — نفس خطوط نموذج الشركة (Arabic Typesetting/Aldhabi) مع بدائل */
   body { font-family: 'Arabic Typesetting', 'Traditional Arabic', 'Aldhabi', 'Cairo', serif; color: #1a1a1a; direction: rtl; font-size: 14pt; }
-  /* رأس الكتاب: المرجع ثم التاريخ أعلى اليمين */
-  .ref-block { margin: 0 0 14px; }
-  .ref-block p { margin: 0 0 2px; font-size: 14pt; font-weight: 600; }
+  /* رأس الكتاب: المرجع أعلى اليمين والتاريخ أعلى اليسار على نفس السطر */
+  .ref-row { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 16px; font-size: 14pt; font-weight: 600; }
   .recipient { font-size: 16pt; font-weight: 800; margin: 4px 0 0; display: flex; justify-content: space-between; align-items: baseline; }
   .honorific { margin-right: 24px; }
   .attention { font-size: 15pt; }
@@ -97,21 +96,12 @@ export function printLetter(letter: PrintableLetter) {
   .closing { text-align: center; font-weight: 800; font-size: 14pt; margin: ${spacing.closingMarginTop} 0 10px; }
   .closing p { margin: 4px 0; }
   .signature { margin-top: ${spacing.signatureMarginTop}; font-weight: 800; font-size: 13pt; text-align: left; }
-  /* رقم الكتاب عموديًا على حافة الصفحة اليسرى — يظهر فقط في النسخة النهائية */
-  .side-number {
-    position: fixed; top: 2.2cm; left: 0;
-    writing-mode: vertical-rl; transform: rotate(180deg);
-    font-size: 11.5px; font-weight: 800; letter-spacing: 2px;
-    color: #444; font-family: 'Courier New', monospace;
-    border-left: 2px solid #b8963f; padding-left: 4px;
-  }
 </style>
 </head>
 <body>
-  ${letter.finalNumbered ? `<div class="side-number">${escapeHtml(letter.letterNumber)}</div>` : ""}
-  <div class="ref-block">
-    <p>مرجع رقم : ${escapeHtml(letter.letterNumber)}</p>
-    <p>التاريخ: ${escapeHtml(formatLetterDate(letter.letterDate))}</p>
+  <div class="ref-row">
+    <span>مرجع رقم : ${escapeHtml(letter.letterNumber)}</span>
+    <span>التاريخ: ${escapeHtml(formatLetterDate(letter.letterDate))}</span>
   </div>
   ${recipientLine}
   ${attentionLine}

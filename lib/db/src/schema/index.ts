@@ -16,6 +16,7 @@ export * from "./finance";
 export * from "./tasks";
 export * from "./tender-permissions";
 export * from "./contract-permissions";
+export * from "./contract-extras";
 export * from "./practices";
 export * from "./company-documents";
 export * from "./government-registrations";

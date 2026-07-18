@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { ensureSystemCorrespondenceTemplates } from "./lib/seed-correspondence-templates";
 import { ensureDefaultServiceTypes } from "./lib/seed-service-types";
+import { ensurePerformanceIndexes } from "./lib/ensure-indexes";
 import { runAutomationChecks, generateDueRecurringTasks } from "./routes/task-automation";
 
 const rawPort = process.env["PORT"];
@@ -30,6 +31,9 @@ app.listen(port, (err) => {
     logger.error({ err }, "Failed to seed system correspondence templates");
   });
 
+  ensurePerformanceIndexes().catch((err) => {
+    logger.error({ err }, "Failed to ensure performance indexes");
+  });
   ensureDefaultServiceTypes().catch((err) => {
     logger.error({ err }, "Failed to seed default service types");
   });

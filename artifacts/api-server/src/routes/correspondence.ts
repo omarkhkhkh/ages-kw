@@ -95,14 +95,15 @@ router.get("/", async (req: Request, res: Response) => {
 
     const where = conditions.length ? and(...conditions) : undefined;
 
-    const [rows, countRows] = await Promise.all([
+    const [rows, [countRow]] = await Promise.all([
       db.select().from(correspondenceLettersTable).where(where)
         .orderBy(desc(correspondenceLettersTable.createdAt))
         .limit(limit).offset(offset),
-      db.select({ id: correspondenceLettersTable.id }).from(correspondenceLettersTable).where(where),
+      // count(*) بدل جلب كل المعرفات — كان يقرأ الجدول كاملًا في كل تحميل للصفحة
+      db.select({ count: sql<number>`count(*)::int` }).from(correspondenceLettersTable).where(where),
     ]);
 
-    return res.json({ rows, total: countRows.length });
+    return res.json({ rows, total: countRow?.count ?? 0 });
   } catch {
     return res.status(500).json({ error: "فشل في جلب المراسلات" });
   }

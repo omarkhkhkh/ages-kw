@@ -10,12 +10,17 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
+// كل تنبيهات الانتهاء (كفالات/وثائق/إقامات/مراسلات/صيانة) تعتمد على current_date —
+// بدون ضبط التوقيت تُحسب بتوقيت UTC داخل الحاوية فتتأخر 3 ساعات عن الكويت عند منتصف الليل
+const TZ_OPTIONS = "-c timezone=Asia/Kuwait";
+
 // Main query pool — large enough for 80+ concurrent requests
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 80,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
+  options: TZ_OPTIONS,
 });
 
 // Dedicated pool for express-session so session reads/writes never
@@ -25,6 +30,7 @@ export const sessionPool = new Pool({
   max: 20,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 5_000,
+  options: TZ_OPTIONS,
 });
 
 export const db = drizzle(pool, { schema });

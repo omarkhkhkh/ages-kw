@@ -80,18 +80,21 @@ router.use("/tasks", requireModule("accessTasks"), tasksRouter);
 // enforces its own ownership checks on PATCH internally.
 router.use("/practices", requireModule("accessTenders"), practicesRouter);
 
-// Require canEdit for all mutation methods (POST/PUT/PATCH/DELETE)
-router.use((req, res, next) => {
-  if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
-    return requireEdit(req, res, next);
-  }
-  next();
-});
+// ملاحظة: حارس canEdit العام للكتابة أُزيل — مصفوفة الصلاحيات في requireModule
+// تفرض الآن إضافة/تعديل/حذف لكل وحدة على حدة بدقة أعلى (والمستخدمون القدامى
+// بلا مصفوفة تُشتق مصفوفتهم من canEdit نفسها، فلا يتغير سلوكهم).
 
 // Per-module routes — each protected by its own module access guard
 router.use("/tenders", requireModule("accessTenders"), tendersRouter);
 router.use("/government-entities", requireModule("accessEntities"), governmentEntitiesRouter);
-router.use(requireModule("accessEntities"), entityDirectoryRouter);
+// entityDirectoryRouter يعرّف عدة مسارات جذرية — الحارس يُطبق فقط على مساراته
+// (تركيبه بلا مسار كان يفرض حارس "الجهات" على كل الوحدات التالية بالخطأ)
+router.use((req, res, next) => {
+  if (/^\/(departments|contacts|contact-methods|service-types|documents)(\/|$)/.test(req.path)) {
+    return requireModule("accessEntities")(req, res, () => entityDirectoryRouter(req, res, next));
+  }
+  return entityDirectoryRouter(req, res, next);
+});
 router.use("/suppliers", requireModule("accessSuppliers"), suppliersRouter);
 router.use("/rfq-requests", requireModule("accessRfq"), rfqRequestsRouter);
 router.use("/direct-purchase-orders", requireModule("accessPo"), directPurchaseOrdersRouter);
@@ -112,6 +115,10 @@ router.use("/residency", requireModule("accessResidency"), residencyRouter);
 router.use("/maintenance", requireModule("accessMaintenance"), maintenanceRouter);
 router.use("/research", requireModule("accessResearch"), researchRouter);
 router.use("/pricing", requireModule("accessPricing"), pricingRouter);
-router.use("/", requireModule("accessTasks"), taskAutomationRouter); // /task-types, /recurring-templates
+// حارس المهام يُطبق فقط على مسارات هذا الراوتر (وليس أي مسار غير معروف)
+router.use(["/task-types", "/recurring-templates"], (req, res, next) =>
+  requireModule("accessTasks")(req, res, next),
+);
+router.use(taskAutomationRouter); // /task-types, /recurring-templates
 
 export default router;

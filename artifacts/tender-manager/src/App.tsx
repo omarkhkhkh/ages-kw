@@ -193,7 +193,7 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || user.accessMaintenance}><MaintenanceIndex /></ModuleGuard>
         </Route>
         <Route path="/maintenance/report-templates">
-          <ModuleGuard access={isAdmin}><MaintenanceReportTemplates /></ModuleGuard>
+          <ModuleGuard access={isAdmin || user.accessMaintenance}><MaintenanceReportTemplates /></ModuleGuard>
         </Route>
         <Route path="/maintenance/equipment/:id">
           <ModuleGuard access={isAdmin || user.accessMaintenance}><EquipmentDetail /></ModuleGuard>

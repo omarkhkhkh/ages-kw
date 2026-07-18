@@ -31,7 +31,7 @@ import residencyRouter from "./residency";
 import maintenanceRouter from "./maintenance";
 import researchRouter from "./research";
 import pricingRouter from "./pricing";
-import { requireAuth, requireEdit, requireModule } from "../middleware/auth";
+import { requireAuth, requireEdit, requireModule, hasModuleAction } from "../middleware/auth";
 import { activityLogger } from "../middleware/activity-logger";
 
 const router: IRouter = Router();
@@ -112,7 +112,20 @@ router.use("/analytics/competitors", requireModule("accessTenders"), competitorA
 router.use("/correspondence", requireModule("accessCorrespondence"), correspondenceRouter);
 router.use("/correspondence-templates", requireModule("accessCorrespondence"), correspondenceTemplatesRouter);
 router.use("/residency", requireModule("accessResidency"), residencyRouter);
-router.use("/maintenance", requireModule("accessMaintenance"), maintenanceRouter);
+// الصيانة: الفني المكلّف يستطيع تحديث أمر عمله (مرحلة/صور/مرفقات) وإصدار تقرير
+// الزيارة له دون صلاحية تعديل عامة — هذان المساران يُبوَّبان بصلاحية العرض فقط
+// والمسار نفسه يتحقق داخليًا من (صلاحية التعديل || كونه الفني المكلّف).
+router.use("/maintenance", (req, res, next) => {
+  const techOwnedPath =
+    (req.method === "PATCH" && /^\/work-orders\/\d+$/.test(req.path)) ||
+    (req.method === "POST" && /^\/work-orders\/\d+\/visit-report$/.test(req.path));
+  if (techOwnedPath) {
+    if (!req.session?.userId) return res.status(401).json({ error: "غير مصرح. يرجى تسجيل الدخول." });
+    if (req.session.role === "admin" || hasModuleAction(req, "accessMaintenance", "view")) return next();
+    return res.status(403).json({ error: "ليس لديك صلاحية الوصول إلى هذه الوحدة." });
+  }
+  return requireModule("accessMaintenance")(req, res, next);
+}, maintenanceRouter);
 router.use("/research", requireModule("accessResearch"), researchRouter);
 router.use("/pricing", requireModule("accessPricing"), pricingRouter);
 // حارس المهام يُطبق فقط على مسارات هذا الراوتر (وليس أي مسار غير معروف)

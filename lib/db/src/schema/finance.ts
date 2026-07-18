@@ -2,7 +2,7 @@ import { pgTable, serial, text, numeric, integer, timestamp, date, boolean } fro
 import { usersTable } from "./users";
 import { contractsTable } from "./contracts";
 import { directPurchaseOrdersTable } from "./direct-purchase-orders";
-import { maintenanceWorkOrdersTable } from "./maintenance";
+import { maintenanceWorkOrdersTable, maintenanceInventoryTable } from "./maintenance";
 import { transportationTable } from "./transportation";
 import { vehiclesTable } from "./vehicles";
 import { workersTable } from "./residency";
@@ -13,6 +13,11 @@ export const financeIncomeTable = pgTable("finance_income", {
   employeeId:  integer("employee_id").references(() => usersTable.id, { onDelete: "set null" }),
   maintenanceWorkOrderId: integer("maintenance_work_order_id").references(() => maintenanceWorkOrdersTable.id, { onDelete: "set null" }),
   transportationOrderId: integer("transportation_order_id").references(() => transportationTable.id, { onDelete: "set null" }),
+  // دخل موسوم بوحدة (صيانة/نقل) دون ربط بأمر محدد — يدعم مصادر الدخل المرنة للميزانية
+  sourceModule: text("source_module"), // "maintenance" | "transportation" | null
+  incomeSource: text("income_source"), // contract | contract_profit | parts_sale | manual
+  inventoryItemId: integer("inventory_item_id").references(() => maintenanceInventoryTable.id, { onDelete: "set null" }), // لبيع قطع الغيار
+  quantity:    numeric("quantity", { precision: 12, scale: 3 }), // كمية القطع المباعة — لإرجاع المخزون عند الحذف
   description: text("description").notNull(),
   amount:      numeric("amount", { precision: 15, scale: 3 }).notNull(),
   date:        date("date").notNull(),
@@ -31,6 +36,7 @@ export const financeExpensesTable = pgTable("finance_expenses", {
   transportationOrderId: integer("transportation_order_id").references(() => transportationTable.id, { onDelete: "set null" }),
   vehicleId:   integer("vehicle_id").references(() => vehiclesTable.id, { onDelete: "set null" }),
   workerId:    integer("worker_id").references(() => workersTable.id, { onDelete: "set null" }),
+  sourceModule: text("source_module"), // مصروف موسوم بوحدة دون ربط بأمر محدد
   description: text("description").notNull(),
   amount:      numeric("amount", { precision: 15, scale: 3 }).notNull(),
   dueDate:     date("due_date"),

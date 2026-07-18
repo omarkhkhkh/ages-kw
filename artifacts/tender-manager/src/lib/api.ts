@@ -346,7 +346,7 @@ export const maintenanceApi = {
     create: (data: any) => apiFetch<any>("/api/maintenance/inventory", { method: "POST", body: JSON.stringify(data) }),
     update: (id: number, data: any) => apiFetch<any>(`/api/maintenance/inventory/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
     delete: (id: number) => apiFetch<void>(`/api/maintenance/inventory/${id}`, { method: "DELETE" }),
-    receive: (id: number, data: { quantity: number; unitCost?: number }) =>
+    receive: (id: number, data: { quantity: number; unitCost?: number; recordExpense?: boolean }) =>
       apiFetch<any>(`/api/maintenance/inventory/${id}/receive`, { method: "POST", body: JSON.stringify(data) }),
   },
   preventivePlans: {
@@ -361,6 +361,17 @@ export const maintenanceApi = {
     upsert: (data: { year: number; month: number; amount: number; notes?: string }) =>
       apiFetch<any>("/api/maintenance/budgets", { method: "POST", body: JSON.stringify(data) }),
     summary: (year?: number) => apiFetch<any>(`/api/maintenance/budgets/summary${year ? `?year=${year}` : ""}`),
+  },
+  // ميزانية v2 — مصادر دخل مرنة ومصروفات مصنّفة
+  incomeEntries: {
+    list: (year: number) => apiFetch<any[]>(`/api/maintenance/income-entries?year=${year}`),
+    create: (data: any) => apiFetch<any>("/api/maintenance/income-sources", { method: "POST", body: JSON.stringify(data) }),
+    delete: (id: number) => apiFetch<void>(`/api/maintenance/income-entries/${id}`, { method: "DELETE" }),
+  },
+  expenseEntries: {
+    list: (year: number) => apiFetch<any[]>(`/api/maintenance/expense-entries?year=${year}`),
+    create: (data: any) => apiFetch<any>("/api/maintenance/expense-entries", { method: "POST", body: JSON.stringify(data) }),
+    delete: (id: number) => apiFetch<void>(`/api/maintenance/expense-entries/${id}`, { method: "DELETE" }),
   },
   stats: () => apiFetch<any>("/api/maintenance/stats"),
   charts: () => apiFetch<any>("/api/maintenance/charts"),

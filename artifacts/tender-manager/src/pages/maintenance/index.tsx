@@ -587,7 +587,7 @@ function InventoryTab({ canEdit }: { canEdit: boolean }) {
   const invalidate = () => { qc.invalidateQueries({ queryKey: ["maintenance-inventory"] }); qc.invalidateQueries({ queryKey: ["maintenance-alerts"] }); };
 
   const createMut = useMutation({ mutationFn: (d: any) => maintenanceApi.inventory.create(d), onSuccess: () => { invalidate(); setDrawerOpen(false); setForm({ ...emptyPartForm }); } });
-  const receiveMut = useMutation({ mutationFn: ({ id, quantity }: any) => maintenanceApi.inventory.receive(id, { quantity }), onSuccess: invalidate });
+  const receiveMut = useMutation({ mutationFn: ({ id, quantity, recordExpense }: any) => maintenanceApi.inventory.receive(id, { quantity, recordExpense }), onSuccess: invalidate });
 
   const handleSave = () => {
     if (!form.partNumber.trim() || !form.partName.trim()) return;
@@ -597,7 +597,12 @@ function InventoryTab({ canEdit }: { canEdit: boolean }) {
   const handleReceive = (item: any) => {
     const qty = prompt(`كمية الاستلام لـ ${item.partName}:`);
     const n = Number(qty);
-    if (qty && n > 0) receiveMut.mutate({ id: item.id, quantity: n });
+    if (!qty || n <= 0) return;
+    // اختياري: تسجيل الاستلام كمصروف "شراء قطع غيار" في ميزانية الصيانة (بتكلفة الوحدة المسجّلة)
+    const recordExpense = Number(item.unitCost || 0) > 0
+      ? confirm(`تسجيل الاستلام كمصروف شراء بقيمة ${(n * Number(item.unitCost)).toFixed(3)} د.ك في ميزانية الصيانة؟\n(إلغاء = استلام بدون تسجيل مصروف)`)
+      : false;
+    receiveMut.mutate({ id: item.id, quantity: n, recordExpense });
   };
 
   return (
@@ -676,12 +681,204 @@ function InventoryTab({ canEdit }: { canEdit: boolean }) {
 ═══════════════════════════════════════════════════════ */
 const MONTH_AR = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
 
+const INCOME_SOURCE_LABELS: Record<string, string> = {
+  contract: "عقد صيانة",
+  contract_profit: "نسبة ربح من عقد",
+  parts_sale: "بيع قطع غيار",
+  manual: "دخل يدوي",
+  work_order: "فاتورة أمر صيانة",
+};
+const EXPENSE_CAT_LABELS: Record<string, string> = {
+  salary: "رواتب العمال",
+  parts_purchase: "شراء قطع غيار",
+  storage: "مصاريف تخزين",
+  work_order: "مصروفات أوامر الصيانة",
+  other: "أخرى",
+};
+
+/* نموذج تسجيل دخل مرن — كل مصدر اختياري حسب الحالة */
+function IncomeSourceForm({ year, onDone }: { year: number; onDone: () => void }) {
+  const qc = useQueryClient();
+  const [src, setSrc] = useState<"contract" | "contract_profit" | "parts_sale" | "manual">("contract");
+  const [form, setForm] = useState<any>({ contractId: "", percent: "", amount: "", inventoryItemId: "", quantity: "", unitPrice: "", description: "", date: "" });
+
+  const { data: contracts = [] } = useQuery<any[]>({ queryKey: ["contracts", "all"], queryFn: () => contractsApi.list() });
+  const { data: inventory = [] } = useQuery<any[]>({ queryKey: ["maintenance-inventory"], queryFn: () => maintenanceApi.inventory.list() });
+
+  const createMut = useMutation({
+    mutationFn: (d: any) => maintenanceApi.incomeEntries.create(d),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["maintenance-income-entries"] });
+      qc.invalidateQueries({ queryKey: ["maintenance-budget-summary"] });
+      qc.invalidateQueries({ queryKey: ["maintenance-inventory"] });
+      setForm({ contractId: "", percent: "", amount: "", inventoryItemId: "", quantity: "", unitPrice: "", description: "", date: "" });
+      onDone();
+    },
+    onError: (e: any) => alert(e?.message || "فشل في تسجيل الدخل"),
+  });
+
+  const selectedContract = contracts.find((c: any) => String(c.id) === String(form.contractId));
+  const contractValue = selectedContract ? Number(selectedContract.contractValue ?? selectedContract.value ?? 0) : 0;
+  const previewAmount =
+    src === "contract_profit" && contractValue > 0 && form.percent
+      ? (contractValue * Number(form.percent)) / 100
+      : src === "contract" && contractValue > 0 && !form.amount
+      ? contractValue
+      : src === "parts_sale" && form.quantity && form.unitPrice
+      ? Number(form.quantity) * Number(form.unitPrice)
+      : null;
+
+  const submit = () => {
+    createMut.mutate({
+      incomeSource: src,
+      contractId: form.contractId ? Number(form.contractId) : undefined,
+      percent: form.percent ? Number(form.percent) : undefined,
+      amount: form.amount ? Number(form.amount) : undefined,
+      inventoryItemId: form.inventoryItemId ? Number(form.inventoryItemId) : undefined,
+      quantity: form.quantity ? Number(form.quantity) : undefined,
+      unitPrice: form.unitPrice ? Number(form.unitPrice) : undefined,
+      description: form.description || undefined,
+      date: form.date || undefined,
+    });
+  };
+
+  const SRC_OPTIONS = [
+    { key: "contract", label: "🏛 عقد صيانة" },
+    { key: "contract_profit", label: "٪ نسبة ربح من عقد" },
+    { key: "parts_sale", label: "🔩 بيع قطع غيار" },
+    { key: "manual", label: "✎ يدوي / أخرى" },
+  ] as const;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {SRC_OPTIONS.map((o) => (
+          <button key={o.key} onClick={() => setSrc(o.key)} type="button"
+            style={{ padding: "7px 13px", borderRadius: 9, fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: `1.5px solid ${src === o.key ? "#16a34a" : "#e5e7eb"}`, background: src === o.key ? "#f0fdf4" : "white", color: src === o.key ? "#15803d" : "#6b7280" }}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>
+        {(src === "contract" || src === "contract_profit") && (
+          <div>
+            <label style={lbl}>العقد *</label>
+            <select value={form.contractId} onChange={(e) => setForm((f: any) => ({ ...f, contractId: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
+              <option value="">— اختر العقد —</option>
+              {contracts.map((c: any) => <option key={c.id} value={c.id}>{c.contractNumber} {(c.contractValue ?? c.value) ? `(${fmt(c.contractValue ?? c.value)})` : ""}</option>)}
+            </select>
+          </div>
+        )}
+        {src === "contract_profit" && (
+          <div><label style={lbl}>نسبة الربح %</label>
+            <input type="number" step="0.1" value={form.percent} onChange={(e) => setForm((f: any) => ({ ...f, percent: e.target.value }))} dir="ltr" style={inp} placeholder="مثال: 15" /></div>
+        )}
+        {src === "parts_sale" && (
+          <>
+            <div><label style={lbl}>الصنف *</label>
+              <select value={form.inventoryItemId} onChange={(e) => setForm((f: any) => ({ ...f, inventoryItemId: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
+                <option value="">— اختر الصنف —</option>
+                {inventory.map((i: any) => <option key={i.id} value={i.id}>{i.partName} (متاح: {i.quantityOnHand})</option>)}
+              </select></div>
+            <div><label style={lbl}>الكمية *</label>
+              <input type="number" value={form.quantity} onChange={(e) => setForm((f: any) => ({ ...f, quantity: e.target.value }))} dir="ltr" style={inp} /></div>
+            <div><label style={lbl}>سعر بيع الوحدة *</label>
+              <input type="number" step="0.001" value={form.unitPrice} onChange={(e) => setForm((f: any) => ({ ...f, unitPrice: e.target.value }))} dir="ltr" style={inp} /></div>
+          </>
+        )}
+        <div><label style={lbl}>{src === "manual" ? "المبلغ (د.ك) *" : "المبلغ (اختياري — يُحسب تلقائيًا)"}</label>
+          <input type="number" step="0.001" value={form.amount} onChange={(e) => setForm((f: any) => ({ ...f, amount: e.target.value }))} dir="ltr" style={inp}
+            placeholder={previewAmount != null ? `تلقائي: ${fmt(previewAmount)}` : ""} /></div>
+        <div><label style={lbl}>التاريخ</label>
+          <input type="date" value={form.date} onChange={(e) => setForm((f: any) => ({ ...f, date: e.target.value }))} style={inp} /></div>
+        <div><label style={lbl}>الوصف (اختياري)</label>
+          <input value={form.description} onChange={(e) => setForm((f: any) => ({ ...f, description: e.target.value }))} style={inp} /></div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={submit} disabled={createMut.isPending} type="button"
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 20px", borderRadius: 10, border: "none", background: "#16a34a", color: "white", fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+          <Plus size={14} /> تسجيل الدخل
+        </button>
+        {previewAmount != null && !form.amount && (
+          <span style={{ fontSize: 11.5, color: "#15803d", fontWeight: 700 }}>سيُسجَّل: {fmt(previewAmount)} د.ك</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* نموذج تسجيل مصروف صيانة سريع — رواتب/شراء قطع/تخزين/أخرى */
+function ExpenseQuickForm({ onDone }: { onDone: () => void }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<any>({ category: "salary", amount: "", workerId: "", description: "", date: "" });
+  const { data: workers = [] } = useQuery<any[]>({
+    queryKey: ["maintenance-workers"],
+    queryFn: () => apiFetch<any[]>("/api/residency/workers?assignedModule=maintenance"),
+  });
+
+  const createMut = useMutation({
+    mutationFn: (d: any) => maintenanceApi.expenseEntries.create(d),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["maintenance-expense-entries"] });
+      qc.invalidateQueries({ queryKey: ["maintenance-budget-summary"] });
+      setForm({ category: "salary", amount: "", workerId: "", description: "", date: "" });
+      onDone();
+    },
+    onError: (e: any) => alert(e?.message || "فشل في تسجيل المصروف"),
+  });
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, alignItems: "end" }}>
+      <div><label style={lbl}>التصنيف</label>
+        <select value={form.category} onChange={(e) => setForm((f: any) => ({ ...f, category: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
+          <option value="salary">رواتب العمال</option>
+          <option value="parts_purchase">شراء قطع غيار</option>
+          <option value="storage">مصاريف تخزين</option>
+          <option value="other">أخرى</option>
+        </select></div>
+      {form.category === "salary" && (
+        <div><label style={lbl}>العامل (اختياري)</label>
+          <select value={form.workerId} onChange={(e) => setForm((f: any) => ({ ...f, workerId: e.target.value }))} style={{ ...inp, cursor: "pointer" }}>
+            <option value="">— بدون تحديد —</option>
+            {workers.map((w: any) => <option key={w.id} value={w.id}>{w.fullName}</option>)}
+          </select></div>
+      )}
+      <div><label style={lbl}>المبلغ (د.ك) *</label>
+        <input type="number" step="0.001" value={form.amount} onChange={(e) => setForm((f: any) => ({ ...f, amount: e.target.value }))} dir="ltr" style={inp} /></div>
+      <div><label style={lbl}>التاريخ</label>
+        <input type="date" value={form.date} onChange={(e) => setForm((f: any) => ({ ...f, date: e.target.value }))} style={inp} /></div>
+      <div><label style={lbl}>الوصف (اختياري)</label>
+        <input value={form.description} onChange={(e) => setForm((f: any) => ({ ...f, description: e.target.value }))} style={inp} /></div>
+      <button type="button" disabled={createMut.isPending}
+        onClick={() => createMut.mutate({ category: form.category, amount: Number(form.amount), workerId: form.workerId ? Number(form.workerId) : undefined, description: form.description || undefined, date: form.date || undefined })}
+        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "9px 16px", borderRadius: 10, border: "none", background: "#dc2626", color: "white", fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+        <Plus size={14} /> تسجيل المصروف
+      </button>
+    </div>
+  );
+}
+
 function BudgetTab({ canEdit }: { canEdit: boolean }) {
   const qc = useQueryClient();
   const [year, setYear] = useState(new Date().getFullYear());
   const [amounts, setAmounts] = useState<Record<number, string>>({});
 
   const { data: summary } = useQuery<any>({ queryKey: ["maintenance-budget-summary", year], queryFn: () => maintenanceApi.budgets.summary(year) });
+  const { data: incomeEntries = [] } = useQuery<any[]>({ queryKey: ["maintenance-income-entries", year], queryFn: () => maintenanceApi.incomeEntries.list(year) });
+  const { data: expenseEntries = [] } = useQuery<any[]>({ queryKey: ["maintenance-expense-entries", year], queryFn: () => maintenanceApi.expenseEntries.list(year) });
+
+  const delIncomeMut = useMutation({
+    mutationFn: (id: number) => maintenanceApi.incomeEntries.delete(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["maintenance-income-entries"] }); qc.invalidateQueries({ queryKey: ["maintenance-budget-summary"] }); qc.invalidateQueries({ queryKey: ["maintenance-inventory"] }); },
+    onError: (e: any) => alert(e?.message || "فشل في الحذف"),
+  });
+  const delExpenseMut = useMutation({
+    mutationFn: (id: number) => maintenanceApi.expenseEntries.delete(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["maintenance-expense-entries"] }); qc.invalidateQueries({ queryKey: ["maintenance-budget-summary"] }); },
+    onError: (e: any) => alert(e?.message || "فشل في الحذف"),
+  });
 
   const upsertMut = useMutation({
     mutationFn: (d: any) => maintenanceApi.budgets.upsert(d),
@@ -716,6 +913,130 @@ function BudgetTab({ canEdit }: { canEdit: boolean }) {
           <StatCard label="الميزانية السنوية" value={summary.annualBudget} isMoney color={GD} />
           <StatCard label="المتبقي من الميزانية" value={summary.annualRemaining} isMoney color={summary.annualRemaining >= 0 ? "#16a34a" : "#dc2626"} />
           <StatCard label="الاستثمارات الرأسمالية" value={summary.annualCapex} isMoney color="#7c3aed" />
+        </div>
+      )}
+
+      {/* ══ مصادر الدخل (v2) — عقد / نسبة ربح / بيع قطع / يدوي ══ */}
+      <div style={{ ...cardStyle, border: "1.5px solid #bbf7d0", background: "#fbfefc" }}>
+        <p style={{ fontSize: 12, fontWeight: 800, color: "#15803d", margin: "0 0 4px" }}>💰 تسجيل دخل — اختر المصدر المناسب لكل حالة</p>
+        <p style={{ fontSize: 10.5, color: "#9ca3af", margin: "0 0 12px" }}>عقد صيانة كامل، أو نسبة ربح من عقد، أو بيع قطع غيار من المستودع (يخصم الرصيد تلقائيًا)، أو مبلغ يدوي لأي حالة أخرى.</p>
+        {canEdit ? <IncomeSourceForm year={year} onDone={() => {}} /> : <p style={{ fontSize: 11.5, color: "#94a3b8", margin: 0 }}>التسجيل يتطلب صلاحية الإضافة.</p>}
+
+        {incomeEntries.length > 0 && (
+          <div style={{ marginTop: 14, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+              <thead><tr style={{ background: "#f0fdf4" }}>
+                {["التاريخ", "المصدر", "الوصف", "المبلغ", ""].map((h) => <th key={h} style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: "#15803d" }}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {incomeEntries.map((e: any) => (
+                  <tr key={e.id} style={{ borderBottom: "1px solid #f0fdf4" }}>
+                    <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>{new Date(e.date).toLocaleDateString("ar-KW")}</td>
+                    <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>
+                      <span style={{ padding: "1px 8px", borderRadius: 99, background: "#dcfce7", color: "#15803d", fontWeight: 700, fontSize: 10.5 }}>
+                        {INCOME_SOURCE_LABELS[e.incomeSource ?? "work_order"] ?? e.incomeSource}
+                      </span>
+                    </td>
+                    <td style={{ padding: "5px 8px", maxWidth: 280 }}>{e.description}{e.contractNumber ? ` — ${e.contractNumber}` : ""}</td>
+                    <td style={{ padding: "5px 8px", fontWeight: 700, color: "#15803d", direction: "ltr" as const, whiteSpace: "nowrap" }}>{fmt(e.amount)}</td>
+                    <td style={{ padding: "5px 8px", width: 30 }}>
+                      {canEdit && (
+                        <button onClick={() => { if (confirm("حذف سجل الدخل؟ (بيع قطع الغيار يُعيد الكمية للمستودع)")) delIncomeMut.mutate(e.id); }}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", padding: 2 }}><Trash2 size={12} /></button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ══ المصروفات (v2) — رواتب / شراء قطع / تخزين / أخرى ══ */}
+      <div style={{ ...cardStyle, border: "1.5px solid #fecaca", background: "#fffbfb" }}>
+        <p style={{ fontSize: 12, fontWeight: 800, color: "#b91c1c", margin: "0 0 4px" }}>💸 تسجيل مصروف صيانة</p>
+        <p style={{ fontSize: 10.5, color: "#9ca3af", margin: "0 0 12px" }}>رواتب العمال، شراء قطع الغيار، مصاريف التخزين، أو أي مصروف آخر — كلها تدخل في مصروف الميزانية الشهري تلقائيًا.</p>
+        {canEdit ? <ExpenseQuickForm onDone={() => {}} /> : <p style={{ fontSize: 11.5, color: "#94a3b8", margin: 0 }}>التسجيل يتطلب صلاحية الإضافة.</p>}
+
+        {expenseEntries.length > 0 && (
+          <div style={{ marginTop: 14, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+              <thead><tr style={{ background: "#fff1f2" }}>
+                {["التاريخ", "التصنيف", "الوصف", "المبلغ", ""].map((h) => <th key={h} style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: "#b91c1c" }}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {expenseEntries.slice(0, 30).map((e: any) => (
+                  <tr key={e.id} style={{ borderBottom: "1px solid #fff1f2" }}>
+                    <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>{new Date(e.paidDate ?? e.createdAt).toLocaleDateString("ar-KW")}</td>
+                    <td style={{ padding: "5px 8px", whiteSpace: "nowrap" }}>
+                      <span style={{ padding: "1px 8px", borderRadius: 99, background: "#fee2e2", color: "#b91c1c", fontWeight: 700, fontSize: 10.5 }}>
+                        {EXPENSE_CAT_LABELS[e.scopeCategory] ?? e.scopeCategory}
+                      </span>
+                    </td>
+                    <td style={{ padding: "5px 8px", maxWidth: 280 }}>{e.description}{e.workerName ? ` — ${e.workerName}` : ""}{e.workOrderNumber ? ` — ${e.workOrderNumber}` : ""}</td>
+                    <td style={{ padding: "5px 8px", fontWeight: 700, color: "#b91c1c", direction: "ltr" as const, whiteSpace: "nowrap" }}>{fmt(e.amount)}</td>
+                    <td style={{ padding: "5px 8px", width: 30 }}>
+                      {canEdit && e.scopeCategory !== "work_order" && (
+                        <button onClick={() => { if (confirm("حذف المصروف؟")) delExpenseMut.mutate(e.id); }}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", padding: 2 }}><Trash2 size={12} /></button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* توزيع الدخل والمصروف حسب المصدر/التصنيف */}
+      {summary && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <div style={cardStyle}>
+            <p style={{ fontSize: 12, fontWeight: 800, color: "#15803d", margin: "0 0 10px" }}>توزيع الدخل حسب المصدر</p>
+            {(summary.incomeBySource ?? []).length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(summary.incomeBySource ?? []).map((r: any) => {
+                  const total = (summary.incomeBySource ?? []).reduce((s: number, x: any) => s + Number(x.total), 0) || 1;
+                  const pct = Math.round((Number(r.total) / total) * 100);
+                  return (
+                    <div key={r.label}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 3 }}>
+                        <span style={{ fontWeight: 700 }}>{INCOME_SOURCE_LABELS[r.label] ?? r.label}</span>
+                        <span style={{ color: "#15803d", fontWeight: 700, direction: "ltr" as const }}>{fmt(r.total)} ({pct}%)</span>
+                      </div>
+                      <div style={{ height: 6, borderRadius: 3, background: "#f0fdf4" }}>
+                        <div style={{ height: "100%", width: `${pct}%`, borderRadius: 3, background: "#16a34a" }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <p style={{ textAlign: "center", color: "#94a3b8", fontSize: 11.5, margin: "8px 0" }}>لا يوجد دخل مسجّل هذه السنة</p>}
+          </div>
+          <div style={cardStyle}>
+            <p style={{ fontSize: 12, fontWeight: 800, color: "#b91c1c", margin: "0 0 10px" }}>توزيع المصروف حسب التصنيف</p>
+            {(summary.expenseByCategory ?? []).length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {(summary.expenseByCategory ?? []).map((r: any) => {
+                  const total = (summary.expenseByCategory ?? []).reduce((s: number, x: any) => s + Number(x.total), 0) || 1;
+                  const pct = Math.round((Number(r.total) / total) * 100);
+                  return (
+                    <div key={r.label}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, marginBottom: 3 }}>
+                        <span style={{ fontWeight: 700 }}>{EXPENSE_CAT_LABELS[r.label] ?? r.label}</span>
+                        <span style={{ color: "#b91c1c", fontWeight: 700, direction: "ltr" as const }}>{fmt(r.total)} ({pct}%)</span>
+                      </div>
+                      <div style={{ height: 6, borderRadius: 3, background: "#fff1f2" }}>
+                        <div style={{ height: "100%", width: `${pct}%`, borderRadius: 3, background: "#dc2626" }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <p style={{ textAlign: "center", color: "#94a3b8", fontSize: 11.5, margin: "8px 0" }}>لا توجد مصروفات مسجّلة هذه السنة</p>}
+          </div>
         </div>
       )}
 

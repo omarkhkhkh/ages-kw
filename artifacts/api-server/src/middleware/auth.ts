@@ -176,6 +176,14 @@ export function requireModule(field: keyof Pick<Express.Request["session"],
   };
 }
 
+/** فحص صلاحية محددة من المصفوفة داخل المسارات — للاستثناءات المبنية على الملكية
+ *  (مثال: الفني المكلّف يعدّل أمر عمله دون صلاحية تعديل عامة على الوحدة). */
+export function hasModuleAction(req: Request, field: string, action: keyof ModuleActions): boolean {
+  if (req.session.role === "admin") return true;
+  const matrix = req.session.permissions ?? synthesizePermissions(req.session as any);
+  return !!matrix[field]?.[action];
+}
+
 /** خصوصية السجلات الرئيسية: هل يجب حصر النتائج بسجلات المستخدم نفسه؟
  *  (السجلات القديمة بلا منشئ معروف تبقى مرئية للجميع) */
 export function ownRecordsOnly(req: Request): boolean {

@@ -143,7 +143,7 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       show: can("accessMaintenance") || isAdmin,
       items: [
         { href: "/maintenance",                  label: t("nav.maintenance"),        show: can("accessMaintenance") },
-        { href: "/maintenance/report-templates", label: t("nav.maintenanceReports"), show: isAdmin },
+        { href: "/maintenance/report-templates", label: t("nav.maintenanceReports"), show: isAdmin || can("accessMaintenance") },
       ].filter(i => i.show),
     },
     {

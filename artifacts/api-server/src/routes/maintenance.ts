@@ -27,6 +27,7 @@ import {
 } from "@workspace/db";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { buildTemplateDocx } from "../lib/docxFromTiptap";
+import { hasModuleAction } from "../middleware/auth";
 
 const router = Router();
 const objectStorageService = new ObjectStorageService();
@@ -278,12 +279,31 @@ router.post("/work-orders", async (req: Request, res: Response) => {
   }
 });
 
+// الحقول المسموح للفني المكلّف تعديلها على أمر عمله (دون صلاحية تعديل عامة):
+// تقدّم المراحل + توثيق العطل + الصور/المرفقات — وليس البيانات الإدارية/المالية.
+const TECH_ALLOWED_FIELDS = new Set([
+  "stage", "startedAt", "completedAt", "cause", "downtimeMinutes",
+  "beforePhotoUrl", "afterPhotoUrl", "attachmentUrl", "notes",
+]);
+
 router.patch("/work-orders/:id", async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
     const [existing] = await db.select().from(maintenanceWorkOrdersTable).where(eq(maintenanceWorkOrdersTable.id, id));
     if (!existing) return res.status(404).json({ error: "أمر الصيانة غير موجود" });
+
+    // تفويض: تعديل كامل بصلاحية المصفوفة، أو تعديل محدود للفني المكلّف بأمر العمل نفسه
+    if (!hasModuleAction(req, "accessMaintenance", "edit")) {
+      const isAssignedTech = existing.assignedTechnicianId === req.session.userId;
+      if (!isAssignedTech) {
+        return res.status(403).json({ error: "ليس لديك صلاحية تعديل أوامر الصيانة." });
+      }
+      const forbidden = Object.keys(req.body).filter((f) => !TECH_ALLOWED_FIELDS.has(f));
+      if (forbidden.length > 0) {
+        return res.status(403).json({ error: `الفني المكلّف لا يملك صلاحية تعديل: ${forbidden.join(", ")}` });
+      }
+    }
 
     const data = updateMaintenanceWorkOrderSchema.parse(req.body) as Record<string, any>;
     if (data.stage !== undefined && !WORK_ORDER_STAGES.includes(data.stage)) {
@@ -514,7 +534,7 @@ router.post("/inventory/:id/receive", async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
-    const { quantity, unitCost } = req.body as { quantity?: number; unitCost?: number };
+    const { quantity, unitCost, recordExpense } = req.body as { quantity?: number; unitCost?: number; recordExpense?: boolean };
     if (!quantity || quantity <= 0) return res.status(400).json({ error: "الكمية مطلوبة" });
     const { rows } = await pool.query(
       `UPDATE maintenance_inventory
@@ -526,6 +546,21 @@ router.post("/inventory/:id/receive", async (req: Request, res: Response) => {
       [quantity, unitCost ?? null, id]
     );
     if (!rows.length) return res.status(404).json({ error: "الصنف غير موجود" });
+
+    // اختياري: تسجيل الاستلام كمصروف شراء قطع غيار في ميزانية الصيانة
+    const effectiveUnitCost = unitCost ?? Number(rows[0].unitCost || 0);
+    if (recordExpense && effectiveUnitCost > 0) {
+      const today = new Date().toISOString().slice(0, 10);
+      await pool.query(
+        `INSERT INTO finance_expenses
+           (description, amount, due_date, paid_date, status, category, source_module, created_by)
+         VALUES ($1, $2, $3, $3, 'paid', 'parts_purchase', 'maintenance', $4)`,
+        [
+          `شراء ${quantity} × ${rows[0].partName}`,
+          (quantity * effectiveUnitCost).toFixed(3), today, req.session.userId ?? null,
+        ]
+      );
+    }
     return res.json(rows[0]);
   } catch {
     return res.status(500).json({ error: "فشل في استلام الكمية" });
@@ -683,10 +718,237 @@ router.post("/budgets", async (req: Request, res: Response) => {
   }
 });
 
+/* ══════════════════════════════════════
+   INCOME SOURCES (مصادر دخل الصيانة v2)
+   كل مصدر اختياري — عقد كامل / نسبة ربح من عقد / بيع قطع غيار / يدوي
+══════════════════════════════════════ */
+router.post("/income-sources", async (req: Request, res: Response) => {
+  try {
+    const {
+      incomeSource, amount, contractId, percent,
+      inventoryItemId, quantity, unitPrice,
+      description, date: incomeDate, notes,
+    } = req.body as Record<string, any>;
+
+    if (!["contract", "contract_profit", "parts_sale", "manual"].includes(incomeSource)) {
+      return res.status(400).json({ error: "نوع مصدر الدخل غير صالح" });
+    }
+
+    let finalAmount: number | null = amount != null && amount !== "" ? Number(amount) : null;
+    let autoDescription = description || "";
+    let linkContractId: number | null = null;
+    let linkItemId: number | null = null;
+    let saleQty: number | null = null;
+
+    if (incomeSource === "contract" || incomeSource === "contract_profit") {
+      if (!contractId) return res.status(400).json({ error: "اختيار العقد مطلوب لهذا النوع" });
+      const { rows: cRows } = await pool.query(
+        `SELECT id, contract_number, contract_value AS value FROM contracts WHERE id = $1`, [Number(contractId)]
+      );
+      if (!cRows.length) return res.status(404).json({ error: "العقد غير موجود" });
+      const contract = cRows[0];
+      linkContractId = contract.id;
+      if (incomeSource === "contract_profit") {
+        const pct = Number(percent);
+        if (finalAmount == null) {
+          if (!pct || pct <= 0) return res.status(400).json({ error: "نسبة الربح مطلوبة (أو أدخل مبلغًا يدويًا)" });
+          if (!contract.value) return res.status(400).json({ error: "العقد بلا قيمة مسجلة — أدخل المبلغ يدويًا" });
+          finalAmount = Number(contract.value) * pct / 100;
+        }
+        if (!autoDescription) autoDescription = `نسبة ربح ${pct || ""}% من عقد ${contract.contract_number}`.trim();
+      } else {
+        if (finalAmount == null) {
+          if (!contract.value) return res.status(400).json({ error: "العقد بلا قيمة مسجلة — أدخل المبلغ يدويًا" });
+          finalAmount = Number(contract.value);
+        }
+        if (!autoDescription) autoDescription = `دخل عقد صيانة ${contract.contract_number}`;
+      }
+    } else if (incomeSource === "parts_sale") {
+      const qty = Number(quantity);
+      const price = Number(unitPrice);
+      if (!inventoryItemId || !qty || qty <= 0 || !price || price <= 0) {
+        return res.status(400).json({ error: "الصنف والكمية وسعر البيع مطلوبة لبيع قطع الغيار" });
+      }
+      const { rows: itemRows } = await pool.query(
+        `SELECT id, part_name, quantity_on_hand FROM maintenance_inventory WHERE id = $1`, [Number(inventoryItemId)]
+      );
+      if (!itemRows.length) return res.status(404).json({ error: "الصنف غير موجود في المستودع" });
+      const item = itemRows[0];
+      if (Number(item.quantity_on_hand) < qty) {
+        return res.status(400).json({ error: `الرصيد المتاح (${item.quantity_on_hand}) أقل من الكمية المطلوبة` });
+      }
+      await pool.query(
+        `UPDATE maintenance_inventory SET quantity_on_hand = quantity_on_hand - $1, updated_at = now() WHERE id = $2`,
+        [qty, item.id]
+      );
+      linkItemId = item.id;
+      saleQty = qty;
+      finalAmount = finalAmount ?? qty * price;
+      if (!autoDescription) autoDescription = `بيع ${qty} × ${item.part_name} بسعر ${price} د.ك للوحدة`;
+    } else {
+      if (finalAmount == null || finalAmount <= 0) return res.status(400).json({ error: "المبلغ مطلوب" });
+      if (!autoDescription) autoDescription = "دخل صيانة يدوي";
+    }
+
+    if (finalAmount == null || finalAmount <= 0) return res.status(400).json({ error: "المبلغ غير صالح" });
+
+    const { rows } = await pool.query(
+      `INSERT INTO finance_income
+         (contract_id, inventory_item_id, quantity, description, amount, date, category, source_module, income_source, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'maintenance', $8, $9, $10)
+       RETURNING id, amount, date, description, income_source AS "incomeSource"`,
+      [
+        linkContractId, linkItemId, saleQty, autoDescription,
+        finalAmount.toFixed(3), incomeDate || new Date().toISOString().slice(0, 10),
+        incomeSource === "parts_sale" ? "sales" : "contract",
+        incomeSource, notes ?? null, req.session.userId ?? null,
+      ]
+    );
+    return res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في تسجيل الدخل" });
+  }
+});
+
+router.get("/income-entries", async (req: Request, res: Response) => {
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const { rows } = await pool.query(
+      `SELECT fi.id, fi.amount, fi.date, fi.description, fi.income_source AS "incomeSource",
+              fi.quantity, c.contract_number AS "contractNumber", inv.part_name AS "partName",
+              wo.order_number AS "workOrderNumber"
+       FROM finance_income fi
+       LEFT JOIN contracts c ON c.id = fi.contract_id
+       LEFT JOIN maintenance_inventory inv ON inv.id = fi.inventory_item_id
+       LEFT JOIN maintenance_work_orders wo ON wo.id = fi.maintenance_work_order_id
+       WHERE (fi.source_module = 'maintenance' OR fi.maintenance_work_order_id IS NOT NULL)
+         AND EXTRACT(YEAR FROM fi.date)::int = $1
+       ORDER BY fi.date DESC, fi.id DESC`,
+      [year]
+    );
+    return res.json(rows);
+  } catch {
+    return res.status(500).json({ error: "فشل في جلب سجل الدخل" });
+  }
+});
+
+router.delete("/income-entries/:id", async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
+  try {
+    const { rows } = await pool.query(
+      `DELETE FROM finance_income
+       WHERE id = $1 AND (source_module = 'maintenance' OR maintenance_work_order_id IS NOT NULL)
+       RETURNING income_source AS "incomeSource", inventory_item_id AS "inventoryItemId", quantity`,
+      [id]
+    );
+    if (!rows.length) return res.status(404).json({ error: "سجل الدخل غير موجود" });
+    const deleted = rows[0];
+    // إرجاع الكمية للمخزون عند حذف عملية بيع قطع غيار
+    if (deleted.incomeSource === "parts_sale" && deleted.inventoryItemId && deleted.quantity) {
+      await pool.query(
+        `UPDATE maintenance_inventory SET quantity_on_hand = quantity_on_hand + $1, updated_at = now() WHERE id = $2`,
+        [Number(deleted.quantity), deleted.inventoryItemId]
+      );
+    }
+    return res.status(204).send();
+  } catch {
+    return res.status(500).json({ error: "فشل في حذف سجل الدخل" });
+  }
+});
+
+/* ══════════════════════════════════════
+   QUICK EXPENSES (مصروفات الصيانة v2)
+   رواتب عمال / شراء قطع غيار / تخزين / أخرى — كلها اختيارية
+══════════════════════════════════════ */
+const MAINTENANCE_EXPENSE_CATEGORIES = ["salary", "parts_purchase", "storage", "other"];
+
+router.post("/expense-entries", async (req: Request, res: Response) => {
+  try {
+    const { category, amount, description, workerId, date: expDate, notes } = req.body as Record<string, any>;
+    if (!MAINTENANCE_EXPENSE_CATEGORIES.includes(category)) {
+      return res.status(400).json({ error: "تصنيف المصروف غير صالح" });
+    }
+    const amt = Number(amount);
+    if (!amt || amt <= 0) return res.status(400).json({ error: "المبلغ مطلوب" });
+
+    let desc = description || "";
+    let linkWorkerId: number | null = null;
+    if (category === "salary" && workerId) {
+      const { rows: wRows } = await pool.query(`SELECT id, full_name FROM workers WHERE id = $1`, [Number(workerId)]);
+      if (wRows.length) {
+        linkWorkerId = wRows[0].id;
+        if (!desc) desc = `راتب العامل ${wRows[0].full_name}`;
+      }
+    }
+    if (!desc) {
+      desc = category === "salary" ? "رواتب عمال الصيانة"
+        : category === "parts_purchase" ? "شراء قطع غيار"
+        : category === "storage" ? "مصاريف تخزين قطع الغيار" : "مصروف صيانة";
+    }
+
+    const d = expDate || new Date().toISOString().slice(0, 10);
+    const { rows } = await pool.query(
+      `INSERT INTO finance_expenses
+         (worker_id, description, amount, due_date, paid_date, status, category, source_module, notes, created_by)
+       VALUES ($1, $2, $3, $4, $4, 'paid', $5, 'maintenance', $6, $7)
+       RETURNING id, amount, category, description`,
+      [linkWorkerId, desc, amt.toFixed(3), d, category, notes ?? null, req.session.userId ?? null]
+    );
+    return res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في تسجيل المصروف" });
+  }
+});
+
+router.get("/expense-entries", async (req: Request, res: Response) => {
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const { rows } = await pool.query(
+      `SELECT fe.id, fe.amount, fe.category, fe.description, fe.paid_date AS "paidDate", fe.created_at AS "createdAt",
+              w.full_name AS "workerName", wo.order_number AS "workOrderNumber",
+              CASE
+                WHEN fe.source_module = 'maintenance' THEN fe.category
+                WHEN fe.worker_id IS NOT NULL THEN 'salary'
+                ELSE 'work_order'
+              END AS "scopeCategory"
+       FROM finance_expenses fe
+       LEFT JOIN workers w ON w.id = fe.worker_id
+       LEFT JOIN maintenance_work_orders wo ON wo.id = fe.maintenance_work_order_id
+       WHERE (fe.source_module = 'maintenance'
+              OR fe.maintenance_work_order_id IS NOT NULL
+              OR (fe.worker_id IS NOT NULL AND w.assigned_module = 'maintenance'))
+         AND EXTRACT(YEAR FROM fe.created_at)::int = $1
+       ORDER BY fe.created_at DESC
+       LIMIT 200`,
+      [year]
+    );
+    return res.json(rows);
+  } catch {
+    return res.status(500).json({ error: "فشل في جلب سجل المصروفات" });
+  }
+});
+
+router.delete("/expense-entries/:id", async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
+  try {
+    const { rowCount } = await pool.query(
+      `DELETE FROM finance_expenses WHERE id = $1 AND source_module = 'maintenance'`, [id]
+    );
+    if (!rowCount) return res.status(404).json({ error: "المصروف غير موجود (تُحذف مصروفات الميزانية اليدوية فقط من هنا)" });
+    return res.status(204).send();
+  } catch {
+    return res.status(500).json({ error: "فشل في حذف المصروف" });
+  }
+});
+
 router.get("/budgets/summary", async (req: Request, res: Response) => {
   try {
     const year = Number(req.query.year) || new Date().getFullYear();
-    const [monthly, income, capex, capexList, byEquipment, byType, byProject, byContract, byBranch, byWorkerCost] = await Promise.all([
+    const [monthly, income, capex, capexList, byEquipment, byType, byProject, byContract, byBranch, byWorkerCost, incomeBySource, expenseByCategory] = await Promise.all([
       pool.query(
         `SELECT gs.month, COALESCE(b.amount, 0)::numeric AS budget,
            COALESCE((
@@ -695,6 +957,7 @@ router.get("/budgets/summary", async (req: Request, res: Response) => {
              WHERE EXTRACT(YEAR FROM fe.created_at)::int = $1
                AND EXTRACT(MONTH FROM fe.created_at)::int = gs.month
                AND (fe.maintenance_work_order_id IS NOT NULL
+                    OR fe.source_module = 'maintenance'
                     OR (fe.worker_id IS NOT NULL AND w.assigned_module = 'maintenance'))
            ), 0)::numeric AS spent
          FROM generate_series(1, 12) AS gs(month)
@@ -705,7 +968,8 @@ router.get("/budgets/summary", async (req: Request, res: Response) => {
       pool.query(
         `SELECT EXTRACT(MONTH FROM fi.date)::int AS month, COALESCE(SUM(fi.amount), 0)::numeric AS income
          FROM finance_income fi
-         WHERE fi.maintenance_work_order_id IS NOT NULL AND EXTRACT(YEAR FROM fi.date)::int = $1
+         WHERE (fi.maintenance_work_order_id IS NOT NULL OR fi.source_module = 'maintenance')
+           AND EXTRACT(YEAR FROM fi.date)::int = $1
          GROUP BY month`,
         [year]
       ),
@@ -775,6 +1039,32 @@ router.get("/budgets/summary", async (req: Request, res: Response) => {
          GROUP BY w.full_name ORDER BY total DESC LIMIT 10`,
         [year]
       ),
+      // توزيع الدخل حسب المصدر (عقد/نسبة ربح/بيع قطع/يدوي/أوامر صيانة قديمة)
+      pool.query(
+        `SELECT COALESCE(fi.income_source, 'work_order') AS label, COALESCE(SUM(fi.amount), 0)::numeric AS total
+         FROM finance_income fi
+         WHERE (fi.maintenance_work_order_id IS NOT NULL OR fi.source_module = 'maintenance')
+           AND EXTRACT(YEAR FROM fi.date)::int = $1
+         GROUP BY 1 ORDER BY total DESC`,
+        [year]
+      ),
+      // توزيع المصروف حسب التصنيف (رواتب/شراء قطع/تخزين/أوامر صيانة/أخرى)
+      pool.query(
+        `SELECT CASE
+                  WHEN fe.source_module = 'maintenance' THEN fe.category
+                  WHEN fe.worker_id IS NOT NULL THEN 'salary'
+                  ELSE 'work_order'
+                END AS label,
+                COALESCE(SUM(fe.amount), 0)::numeric AS total
+         FROM finance_expenses fe
+         LEFT JOIN workers w ON w.id = fe.worker_id
+         WHERE (fe.maintenance_work_order_id IS NOT NULL
+                OR fe.source_module = 'maintenance'
+                OR (fe.worker_id IS NOT NULL AND w.assigned_module = 'maintenance'))
+           AND EXTRACT(YEAR FROM fe.created_at)::int = $1
+         GROUP BY 1 ORDER BY total DESC`,
+        [year]
+      ),
     ]);
 
     const incomeByMonth: Record<number, number> = {};
@@ -805,6 +1095,8 @@ router.get("/budgets/summary", async (req: Request, res: Response) => {
       byContract: byContract.rows,
       byBranch: byBranch.rows,
       byWorkerCost: byWorkerCost.rows,
+      incomeBySource: incomeBySource.rows,
+      expenseByCategory: expenseByCategory.rows,
     });
   } catch (err) {
     console.error(err);
@@ -825,7 +1117,7 @@ router.get("/stats", async (_req: Request, res: Response) => {
         (SELECT COUNT(*)::int FROM maintenance_preventive_plans WHERE active AND next_due_date = CURRENT_DATE) AS "scheduledToday",
         (SELECT COUNT(*)::int FROM maintenance_work_orders WHERE stage != 'closed' AND report_date < CURRENT_DATE - INTERVAL '3 days') AS "overdueOrders",
         (SELECT COALESCE(SUM(amount), 0)::numeric FROM finance_expenses
-          WHERE maintenance_work_order_id IS NOT NULL
+          WHERE (maintenance_work_order_id IS NOT NULL OR source_module = 'maintenance')
             AND date_trunc('month', created_at) = date_trunc('month', CURRENT_DATE)) AS "monthlyCost",
         (SELECT COALESCE(amount, 0)::numeric FROM maintenance_budgets
           WHERE year = EXTRACT(YEAR FROM CURRENT_DATE)::int AND month = EXTRACT(MONTH FROM CURRENT_DATE)::int) AS "monthlyBudget",
@@ -1023,6 +1315,11 @@ router.post("/work-orders/:id/visit-report", async (req: Request, res: Response)
     );
     if (!woRows.length) return res.status(404).json({ error: "أمر الصيانة غير موجود" });
     const wo = woRows[0];
+
+    // إصدار التقرير: بصلاحية الإضافة، أو للفني المكلّف بأمر العمل نفسه
+    if (!hasModuleAction(req, "accessMaintenance", "add") && wo.assignedTechnicianId !== req.session.userId) {
+      return res.status(403).json({ error: "ليس لديك صلاحية إصدار تقرير لهذا الأمر." });
+    }
 
     const { rows: partRows } = await pool.query(
       `SELECT part_name AS "partName", quantity, unit_price AS "unitPrice" FROM maintenance_work_order_parts WHERE work_order_id = $1`,

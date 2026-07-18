@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/auth";
 import FileUpload from "@/components/file-upload";
 import { tiptapExtensions, FONT_FAMILIES, FONT_SIZES } from "@/lib/tiptap-extensions";
 import {
-  ArrowRight, FileText, Trash2, Star, Save, Lock, Upload, PenSquare, X, Settings,
+  ArrowRight, FileText, Trash2, Star, Save, Upload, PenSquare, X, Settings,
   Search, Download, MapPin, Wrench, FileBox, ChevronDown,
   Bold, Italic, Underline as UnderlineIcon, List, ListOrdered, AlignRight, AlignCenter,
 } from "lucide-react";
@@ -259,15 +259,7 @@ export default function MaintenanceReportTemplates() {
   const clearFilters = () => { setSearch(""); setContractId(""); setEquipmentType(""); setDateFrom(""); setDateTo(""); };
   const hasFilters = !!(search || contractId || equipmentType || dateFrom || dateTo);
 
-  if (!isAdmin) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 300, gap: 12 }}>
-        <Lock size={40} color="#e2d5b0" />
-        <p style={{ color: "#94a3b8", fontSize: 13 }}>هذه الصفحة للمدير فقط</p>
-      </div>
-    );
-  }
-
+  // الموظفون بصلاحية الصيانة يرون سجل التقارير ويحمّلونها؛ إدارة القوالب تبقى للمدير فقط
   return (
     <div dir="rtl" style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif", display: "flex", flexDirection: "column", gap: 18 }}>
       {showTemplatesModal && <TemplatesModal onClose={() => setShowTemplatesModal(false)} />}
@@ -280,9 +272,11 @@ export default function MaintenanceReportTemplates() {
           <h1 style={{ fontSize: 20, fontWeight: 800, color: GR, margin: 0 }}>تقارير الصيانة ({reports.length})</h1>
           <p style={{ color: "#6b7280", fontSize: 13, margin: "4px 0 0" }}>سجل كل تقارير الزيارة الصادرة، مرتبطة بالجهاز والعقد/أمر الصيانة — تصدر من داخل أمر الصيانة نفسه.</p>
         </div>
-        <button onClick={() => setShowTemplatesModal(true)} style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", background: "white", border: "1.5px solid #e5e7eb", color: GR, fontFamily: "inherit" }}>
-          <Settings size={14} color={GD} /> إدارة القوالب
-        </button>
+        {isAdmin && (
+          <button onClick={() => setShowTemplatesModal(true)} style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", background: "white", border: "1.5px solid #e5e7eb", color: GR, fontFamily: "inherit" }}>
+            <Settings size={14} color={GD} /> إدارة القوالب
+          </button>
+        )}
       </div>
 
       {/* Filters */}

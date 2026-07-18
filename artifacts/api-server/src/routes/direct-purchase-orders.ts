@@ -157,6 +157,8 @@ router.get("/:id", async (req: Request, res: Response) => {
 
 router.post("/", async (req: Request, res: Response) => {
   try {
+    // عمود numeric يتوقع نصًا في Zod — بعض النماذج ترسل رقمًا
+    if (typeof req.body?.amount === "number") req.body.amount = String(req.body.amount);
     const data = insertDirectPurchaseOrderSchema.parse(req.body) as Record<string, any>;
     // أعمدة date/numeric ترفض "" على مستوى الدرايفر — تطبيع الفارغ إلى null (كما في PATCH)
     for (const f of ["orderDate", "deliveryDate", "amount"]) {
@@ -177,6 +179,8 @@ router.patch("/:id", async (req: Request, res: Response) => {
     const [existing] = await db.select().from(directPurchaseOrdersTable).where(eq(directPurchaseOrdersTable.id, id));
     if (!existing) return res.status(404).json({ error: "أمر الشراء غير موجود" });
 
+    // عمود numeric يتوقع نصًا في Zod — بعض النماذج ترسل رقمًا
+    if (typeof req.body?.amount === "number") req.body.amount = String(req.body.amount);
     const data = updateDirectPurchaseOrderSchema.parse(req.body) as Record<string, any>;
     if (data.executionStage !== undefined && !EXECUTION_STAGES.includes(data.executionStage)) {
       return res.status(400).json({ error: "مرحلة تنفيذ غير صالحة" });

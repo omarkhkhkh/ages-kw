@@ -77,9 +77,15 @@ router.get("/", async (req: Request, res: Response) => {
     }
 
     // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
+    // + العقود التي وجّه له المدير ملاحظات/تعليقات فيها — وإلا لا يستطيع
+    //   الاطلاع على ملاحظات المدير الموجهة إليه إطلاقًا
     if (ownRecordsOnly(req)) {
       params.push(userId);
-      conditions.push(`(c.created_by_user_id IS NULL OR c.created_by_user_id = $${params.length})`);
+      conditions.push(`(
+        c.created_by_user_id IS NULL
+        OR c.created_by_user_id = $${params.length}
+        OR EXISTS (SELECT 1 FROM contract_comments cc WHERE cc.contract_id = c.id AND cc.to_user_id = $${params.length})
+      )`);
     }
 
     if (status && status !== "all") {

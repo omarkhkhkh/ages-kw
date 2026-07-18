@@ -147,6 +147,16 @@ export default function PurchaseOrderDetail() {
     updateMut.mutate({ executionStage: nextStage });
   };
 
+  // الرجوع خطوة واحدة للمرحلة السابقة — متاح للمدير والموظف (بنفس صلاحية التقدم)
+  const handleRevertStage = () => {
+    const idx = STAGES.findIndex((s) => s.key === form.executionStage);
+    if (idx <= 0) return;
+    const prevStage = STAGES[idx - 1].key;
+    if (!confirm(`الرجوع إلى مرحلة "${STAGES[idx - 1].label}"؟`)) return;
+    set("executionStage", prevStage);
+    updateMut.mutate({ executionStage: prevStage });
+  };
+
   if (!po || !form) return <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>جارِ التحميل...</div>;
 
   const stageIdx = Math.max(0, STAGES.findIndex((s) => s.key === form.executionStage));
@@ -181,11 +191,18 @@ export default function PurchaseOrderDetail() {
       <div style={cardStyle}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <span style={sectionTitle}>مراحل التنفيذ — {completionPct}% مكتمل</span>
-          {canEdit && stageIdx < STAGES.length - 1 && (
-            <button onClick={handleAdvanceStage} disabled={updateMut.isPending} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, fontSize: 11.5, fontWeight: 700, background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", cursor: "pointer", fontFamily: "inherit" }}>
-              المرحلة التالية <StageArrow size={12} />
-            </button>
-          )}
+          <div style={{ display: "flex", gap: 6 }}>
+            {canEdit && stageIdx > 0 && (
+              <button onClick={handleRevertStage} disabled={updateMut.isPending} title="التراجع خطوة واحدة للمرحلة السابقة" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, fontSize: 11.5, fontWeight: 700, background: "white", border: "1.5px solid #e5e7eb", color: "#6b7280", cursor: "pointer", fontFamily: "inherit" }}>
+                ↩ رجوع للمرحلة السابقة
+              </button>
+            )}
+            {canEdit && stageIdx < STAGES.length - 1 && (
+              <button onClick={handleAdvanceStage} disabled={updateMut.isPending} style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, fontSize: 11.5, fontWeight: 700, background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", cursor: "pointer", fontFamily: "inherit" }}>
+                المرحلة التالية <StageArrow size={12} />
+              </button>
+            )}
+          </div>
         </div>
         <div style={{ height: 8, borderRadius: 4, background: "#f3f4f6", overflow: "hidden", marginBottom: 14 }}>
           <div style={{ height: "100%", borderRadius: 4, background: `linear-gradient(90deg,${G},${GD})`, width: `${completionPct}%`, transition: "width 0.3s" }} />

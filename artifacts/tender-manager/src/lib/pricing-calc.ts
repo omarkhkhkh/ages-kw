@@ -1,7 +1,10 @@
 export interface PricingSettings {
+  /** تكلفة شحن الحاوية الواحدة بالدولار ($) */
   containerShippingCost: string | number;
+  /** عدد الحاويات الكلي — يُستخدم في نظام "حاويات مشتركة" فقط */
   containerCount: number;
   unloadingCost: string | number;
+  /** تكلفة تخليص الحاوية الواحدة بالدولار ($) */
   clearanceCost: string | number;
   maintenanceCost: string | number;
   bankFees: string | number;
@@ -9,6 +12,9 @@ export interface PricingSettings {
   customsPercent: string | number;
   minProfitPercent: string | number;
   goodProfitPercent: string | number;
+  /** نظام الحاويات: shared = كل البنود تتقاسم عدد حاويات واحد،
+   *  per_item = كل بند له عدد حاوياته الخاص (كما في جدول المرجع) */
+  containerMode?: string | null;
 }
 
 export interface PricingItemRaw {
@@ -18,6 +24,8 @@ export interface PricingItemRaw {
   quantity: string | number;
   unitCostUsd: string | number;
   sellPriceUnit: string | number;
+  /** عدد حاويات هذا البند — يُستخدم في نظام "لكل بند حاوياته" */
+  containers?: string | number | null;
   notes?: string | null;
 }
 
@@ -61,12 +69,23 @@ export function computeItemRow(item: PricingItemRaw, settings: PricingSettings, 
   const exchangeRate = n(settings.exchangeRate);
   const customsPercent = n(settings.customsPercent);
 
-  const totalShippingPoolKwd = n(settings.containerShippingCost) * n(settings.containerCount);
-  const shippingPerUnitKwd = totalQty > 0 ? totalShippingPoolKwd / totalQty : 0;
-  const shippingPerUnitUsd = exchangeRate > 0 ? shippingPerUnitKwd / exchangeRate : 0;
+  // الشحن والتخليص بالدولار لكل حاوية (كما في جدول التسعير المرجعي):
+  // - نظام "لكل بند حاوياته": نصيب الوحدة = سعر الحاوية × حاويات البند ÷ كمية البند
+  // - نظام "حاويات مشتركة": نصيب الوحدة = سعر الحاوية × العدد الكلي ÷ الكمية الكلية
+  const shipPerContainerUsd = n(settings.containerShippingCost);
+  const clearancePerContainerUsd = n(settings.clearanceCost);
+  const perItemMode = settings.containerMode === "per_item";
+  const itemContainers = n(item.containers);
 
-  const clearancePerUnitKwd = totalQty > 0 ? n(settings.clearanceCost) / totalQty : 0;
-  const clearancePerUnitUsd = exchangeRate > 0 ? clearancePerUnitKwd / exchangeRate : 0;
+  let shippingPerUnitUsd = 0;
+  let clearancePerUnitUsd = 0;
+  if (perItemMode) {
+    shippingPerUnitUsd = quantity > 0 ? (shipPerContainerUsd * itemContainers) / quantity : 0;
+    clearancePerUnitUsd = quantity > 0 ? (clearancePerContainerUsd * itemContainers) / quantity : 0;
+  } else {
+    shippingPerUnitUsd = totalQty > 0 ? (shipPerContainerUsd * n(settings.containerCount)) / totalQty : 0;
+    clearancePerUnitUsd = totalQty > 0 ? (clearancePerContainerUsd * n(settings.containerCount)) / totalQty : 0;
+  }
 
   const customsValueUsd = unitCostUsd * (customsPercent / 100);
 
@@ -107,14 +126,26 @@ export interface PricingSheetSummary {
   totalSales: number;
   totalProfit: number;
   avgProfitPercent: number;
+  /** عدد الحاويات الفعلي (المشترك أو مجموع حاويات البنود) */
+  totalContainers: number;
+}
+
+/** عدد الحاويات الفعلي حسب النظام المختار */
+export function getTotalContainers(items: PricingItemRaw[], settings: PricingSettings): number {
+  return settings.containerMode === "per_item"
+    ? items.reduce((s, it) => s + n(it.containers), 0)
+    : n(settings.containerCount);
 }
 
 export function computeSheetSummary(items: PricingItemRaw[], settings: PricingSettings): PricingSheetSummary {
   const totalQty = getTotalQuantity(items);
   const rows = items.map((it) => computeItemRow(it, settings, totalQty));
 
-  const totalShipping = n(settings.containerShippingCost) * n(settings.containerCount);
-  const totalClearance = n(settings.clearanceCost);
+  const totalContainers = getTotalContainers(items, settings);
+  const exchangeRate = n(settings.exchangeRate);
+  // الإجماليات بالدينار (سعر الحاوية بالدولار × العدد × سعر الصرف)
+  const totalShipping = n(settings.containerShippingCost) * totalContainers * exchangeRate;
+  const totalClearance = n(settings.clearanceCost) * totalContainers * exchangeRate;
   const totalCustoms = rows.reduce((s, r) => s + r.customsValueUsd * r.quantity, 0);
   const totalExpenses = n(settings.maintenanceCost) + n(settings.unloadingCost) + n(settings.bankFees);
   const totalCost = rows.reduce((s, r) => s + r.totalItemCostKwd, 0);
@@ -122,7 +153,7 @@ export function computeSheetSummary(items: PricingItemRaw[], settings: PricingSe
   const totalProfit = totalSales - totalCost;
   const avgProfitPercent = totalSales > 0 ? (totalProfit / totalSales) * 100 : 0;
 
-  return { totalShipping, totalClearance, totalCustoms, totalExpenses, totalCost, totalSales, totalProfit, avgProfitPercent };
+  return { totalShipping, totalClearance, totalCustoms, totalExpenses, totalCost, totalSales, totalProfit, avgProfitPercent, totalContainers };
 }
 
 export function getProfitTier(profitPercent: number, settings: PricingSettings): ProfitTier {

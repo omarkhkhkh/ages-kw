@@ -20,11 +20,11 @@ const GR = "#132a18";
 
 function fmt(v: number) { return Number(v || 0).toLocaleString("en-KW", { minimumFractionDigits: 3, maximumFractionDigits: 3 }); }
 
-const SETTINGS_FIELDS: { key: keyof PricingSettings; label: string; integer?: boolean }[] = [
-  { key: "containerShippingCost", label: "تكلفة شحن الحاوية (د.ك)" },
-  { key: "containerCount", label: "عدد الحاويات", integer: true },
+const SETTINGS_FIELDS: { key: keyof PricingSettings; label: string; integer?: boolean; sharedOnly?: boolean }[] = [
+  { key: "containerShippingCost", label: "تكلفة شحن الحاوية ($)" },
+  { key: "containerCount", label: "عدد الحاويات (المشترك)", integer: true, sharedOnly: true },
   { key: "unloadingCost", label: "تكلفة التنزيل (د.ك)" },
-  { key: "clearanceCost", label: "تكلفة التخليص (د.ك)" },
+  { key: "clearanceCost", label: "تكلفة تخليص الحاوية ($)" },
   { key: "maintenanceCost", label: "تكلفة الصيانة / الخدمات (د.ك)" },
   { key: "bankFees", label: "المصاريف البنكية (د.ك)" },
   { key: "exchangeRate", label: "سعر صرف الدولار (د.ك)" },
@@ -98,7 +98,9 @@ export default function PricingSheetDetail() {
     maintenanceCost: sheet.maintenanceCost, bankFees: sheet.bankFees,
     exchangeRate: sheet.exchangeRate, customsPercent: sheet.customsPercent,
     minProfitPercent: sheet.minProfitPercent, goodProfitPercent: sheet.goodProfitPercent,
+    containerMode: sheet.containerMode ?? "shared",
   } : null;
+  const perItemMode = settings?.containerMode === "per_item";
 
   const totalQty = useMemo(() => getTotalQuantity(items), [items]);
   const summary = useMemo(() => settings ? computeSheetSummary(items, settings) : null, [items, settings]);
@@ -165,6 +167,7 @@ export default function PricingSheetDetail() {
       {summary && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 18 }}>
           {[
+            { label: "عدد الحاويات", value: String(summary.totalContainers), color: "#0891b2" },
             { label: "إجمالي الشحن (د.ك)", value: fmt(summary.totalShipping), color: "#2563eb" },
             { label: "إجمالي التخليص (د.ك)", value: fmt(summary.totalClearance), color: "#7c3aed" },
             { label: "إجمالي الجمرك ($)", value: fmt(summary.totalCustoms), color: "#d97706" },
@@ -190,7 +193,20 @@ export default function PricingSheetDetail() {
         </div>
         {settingsOpen && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12, marginTop: 14 }}>
-            {SETTINGS_FIELDS.map(f => (
+            {/* نظام الحاويات — مشترك لكل البنود أو لكل بند حاوياته الخاصة */}
+            <div>
+              <label style={lbl}>نظام الحاويات</label>
+              <select
+                value={sheet.containerMode ?? "shared"}
+                disabled={isApproved}
+                style={{ ...inp, cursor: "pointer", borderColor: perItemMode ? "#7c3aed" : "#e5e7eb" }}
+                onChange={e => updateSheetMut.mutate({ containerMode: e.target.value })}
+              >
+                <option value="shared">حاويات مشتركة لكل البنود</option>
+                <option value="per_item">لكل بند عدد حاوياته</option>
+              </select>
+            </div>
+            {SETTINGS_FIELDS.filter(f => !f.sharedOnly || !perItemMode).map(f => (
               <div key={f.key}>
                 <label style={lbl}>{f.label}</label>
                 <input
@@ -270,11 +286,12 @@ export default function PricingSheetDetail() {
         const GROUPS: { label: string; bg: string; fg: string; cols: { h: string; tip?: string; detailedOnly?: boolean }[] }[] = [
           { label: "بيانات الصنف", bg: "#fdf6e3", fg: "#8a6d1a", cols: [
             { h: "" }, { h: "#" }, { h: "رقم البند" }, { h: "اسم الصنف" }, { h: "الكمية" },
+            ...(perItemMode ? [{ h: "الحاويات", tip: "عدد حاويات هذا البند — الشحن والتخليص يُحسبان عليه" }] : []),
           ]},
           { label: "تكاليف الاستيراد ($)", bg: "#eff6ff", fg: "#1d4ed8", cols: [
             { h: "تكلفة الوحدة $" },
-            { h: "شحن/وحدة", tip: "إجمالي الشحن ÷ إجمالي الكمية ÷ سعر الصرف", detailedOnly: true },
-            { h: "تخليص/وحدة", tip: "تكلفة التخليص ÷ إجمالي الكمية ÷ سعر الصرف", detailedOnly: true },
+            { h: "شحن/وحدة", tip: perItemMode ? "شحن الحاوية $ × حاويات البند ÷ كمية البند" : "شحن الحاوية $ × عدد الحاويات ÷ إجمالي الكمية", detailedOnly: true },
+            { h: "تخليص/وحدة", tip: perItemMode ? "تخليص الحاوية $ × حاويات البند ÷ كمية البند" : "تخليص الحاوية $ × عدد الحاويات ÷ إجمالي الكمية", detailedOnly: true },
             { h: "جمرك", tip: "تكلفة الوحدة $ × نسبة الجمرك", detailedOnly: true },
             { h: "إجمالي الوحدة $", tip: "التكلفة + الشحن + التخليص + الجمرك", detailedOnly: true },
             { h: "إجمالي الصنف $", detailedOnly: true },
@@ -373,6 +390,7 @@ export default function PricingSheetDetail() {
                         <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemNumber ?? ""} disabled={isApproved} width={70} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemNumber: v } })} /></td>
                         <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemName ?? ""} disabled={isApproved} width={150} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemName: v } })} /></td>
                         <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.quantity ?? "0")} disabled={isApproved} width={65} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { quantity: v } })} /></td>
+                        {perItemMode && <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String((item as any).containers ?? "0")} disabled={isApproved} width={60} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { containers: v } })} /></td>}
                         <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.unitCostUsd ?? "0")} disabled={isApproved} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { unitCostUsd: v } })} /></td>
                         {detailed && <td style={ro}>{fmt(c.shippingPerUnitUsd)}</td>}
                         {detailed && <td style={ro}>{fmt(c.clearancePerUnitUsd)}</td>}
@@ -407,6 +425,7 @@ export default function PricingSheetDetail() {
                         الإجمالي {itemSearch ? "(المعروض)" : ""}
                       </td>
                       <td style={{ position: "sticky", bottom: 0, background: GR, color: "#E8BE55", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{sumQty.toLocaleString()}</td>
+                      {perItemMode && <td style={{ position: "sticky", bottom: 0, background: GR, color: "#E8BE55", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{computed.reduce((s, r) => s + Number((r.item as any).containers || 0), 0).toLocaleString()}</td>}
                       <td style={{ position: "sticky", bottom: 0, background: GR }} />
                       {detailed && <td colSpan={4} style={{ position: "sticky", bottom: 0, background: GR }} />}
                       {detailed && <td style={{ position: "sticky", bottom: 0, background: GR, color: "#93c5fd", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{fmt(sumUsd)}</td>}

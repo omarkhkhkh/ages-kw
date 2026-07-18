@@ -6,6 +6,7 @@ const IMPORT_HEADER_MAP: Record<string, keyof PricingItemRaw> = {
   "رقم البند": "itemNumber",
   "اسم الصنف": "itemName",
   "الكمية": "quantity",
+  "الحاويات": "containers",
   "تكلفة الوحدة بالدولار": "unitCostUsd",
   "سعر البيع للوحدة": "sellPriceUnit",
 };
@@ -53,6 +54,7 @@ export function exportPricingSheetToExcel(sheetNumber: string, items: PricingIte
       itemNumber: c.itemNumber,
       itemName: c.itemName,
       quantity: c.quantity,
+      containers: Number(item.containers ?? 0),
       unitCostUsd: c.unitCostUsd,
       shippingPerUnitUsd: c.shippingPerUnitUsd,
       clearancePerUnitUsd: c.clearancePerUnitUsd,
@@ -78,6 +80,7 @@ export function exportPricingSheetToExcel(sheetNumber: string, items: PricingIte
       { header: "رقم البند", key: "itemNumber" },
       { header: "اسم الصنف", key: "itemName" },
       { header: "الكمية", key: "quantity" },
+      { header: "الحاويات", key: "containers" },
       { header: "تكلفة الوحدة بالدولار", key: "unitCostUsd" },
       { header: "تكلفة الشحن للوحدة", key: "shippingPerUnitUsd" },
       { header: "تكلفة التخليص للوحدة", key: "clearancePerUnitUsd" },

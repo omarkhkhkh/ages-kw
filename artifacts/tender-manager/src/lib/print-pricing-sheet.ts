@@ -17,12 +17,14 @@ export function printPricingSheet(sheetNumber: string, title: string | null, ite
   const totalQty = getTotalQuantity(items);
   const summary = computeSheetSummary(items, settings);
 
+  const perItemMode = settings.containerMode === "per_item";
   const rows = items.map((item) => {
     const c = computeItemRow(item, settings, totalQty);
     return `<tr>
       <td>${escapeHtml(c.itemNumber || "—")}</td>
       <td>${escapeHtml(c.itemName)}</td>
       <td>${c.quantity}</td>
+      ${perItemMode ? `<td>${Number(item.containers ?? 0)}</td>` : ""}
       <td>${fmt(c.unitCostUsd)}</td>
       <td>${fmt(c.totalUnitCostUsd)}</td>
       <td>${fmt(c.unitCostKwd)}</td>
@@ -68,7 +70,7 @@ export function printPricingSheet(sheetNumber: string, title: string | null, ite
   <table>
     <thead>
       <tr>
-        <th>رقم البند</th><th>اسم الصنف</th><th>الكمية</th><th>تكلفة الوحدة $</th>
+        <th>رقم البند</th><th>اسم الصنف</th><th>الكمية</th>${perItemMode ? "<th>الحاويات</th>" : ""}<th>تكلفة الوحدة $</th>
         <th>إجمالي تكلفة الوحدة $</th><th>تكلفة الوحدة د.ك</th><th>التكلفة النهائية للوحدة</th>
         <th>إجمالي التكلفة</th><th>سعر البيع</th><th>إجمالي المبيعات</th><th>إجمالي الربح</th><th>نسبة الربح</th>
       </tr>

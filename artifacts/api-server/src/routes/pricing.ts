@@ -211,7 +211,7 @@ router.patch("/items/:itemId", async (req: Request, res: Response) => {
   if (!itemId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
     const data = updatePricingItemSchema.parse(req.body) as Record<string, any>;
-    for (const f of ["quantity", "unitCostUsd", "sellPriceUnit"]) if (data[f] === "") data[f] = "0";
+    for (const f of ["quantity", "unitCostUsd", "sellPriceUnit", "containers"]) if (data[f] === "") data[f] = "0";
     const [row] = await db.update(pricingItemsTable).set({ ...data, updatedAt: new Date() }).where(eq(pricingItemsTable.id, itemId)).returning();
     if (!row) return res.status(404).json({ error: "الصنف غير موجود" });
     return res.json(row);

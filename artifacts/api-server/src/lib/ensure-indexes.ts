@@ -49,6 +49,9 @@ const INDEXES = [
 /* ترحيل حالات الممارسات القديمة إلى دورة حياة المناقصات (idempotent —
    لا يمس السجلات التي تحمل الحالات الجديدة أصلًا) */
 const MIGRATIONS = [
+  // نظام التسعير v2: نظام الحاويات + حاويات لكل بند
+  `ALTER TABLE pricing_sheets ADD COLUMN IF NOT EXISTS container_mode text NOT NULL DEFAULT 'shared'`,
+  `ALTER TABLE pricing_items ADD COLUMN IF NOT EXISTS containers numeric(8,2) NOT NULL DEFAULT 0`,
   // لقب المخاطبة القابل للاختيار (المحترمين/المحترم) على الكتب
   `ALTER TABLE correspondence_letters ADD COLUMN IF NOT EXISTS recipient_honorific text NOT NULL DEFAULT 'المحترمين'`,
   `ALTER TABLE correspondence_letters ADD COLUMN IF NOT EXISTS attention_honorific text NOT NULL DEFAULT 'المحترمين'`,

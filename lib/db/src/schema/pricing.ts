@@ -22,8 +22,10 @@ export const pricingSheetsTable = pgTable("pricing_sheets", {
   supplierId: integer("supplier_id").references(() => suppliersTable.id, { onDelete: "set null" }),
   contractId: integer("contract_id").references(() => contractsTable.id, { onDelete: "set null" }),
   // إعدادات عامة
-  containerShippingCost: numeric("container_shipping_cost", { precision: 15, scale: 3 }).notNull().default("0"),
+  containerShippingCost: numeric("container_shipping_cost", { precision: 15, scale: 3 }).notNull().default("0"), // تكلفة شحن الحاوية بالدولار ($)
   containerCount: integer("container_count").notNull().default(1),
+  // نظام الحاويات: shared = عدد حاويات مشترك لكل البنود | per_item = كل بند له حاوياته
+  containerMode: text("container_mode").notNull().default("shared"),
   unloadingCost: numeric("unloading_cost", { precision: 15, scale: 3 }).notNull().default("0"),
   clearanceCost: numeric("clearance_cost", { precision: 15, scale: 3 }).notNull().default("0"),
   maintenanceCost: numeric("maintenance_cost", { precision: 15, scale: 3 }).notNull().default("0"),
@@ -48,6 +50,7 @@ export const pricingItemsTable = pgTable("pricing_items", {
   quantity: numeric("quantity", { precision: 12, scale: 3 }).notNull().default("0"),
   unitCostUsd: numeric("unit_cost_usd", { precision: 15, scale: 4 }).notNull().default("0"),
   sellPriceUnit: numeric("sell_price_unit", { precision: 15, scale: 4 }).notNull().default("0"),
+  containers: numeric("containers", { precision: 8, scale: 2 }).notNull().default("0"), // حاويات البند — لنظام "لكل بند حاوياته"
   sortOrder: smallint("sort_order").notNull().default(0),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

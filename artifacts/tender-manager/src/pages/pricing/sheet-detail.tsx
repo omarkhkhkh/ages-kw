@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { Search, Table2, LayoutList } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { pricingApi, apiFetch, suppliersApi, contractsApi } from "@/lib/api";
@@ -40,13 +41,22 @@ const btnPrimary: React.CSSProperties = { ...btn, background: `linear-gradient(1
 
 function EditableCell({ value, onCommit, disabled, width, mono }: { value: string; onCommit: (v: string) => void; disabled?: boolean; width?: number; mono?: boolean }) {
   const [local, setLocal] = useState(value);
+  const [focused, setFocused] = useState(false);
   return (
     <input
       value={local}
       disabled={disabled}
       onChange={e => setLocal(e.target.value)}
-      onBlur={() => { if (local !== value) onCommit(local); }}
-      style={{ width: width ?? 90, boxSizing: "border-box", padding: "5px 7px", borderRadius: 6, border: "1.5px solid #e5e7eb", fontSize: 12, background: disabled ? "#f9fafb" : "white", fontFamily: mono ? "monospace" : "inherit", outline: "none", textAlign: mono ? "left" : "right" }}
+      onFocus={() => setFocused(true)}
+      onBlur={() => { setFocused(false); if (local !== value) onCommit(local); }}
+      style={{
+        width: width ?? 90, boxSizing: "border-box", padding: "5px 7px", borderRadius: 6,
+        border: `1.5px solid ${focused ? G : "#eadfba"}`,
+        boxShadow: focused ? `0 0 0 3px ${G}22` : "none",
+        fontSize: 12, background: disabled ? "#f9fafb" : "#fffdf5",
+        fontFamily: mono ? "monospace" : "inherit", outline: "none",
+        textAlign: mono ? "left" : "right", transition: "border-color 0.1s, box-shadow 0.1s",
+      }}
     />
   );
 }
@@ -58,6 +68,11 @@ export default function PricingSheetDetail() {
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(true);
+  const [detailed, setDetailed] = useState(() => localStorage.getItem("pricing-table-view") !== "simple");
+  const [itemSearch, setItemSearch] = useState("");
+  const toggleView = () => {
+    setDetailed(d => { localStorage.setItem("pricing-table-view", d ? "simple" : "detailed"); return !d; });
+  };
 
   const { data: sheet } = useQuery<any>({ queryKey: ["pricing-sheet", sheetId], queryFn: () => pricingApi.sheets.get(sheetId), enabled: !!sheetId });
   const { data: tenders = [] } = useQuery<any[]>({ queryKey: ["tenders"], queryFn: () => apiFetch("/api/tenders") });
@@ -237,69 +252,180 @@ export default function PricingSheetDetail() {
         </div>
       </div>
 
-      {/* Items table */}
-      <div style={cardStyle}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: GR }}>جدول الأصناف ({items.length})</span>
-          <button style={btnPrimary} onClick={() => addItemMut.mutate()} disabled={isApproved}><Plus size={14} /> إضافة صنف</button>
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
-            <thead>
-              <tr style={{ background: "#f9f6ee", borderBottom: "1.5px solid #f0ead8" }}>
-                {[
-                  "", "رقم البند", "اسم الصنف", "الكمية", "تكلفة الوحدة $", "شحن الوحدة $", "تخليص الوحدة $",
-                  "الجمرك $", "إجمالي الوحدة $", "إجمالي الصنف $", "تكلفة الوحدة د.ك", "خدمات/وحدة",
-                  "تنزيل/وحدة", "بنك/وحدة", "التكلفة النهائية/وحدة", "إجمالي التكلفة", "سعر البيع",
-                  "إجمالي المبيعات", "إجمالي الربح", "نسبة الربح", "",
-                ].map((h, i) => <th key={i} style={{ padding: "8px 6px", fontWeight: 700, color: "#6b7280", whiteSpace: "nowrap", textAlign: "right" }}>{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr><td colSpan={21} style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>
-                  <Package size={28} style={{ margin: "0 auto 8px", opacity: 0.4 }} />
-                  لا توجد أصناف بعد
-                </td></tr>
-              ) : items.map((item: any) => {
-                const c = computeItemRow(item, settings, totalQty);
-                const tier = getProfitTier(c.profitPercent, settings);
-                const readOnlyCell = { padding: "6px", background: "#fafafa", color: "#4b5563", whiteSpace: "nowrap" as const, direction: "ltr" as const, textAlign: "right" as const };
-                return (
-                  <tr key={item.id} style={{ borderBottom: "1px solid #f5f0e6" }}>
-                    <td style={{ padding: "6px", textAlign: "center" }} title={PROFIT_TIER_LABEL[tier]}>{PROFIT_TIER_ICON[tier]}</td>
-                    <td style={{ padding: "6px" }}><EditableCell value={item.itemNumber ?? ""} disabled={isApproved} width={70} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemNumber: v } })} /></td>
-                    <td style={{ padding: "6px" }}><EditableCell value={item.itemName ?? ""} disabled={isApproved} width={140} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemName: v } })} /></td>
-                    <td style={{ padding: "6px" }}><EditableCell value={String(item.quantity ?? "0")} disabled={isApproved} width={70} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { quantity: v } })} /></td>
-                    <td style={{ padding: "6px" }}><EditableCell value={String(item.unitCostUsd ?? "0")} disabled={isApproved} width={90} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { unitCostUsd: v } })} /></td>
-                    <td style={readOnlyCell}>{fmt(c.shippingPerUnitUsd)}</td>
-                    <td style={readOnlyCell}>{fmt(c.clearancePerUnitUsd)}</td>
-                    <td style={readOnlyCell}>{fmt(c.customsValueUsd)}</td>
-                    <td style={readOnlyCell}>{fmt(c.totalUnitCostUsd)}</td>
-                    <td style={readOnlyCell}>{fmt(c.totalItemCostUsd)}</td>
-                    <td style={readOnlyCell}>{fmt(c.unitCostKwd)}</td>
-                    <td style={readOnlyCell}>{fmt(c.serviceCostPerUnitKwd)}</td>
-                    <td style={readOnlyCell}>{fmt(c.unloadingCostPerUnitKwd)}</td>
-                    <td style={readOnlyCell}>{fmt(c.bankFeesPerUnitKwd)}</td>
-                    <td style={{ ...readOnlyCell, fontWeight: 700 }}>{fmt(c.finalUnitCost)}</td>
-                    <td style={{ ...readOnlyCell, fontWeight: 700 }}>{fmt(c.totalItemCostKwd)}</td>
-                    <td style={{ padding: "6px" }}><EditableCell value={String(item.sellPriceUnit ?? "0")} disabled={isApproved} width={90} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { sellPriceUnit: v } })} /></td>
-                    <td style={readOnlyCell}>{fmt(c.totalSales)}</td>
-                    <td style={{ ...readOnlyCell, fontWeight: 700, color: c.totalProfit >= 0 ? "#16a34a" : "#dc2626" }}>{fmt(c.totalProfit)}</td>
-                    <td style={{ ...readOnlyCell, fontWeight: 700, color: c.totalProfit >= 0 ? "#16a34a" : "#dc2626" }}>{c.profitPercent.toFixed(1)}%</td>
-                    <td style={{ padding: "6px" }} onClick={ev => ev.stopPropagation()}>
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <button style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={isApproved} onClick={() => duplicateItemMut.mutate(item.id)}><Copy size={13} color={GD} /></button>
-                        <button style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={isApproved} onClick={() => { if (confirm("حذف الصنف؟")) deleteItemMut.mutate(item.id); }}><Trash2 size={13} color="#dc2626" /></button>
-                      </div>
-                    </td>
+      {/* Items table — رأس مجمّع + إجماليات + بحث + وضع مبسّط/مفصّل */}
+      {(() => {
+        const filtered = itemSearch.trim()
+          ? items.filter((it: any) =>
+              (it.itemName ?? "").includes(itemSearch.trim()) || (it.itemNumber ?? "").includes(itemSearch.trim()))
+          : items;
+        const computed = filtered.map((item: any) => ({ item, c: computeItemRow(item, settings, totalQty) }));
+        const sumQty   = computed.reduce((s, r) => s + Number(r.item.quantity || 0), 0);
+        const sumUsd   = computed.reduce((s, r) => s + r.c.totalItemCostUsd, 0);
+        const sumKwd   = computed.reduce((s, r) => s + r.c.totalItemCostKwd, 0);
+        const sumSales = computed.reduce((s, r) => s + r.c.totalSales, 0);
+        const sumProfit = sumSales - sumKwd;
+        const sumPct = sumSales > 0 ? (sumProfit / sumSales) * 100 : 0;
+
+        // تعريف الأعمدة بمجموعات ملونة — العمود يظهر إن كان أساسيًا أو الوضع مفصّلاً
+        const GROUPS: { label: string; bg: string; fg: string; cols: { h: string; tip?: string; detailedOnly?: boolean }[] }[] = [
+          { label: "بيانات الصنف", bg: "#fdf6e3", fg: "#8a6d1a", cols: [
+            { h: "" }, { h: "#" }, { h: "رقم البند" }, { h: "اسم الصنف" }, { h: "الكمية" },
+          ]},
+          { label: "تكاليف الاستيراد ($)", bg: "#eff6ff", fg: "#1d4ed8", cols: [
+            { h: "تكلفة الوحدة $" },
+            { h: "شحن/وحدة", tip: "إجمالي الشحن ÷ إجمالي الكمية ÷ سعر الصرف", detailedOnly: true },
+            { h: "تخليص/وحدة", tip: "تكلفة التخليص ÷ إجمالي الكمية ÷ سعر الصرف", detailedOnly: true },
+            { h: "جمرك", tip: "تكلفة الوحدة $ × نسبة الجمرك", detailedOnly: true },
+            { h: "إجمالي الوحدة $", tip: "التكلفة + الشحن + التخليص + الجمرك", detailedOnly: true },
+            { h: "إجمالي الصنف $", detailedOnly: true },
+          ]},
+          { label: "التكاليف المحلية (د.ك)", bg: "#f5f3ff", fg: "#6d28d9", cols: [
+            { h: "تكلفة الوحدة د.ك", tip: "إجمالي الوحدة $ × سعر الصرف", detailedOnly: true },
+            { h: "خدمات/وحدة", tip: "تكلفة الخدمات ÷ إجمالي الكمية", detailedOnly: true },
+            { h: "تنزيل/وحدة", detailedOnly: true },
+            { h: "بنك/وحدة", detailedOnly: true },
+            { h: "النهائية/وحدة", tip: "تكلفة د.ك + الخدمات + التنزيل + البنك" },
+            { h: "إجمالي التكلفة", tip: "التكلفة النهائية × الكمية" },
+          ]},
+          { label: "البيع والربح (د.ك)", bg: "#f0fdf4", fg: "#15803d", cols: [
+            { h: "سعر البيع" }, { h: "المبيعات" }, { h: "الربح" }, { h: "النسبة %" },
+          ]},
+          { label: "", bg: "transparent", fg: "#6b7280", cols: [{ h: "" }] },
+        ];
+        const visibleCols = (g: typeof GROUPS[number]) => g.cols.filter(col => detailed || !col.detailedOnly);
+        const totalColCount = GROUPS.reduce((s, g) => s + visibleCols(g).length, 0);
+
+        const roCell: React.CSSProperties = { padding: "7px 8px", color: "#4b5563", whiteSpace: "nowrap", direction: "ltr", textAlign: "right", fontFamily: "monospace", fontSize: 11.5 };
+        const pill = (pct: number, tier: string) => (
+          <span style={{
+            display: "inline-block", padding: "2px 10px", borderRadius: 999, fontWeight: 800, fontSize: 11, direction: "ltr",
+            background: tier === "excellent" ? "#dcfce7" : tier === "medium" ? "#fef9c3" : "#fee2e2",
+            color: tier === "excellent" ? "#15803d" : tier === "medium" ? "#a16207" : "#b91c1c",
+          }}>{pct.toFixed(1)}%</span>
+        );
+
+        return (
+          <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", padding: "14px 20px", borderBottom: "1.5px solid #f0ead8" }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: GR }}>
+                جدول الأصناف <span style={{ color: "#9ca3af", fontWeight: 600 }}>({filtered.length}{itemSearch ? ` من ${items.length}` : ""})</span>
+              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#fafaf8", border: "1.5px solid #e5dfc8", borderRadius: 9, padding: "6px 10px" }}>
+                  <Search size={13} color="#9ca3af" />
+                  <input value={itemSearch} onChange={e => setItemSearch(e.target.value)} placeholder="بحث باسم/رقم الصنف"
+                    style={{ border: "none", outline: "none", background: "transparent", fontSize: 12, width: 130 }} />
+                </div>
+                <button style={btn} onClick={toggleView} title={detailed ? "إخفاء أعمدة التوزيع التفصيلية" : "إظهار كل أعمدة الحساب"}>
+                  {detailed ? <LayoutList size={14} /> : <Table2 size={14} />} {detailed ? "عرض مبسّط" : "عرض مفصّل"}
+                </button>
+                <button style={btnPrimary} onClick={() => addItemMut.mutate()} disabled={isApproved}><Plus size={14} /> إضافة صنف</button>
+              </div>
+            </div>
+            <div style={{ overflow: "auto", maxHeight: "62vh" }}>
+              <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 11.5 }}>
+                <thead>
+                  {/* صف المجموعات */}
+                  <tr>
+                    {GROUPS.map((g, gi) => {
+                      const span = visibleCols(g).length;
+                      if (!span) return null;
+                      return (
+                        <th key={gi} colSpan={span} style={{
+                          position: "sticky", top: 0, zIndex: 3, background: g.bg, color: g.fg,
+                          padding: "6px 8px", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap",
+                          borderBottom: `2px solid ${g.fg}22`, textAlign: "center",
+                        }}>{g.label}</th>
+                      );
+                    })}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                  {/* صف العناوين */}
+                  <tr>
+                    {GROUPS.flatMap((g, gi) => visibleCols(g).map((col, ci) => (
+                      <th key={`${gi}-${ci}`} title={col.tip} style={{
+                        position: "sticky", top: 29, zIndex: 3, background: "#f9f6ee",
+                        padding: "8px 8px", fontWeight: 700, color: "#6b7280", whiteSpace: "nowrap",
+                        textAlign: "right", borderBottom: "1.5px solid #f0ead8",
+                        cursor: col.tip ? "help" : "default",
+                        textDecoration: col.tip ? "underline dotted #d1c9a8" : "none", textUnderlineOffset: 3,
+                      }}>{col.h}</th>
+                    )))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {computed.length === 0 ? (
+                    <tr><td colSpan={totalColCount} style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>
+                      <Package size={28} style={{ margin: "0 auto 8px", opacity: 0.4 }} />
+                      {itemSearch ? "لا توجد أصناف مطابقة للبحث" : "لا توجد أصناف بعد"}
+                    </td></tr>
+                  ) : computed.map(({ item, c }: any, idx: number) => {
+                    const tier = getProfitTier(c.profitPercent, settings);
+                    const zebra = idx % 2 === 1 ? "#fdfcf7" : "white";
+                    const ro = { ...roCell, background: zebra };
+                    return (
+                      <tr key={item.id}
+                        style={{ borderBottom: "1px solid #f5f0e6", background: zebra }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "#fdf8ec")}
+                        onMouseLeave={e => (e.currentTarget.style.background = zebra)}
+                      >
+                        <td style={{ padding: "6px", textAlign: "center", background: "inherit" }} title={PROFIT_TIER_LABEL[tier]}>{PROFIT_TIER_ICON[tier]}</td>
+                        <td style={{ padding: "6px 8px", color: "#b7ac8a", fontWeight: 700, fontFamily: "monospace", background: "inherit" }}>{idx + 1}</td>
+                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemNumber ?? ""} disabled={isApproved} width={70} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemNumber: v } })} /></td>
+                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemName ?? ""} disabled={isApproved} width={150} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemName: v } })} /></td>
+                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.quantity ?? "0")} disabled={isApproved} width={65} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { quantity: v } })} /></td>
+                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.unitCostUsd ?? "0")} disabled={isApproved} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { unitCostUsd: v } })} /></td>
+                        {detailed && <td style={ro}>{fmt(c.shippingPerUnitUsd)}</td>}
+                        {detailed && <td style={ro}>{fmt(c.clearancePerUnitUsd)}</td>}
+                        {detailed && <td style={ro}>{fmt(c.customsValueUsd)}</td>}
+                        {detailed && <td style={ro}>{fmt(c.totalUnitCostUsd)}</td>}
+                        {detailed && <td style={ro}>{fmt(c.totalItemCostUsd)}</td>}
+                        {detailed && <td style={ro}>{fmt(c.unitCostKwd)}</td>}
+                        {detailed && <td style={ro}>{fmt(c.serviceCostPerUnitKwd)}</td>}
+                        {detailed && <td style={ro}>{fmt(c.unloadingCostPerUnitKwd)}</td>}
+                        {detailed && <td style={ro}>{fmt(c.bankFeesPerUnitKwd)}</td>}
+                        <td style={{ ...ro, fontWeight: 700, color: "#6d28d9" }}>{fmt(c.finalUnitCost)}</td>
+                        <td style={{ ...ro, fontWeight: 700, color: "#6d28d9" }}>{fmt(c.totalItemCostKwd)}</td>
+                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.sellPriceUnit ?? "0")} disabled={isApproved} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { sellPriceUnit: v } })} /></td>
+                        <td style={ro}>{fmt(c.totalSales)}</td>
+                        <td style={{ ...ro, fontWeight: 800, color: c.totalProfit >= 0 ? "#16a34a" : "#dc2626" }}>{fmt(c.totalProfit)}</td>
+                        <td style={{ padding: "6px 8px", background: "inherit", whiteSpace: "nowrap" }}>{pill(c.profitPercent, tier)}</td>
+                        <td style={{ padding: "6px", background: "inherit" }} onClick={ev => ev.stopPropagation()}>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button title="نسخ الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={isApproved} onClick={() => duplicateItemMut.mutate(item.id)}><Copy size={13} color={GD} /></button>
+                            <button title="حذف الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={isApproved} onClick={() => { if (confirm("حذف الصنف؟")) deleteItemMut.mutate(item.id); }}><Trash2 size={13} color="#dc2626" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {computed.length > 0 && (
+                  <tfoot>
+                    <tr>
+                      {/* الإجماليات — تلتصق بأسفل الجدول */}
+                      <td colSpan={4} style={{ position: "sticky", bottom: 0, background: GR, color: "white", padding: "10px 12px", fontWeight: 800, fontSize: 12 }}>
+                        الإجمالي {itemSearch ? "(المعروض)" : ""}
+                      </td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR, color: "#E8BE55", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{sumQty.toLocaleString()}</td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR }} />
+                      {detailed && <td colSpan={4} style={{ position: "sticky", bottom: 0, background: GR }} />}
+                      {detailed && <td style={{ position: "sticky", bottom: 0, background: GR, color: "#93c5fd", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{fmt(sumUsd)}</td>}
+                      {detailed && <td colSpan={4} style={{ position: "sticky", bottom: 0, background: GR }} />}
+                      <td style={{ position: "sticky", bottom: 0, background: GR }} />
+                      <td style={{ position: "sticky", bottom: 0, background: GR, color: "#c4b5fd", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{fmt(sumKwd)}</td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR }} />
+                      <td style={{ position: "sticky", bottom: 0, background: GR, color: "#86efac", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{fmt(sumSales)}</td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR, color: sumProfit >= 0 ? "#86efac" : "#fca5a5", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{fmt(sumProfit)}</td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR, padding: "10px 8px", whiteSpace: "nowrap" }}>{pill(sumPct, getProfitTier(sumPct, settings))}</td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR }} />
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

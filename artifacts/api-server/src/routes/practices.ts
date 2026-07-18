@@ -33,20 +33,30 @@ router.get("/", async (req: Request, res: Response) => {
   }
 });
 
-/* ── STATS ── */
-router.get("/stats", async (_req: Request, res: Response) => {
+/* ── STATS (بنمط إحصائيات المناقصات تمامًا) ── */
+router.get("/stats", async (req: Request, res: Response) => {
   try {
+    const privacy = ownRecordsOnly(req)
+      ? sql`(created_by_user_id IS NULL OR created_by_user_id = ${req.session.userId})`
+      : sql`true`;
+    // قائمة ثابتة من الكود — تُدرج حرفيًا (تمرير مصفوفة عبر قالب sql`` يكسر ANY)
+    const activeStatusesList = sql.raw(
+      ["new", "studying", "requesting_quotes", "preparing_technical", "preparing_financial", "management_review", "ready_to_submit", "under_evaluation"]
+        .map((s) => `'${s}'`).join(", "),
+    );
     const [totals] = await db.select({
-      total:              sql<number>`count(*)::int`,
-      current:            sql<number>`count(*) filter (where status='current')::int`,
-      previous:           sql<number>`count(*) filter (where status='previous')::int`,
-      targeted:           sql<number>`count(*) filter (where status='targeted')::int`,
-      underSubmission:    sql<number>`count(*) filter (where status='under_submission')::int`,
-      future:             sql<number>`count(*) filter (where status='future')::int`,
-      totalContractValue:   sql<string>`coalesce(sum(contract_value) filter (where status in ('current','previous')), 0)::text`,
-      currentContractValue: sql<string>`coalesce(sum(contract_value) filter (where status='current'), 0)::text`,
-    }).from(practicesTable);
-    return res.json(totals);
+      total:           sql<number>`count(*)::int`,
+      urgentCount:     sql<number>`count(*) filter (where deadline IS NOT NULL AND deadline >= current_date AND deadline <= current_date + interval '7 days' AND status IN (${activeStatusesList}))::int`,
+      wonCount:        sql<number>`count(*) filter (where status='won')::int`,
+      lostCount:       sql<number>`count(*) filter (where status='lost')::int`,
+      totalOfferValue: sql<string>`coalesce(sum(offer_value), 0)::text`,
+      submittedCount:  sql<number>`count(*) filter (where is_submitted)::int`,
+    }).from(practicesTable).where(privacy);
+    const decided = (totals.wonCount ?? 0) + (totals.lostCount ?? 0);
+    return res.json({
+      ...totals,
+      winRate: decided > 0 ? Math.round(((totals.wonCount ?? 0) / decided) * 1000) / 10 : 0,
+    });
   } catch {
     return res.status(500).json({ error: "فشل في جلب إحصائيات الممارسات" });
   }

@@ -135,6 +135,12 @@ export default function Dashboard() {
     enabled: isAdmin || !!user?.accessCorrespondence,
     staleTime: 5 * 60_000,
   });
+  const { data: calPractices = [] } = useQuery<any[]>({
+    queryKey: ["cal-practices"],
+    queryFn: () => apiFetch("/api/practices"),
+    enabled: isAdmin || !!user?.accessTenders,
+    staleTime: 5 * 60_000,
+  });
 
   // ── Build unified CalendarEvent[] ──
   const calendarEvents = useMemo<CalendarEvent[]>(() => {
@@ -202,8 +208,14 @@ export default function Dashboard() {
       push(`corr-${letter.id}`, letter.deadlineDate, "correspondence", letter.subject, "الموعد النهائي للرد", { status: letter.status });
     });
 
+    // Practices — نفس دورة حياة المناقصات (نوع "tender" لأن CalendarWidget لا يعرف نوع "practice")
+    calPractices.forEach((p: any) => {
+      push(`pr-ann-${p.id}`,  p.announcementDate, "tender", p.projectName, "ممارسة — تاريخ الإعلان", { status: p.status });
+      push(`pr-dead-${p.id}`, p.deadline,         "tender", p.projectName, "ممارسة — الموعد النهائي", { status: p.status });
+    });
+
     return evts;
-  }, [recentTenders, myTasks, calContracts, calProjects, calGuarantees, calRfq, calPurchases, calCorrespondence, isAdmin]);
+  }, [recentTenders, myTasks, calContracts, calProjects, calGuarantees, calRfq, calPurchases, calCorrespondence, calPractices, isAdmin]);
 
   const greeting = () => {
     const h = new Date().getHours();

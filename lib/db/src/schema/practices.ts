@@ -36,6 +36,12 @@ export const practicesTable = pgTable("practices", {
   filePricing:          text("file_pricing"),      // التسعير
   fileSuppliers:        text("file_suppliers"),    // الموردين
   fileOpening:          text("file_opening"),      // فض الظروف
+  // حقول التكافؤ مع المناقصات — دورة حياة وتقديم كاملان
+  announcementDate:     date("announcement_date"),  // تاريخ الإعلان
+  deadline:             date("deadline"),           // آخر موعد للتقديم — يقود "عاجل" والتقويم
+  offerValue:           numeric("offer_value", { precision: 15, scale: 3 }), // قيمة العرض المقدَّم
+  isSubmitted:          boolean("is_submitted").notNull().default(false),    // تم التقديم فعليًا
+  winner:               text("winner"),             // اسم الفائز عند الحسم
   createdByUserId:      integer("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }), // منشئ السجل — لخصوصية العرض
   createdAt:            timestamp("created_at").notNull().defaultNow(),
   updatedAt:            timestamp("updated_at").notNull().defaultNow(),

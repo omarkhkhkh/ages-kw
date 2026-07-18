@@ -46,6 +46,15 @@ const INDEXES = [
   `CREATE INDEX IF NOT EXISTS idx_expenses_created ON finance_expenses (created_at)`,
 ];
 
+/* ترحيل حالات الممارسات القديمة إلى دورة حياة المناقصات (idempotent —
+   لا يمس السجلات التي تحمل الحالات الجديدة أصلًا) */
+const MIGRATIONS = [
+  `UPDATE practices SET status = 'won' WHERE status IN ('current', 'previous', 'completed')`,
+  `UPDATE practices SET status = 'studying' WHERE status = 'targeted'`,
+  `UPDATE practices SET status = 'under_evaluation' WHERE status = 'under_submission'`,
+  `UPDATE practices SET status = 'new' WHERE status = 'future'`,
+];
+
 export async function ensurePerformanceIndexes(): Promise<void> {
   for (const ddl of TABLES) {
     try {
@@ -60,6 +69,13 @@ export async function ensurePerformanceIndexes(): Promise<void> {
     } catch (err) {
       // فهرس على عمود غير موجود بعد (نشرة أقدم) — لا يوقف الإقلاع
       logger.warn({ err, ddl }, "skipping index");
+    }
+  }
+  for (const ddl of MIGRATIONS) {
+    try {
+      await pool.query(ddl);
+    } catch (err) {
+      logger.warn({ err, ddl: ddl.slice(0, 60) }, "skipping migration");
     }
   }
   logger.info("Performance indexes ensured");

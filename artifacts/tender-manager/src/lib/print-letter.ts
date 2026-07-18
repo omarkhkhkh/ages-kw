@@ -42,6 +42,15 @@ function countWords(html: string): number {
   return text ? text.split(/\s+/).length : 0;
 }
 
+/** تاريخ الكتاب بصيغة DD/MM/YYYY كما في نموذج الشركة المعتمد */
+function formatLetterDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
 export function printLetter(letter: PrintableLetter) {
   let bodyHtml = letter.bodyHtml ?? "";
   if (letter.bodyJson) {
@@ -55,12 +64,12 @@ export function printLetter(letter: PrintableLetter) {
   const spacing = spacingForWordCount(countWords(bodyHtml));
   const isOutgoing = letter.direction !== "incoming";
   const recipientLine = isOutgoing && letter.recipientName
-    ? `<p class="recipient">السادة: ${escapeHtml(letter.recipientName)}<span class="honorific">المحترمين</span></p>`
+    ? `<p class="recipient"><span>السادة: ${escapeHtml(letter.recipientName)}</span><span class="honorific">المحترمين</span></p>`
     : !isOutgoing && letter.senderName
-      ? `<p class="recipient">من: ${escapeHtml(letter.senderName)}</p>`
+      ? `<p class="recipient"><span>من: ${escapeHtml(letter.senderName)}</span></p>`
       : "";
   const attentionLine = isOutgoing && letter.attentionLine
-    ? `<p class="attention">عناية: ${escapeHtml(letter.attentionLine)}<span class="honorific">المحترم</span></p>`
+    ? `<p class="recipient attention"><span>${escapeHtml(letter.attentionLine)}</span><span class="honorific">المحترمين</span></p>`
     : "";
 
   const html = `<!DOCTYPE html>
@@ -70,20 +79,24 @@ export function printLetter(letter: PrintableLetter) {
 <title>${escapeHtml(letter.letterNumber)}</title>
 <style>
   @page { size: letter; margin: 2.2cm 2.5cm; }
-  body { font-family: 'Cairo', 'IBM Plex Sans Arabic', sans-serif; color: #1a1a1a; direction: rtl; font-size: 14px; padding-top: 18px; }
-  .recipient { font-size: 17px; font-weight: 800; margin: 4px 0 0; }
-  .honorific { margin-right: 40px; }
-  .attention { font-size: 14px; font-weight: 700; margin: 4px 0 0; }
-  .greeting { font-weight: 800; font-size: 16px; margin: ${spacing.greetingMargin}; }
-  h1.subject { font-size: 16px; font-weight: 800; text-decoration: underline; text-align: center; margin: ${spacing.subjectMargin}; }
-  .body { font-weight: 700; }
+  /* خط الكتاب الرسمي — نفس خطوط نموذج الشركة (Arabic Typesetting/Aldhabi) مع بدائل */
+  body { font-family: 'Arabic Typesetting', 'Traditional Arabic', 'Aldhabi', 'Cairo', serif; color: #1a1a1a; direction: rtl; font-size: 14pt; }
+  /* رأس الكتاب: المرجع ثم التاريخ أعلى اليمين */
+  .ref-block { margin: 0 0 14px; }
+  .ref-block p { margin: 0 0 2px; font-size: 14pt; font-weight: 600; }
+  .recipient { font-size: 16pt; font-weight: 800; margin: 4px 0 0; display: flex; justify-content: space-between; align-items: baseline; }
+  .honorific { margin-right: 24px; }
+  .attention { font-size: 15pt; }
+  .greeting { font-weight: 800; font-size: 16pt; margin: ${spacing.greetingMargin}; }
+  h1.subject { font-size: 15pt; font-weight: 800; text-decoration: underline; text-align: center; margin: ${spacing.subjectMargin}; }
+  .body { font-weight: 700; font-size: 12.5pt; }
   .body table { border-collapse: collapse; width: 100%; margin: 12px 0; }
   .body table td, .body table th { border: 1px solid #ccc; padding: 6px 10px; }
   .body p { line-height: ${spacing.bodyLineHeight}; margin: ${spacing.bodyPMargin}; text-align: justify; }
   .body img { max-width: 220px; margin-top: 24px; }
-  .closing { text-align: center; font-weight: 800; margin: ${spacing.closingMarginTop} 0 10px; }
+  .closing { text-align: center; font-weight: 800; font-size: 14pt; margin: ${spacing.closingMarginTop} 0 10px; }
   .closing p { margin: 4px 0; }
-  .signature { margin-top: ${spacing.signatureMarginTop}; font-weight: 800; text-align: left; }
+  .signature { margin-top: ${spacing.signatureMarginTop}; font-weight: 800; font-size: 13pt; text-align: left; }
   /* رقم الكتاب عموديًا على حافة الصفحة اليسرى — يظهر فقط في النسخة النهائية */
   .side-number {
     position: fixed; top: 2.2cm; left: 0;
@@ -96,6 +109,10 @@ export function printLetter(letter: PrintableLetter) {
 </head>
 <body>
   ${letter.finalNumbered ? `<div class="side-number">${escapeHtml(letter.letterNumber)}</div>` : ""}
+  <div class="ref-block">
+    <p>مرجع رقم : ${escapeHtml(letter.letterNumber)}</p>
+    <p>التاريخ: ${escapeHtml(formatLetterDate(letter.letterDate))}</p>
+  </div>
   ${recipientLine}
   ${attentionLine}
   <p class="greeting">تحية طيبة وبعد ،،،،،</p>

@@ -177,35 +177,47 @@ export async function buildLetterDocx(letter: DocxLetter): Promise<Blob> {
   const bodyChildren = await nodesToParagraphsAndTables(bodyDoc.content ?? [], { before: spacing.before, after: spacing.after });
   const isOutgoing = letter.direction !== "incoming";
 
-  const headerChildren: Paragraph[] = [];
+  // خط نموذج الشركة المعتمد (نفس خطوط الكتاب المرجعي)
+  const LETTER_FONT = "Arabic Typesetting";
+  const fmtDate = (() => {
+    const d = new Date(letter.letterDate);
+    if (isNaN(d.getTime())) return letter.letterDate;
+    return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  })();
 
-  if (letter.finalNumbered) {
-    headerChildren.push(new Paragraph({
-      children: [new TextRun({ text: letter.letterNumber, bold: true, size: 18, font: "Courier New", color: "444444" })],
-      alignment: AlignmentType.LEFT,
-    }));
-  }
+  const headerChildren: Paragraph[] = [
+    // رأس الكتاب: المرجع ثم التاريخ (كما في النموذج المعتمد)
+    new Paragraph({
+      children: [new TextRun({ text: `مرجع رقم : ${letter.letterNumber}`, size: 28, font: LETTER_FONT })],
+      bidirectional: true,
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: `التاريخ: ${fmtDate}`, size: 28, font: LETTER_FONT })],
+      bidirectional: true,
+    }),
+    new Paragraph({ text: "" }),
+  ];
 
   if (isOutgoing && letter.recipientName) {
     headerChildren.push(new Paragraph({
-      children: [new TextRun({ text: `السادة: ${letter.recipientName}`, bold: true, size: 26 }), new TextRun({ text: "          المحترمين", bold: true, size: 26 })],
+      children: [new TextRun({ text: `السادة: ${letter.recipientName}`, bold: true, size: 32, font: LETTER_FONT }), new TextRun({ text: "                     المحترمين", bold: true, size: 32, font: LETTER_FONT })],
       bidirectional: true,
     }));
   } else if (!isOutgoing && letter.senderName) {
-    headerChildren.push(new Paragraph({ children: [new TextRun({ text: `من: ${letter.senderName}`, bold: true, size: 26 })], bidirectional: true }));
+    headerChildren.push(new Paragraph({ children: [new TextRun({ text: `من: ${letter.senderName}`, bold: true, size: 32, font: LETTER_FONT })], bidirectional: true }));
   }
 
   if (isOutgoing && letter.attentionLine) {
     headerChildren.push(new Paragraph({
-      children: [new TextRun({ text: `عناية: ${letter.attentionLine}`, bold: true, size: 24 }), new TextRun({ text: "          المحترم", bold: true, size: 24 })],
+      children: [new TextRun({ text: letter.attentionLine, bold: true, size: 32, font: LETTER_FONT }), new TextRun({ text: "          المحترمين", bold: true, size: 32, font: LETTER_FONT })],
       bidirectional: true,
     }));
   }
 
   headerChildren.push(
-    new Paragraph({ children: [new TextRun({ text: "تحية طيبة وبعد ،،،،،", bold: true, size: 26 })], bidirectional: true }),
+    new Paragraph({ children: [new TextRun({ text: "تحية طيبة وبعد ،،،،،", bold: true, size: 32, font: LETTER_FONT })], bidirectional: true }),
     new Paragraph({
-      children: [new TextRun({ text: `الموضوع / ${letter.subject}`, bold: true, size: 26, underline: {} })],
+      children: [new TextRun({ text: `الموضوع / ${letter.subject}`, bold: true, size: 30, underline: {}, font: LETTER_FONT })],
       alignment: AlignmentType.CENTER, bidirectional: true,
     }),
     new Paragraph({ text: "" }),
@@ -213,10 +225,10 @@ export async function buildLetterDocx(letter: DocxLetter): Promise<Blob> {
 
   const closingChildren = [
     ...Array.from({ length: 1 + spacing.extraBlankParagraphs }, () => new Paragraph({ text: "" })),
-    new Paragraph({ children: [new TextRun({ text: "شاكرين لكم حسن تعاونكم معنا", bold: true })], alignment: AlignmentType.CENTER, bidirectional: true }),
-    new Paragraph({ children: [new TextRun({ text: "وتفضلوا بقبول فائق التحية", bold: true })], alignment: AlignmentType.CENTER, bidirectional: true }),
+    new Paragraph({ children: [new TextRun({ text: "شاكرين لكم حسن تعاونكم معنا", bold: true, size: 28, font: LETTER_FONT })], alignment: AlignmentType.CENTER, bidirectional: true }),
+    new Paragraph({ children: [new TextRun({ text: "وتفضلوا بقبول فائق التحية", bold: true, size: 28, font: LETTER_FONT })], alignment: AlignmentType.CENTER, bidirectional: true }),
     new Paragraph({ text: "" }),
-    new Paragraph({ children: [new TextRun({ text: letter.companyName?.trim() || DEFAULT_COMPANY_NAME, bold: true })], alignment: AlignmentType.LEFT, bidirectional: true }),
+    new Paragraph({ children: [new TextRun({ text: letter.companyName?.trim() || DEFAULT_COMPANY_NAME, bold: true, size: 26, font: LETTER_FONT })], alignment: AlignmentType.LEFT, bidirectional: true }),
   ];
 
   const doc = new Document({

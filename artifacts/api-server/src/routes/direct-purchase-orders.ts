@@ -157,8 +157,12 @@ router.get("/:id", async (req: Request, res: Response) => {
 
 router.post("/", async (req: Request, res: Response) => {
   try {
-    const data = insertDirectPurchaseOrderSchema.parse(req.body);
-    const [order] = await db.insert(directPurchaseOrdersTable).values({ ...data, createdByUserId: req.session.userId ?? null }).returning();
+    const data = insertDirectPurchaseOrderSchema.parse(req.body) as Record<string, any>;
+    // أعمدة date/numeric ترفض "" على مستوى الدرايفر — تطبيع الفارغ إلى null (كما في PATCH)
+    for (const f of ["orderDate", "deliveryDate", "amount"]) {
+      if (data[f] === "") data[f] = null;
+    }
+    const [order] = await db.insert(directPurchaseOrdersTable).values({ ...data, createdByUserId: req.session.userId ?? null } as any).returning();
     return res.status(201).json(order);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });

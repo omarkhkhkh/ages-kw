@@ -6,6 +6,9 @@ import {
 const DEFAULT_COMPANY_NAME = "المجموعة العربية للخدمات التعليمية";
 
 interface DocxLetter {
+  /** لقب المخاطبة القابل للاختيار: المحترمين | المحترم | المحترمة */
+  recipientHonorific?: string | null;
+  attentionHonorific?: string | null;
   letterNumber: string;
   subject: string;
   letterDate: string;
@@ -198,9 +201,12 @@ export async function buildLetterDocx(letter: DocxLetter): Promise<Blob> {
     new Paragraph({ text: "" }),
   ];
 
+  const recipientHonorific = letter.recipientHonorific?.trim() || "المحترمين";
+  const attentionHonorific = letter.attentionHonorific?.trim() || "المحترمين";
+
   if (isOutgoing && letter.recipientName) {
     headerChildren.push(new Paragraph({
-      children: [new TextRun({ text: `السادة: ${letter.recipientName}`, bold: true, size: 32, font: LETTER_FONT }), new TextRun({ text: "                     المحترمين", bold: true, size: 32, font: LETTER_FONT })],
+      children: [new TextRun({ text: `السادة: ${letter.recipientName}`, bold: true, size: 32, font: LETTER_FONT }), new TextRun({ text: `                     ${recipientHonorific}`, bold: true, size: 32, font: LETTER_FONT })],
       bidirectional: true,
     }));
   } else if (!isOutgoing && letter.senderName) {
@@ -209,7 +215,7 @@ export async function buildLetterDocx(letter: DocxLetter): Promise<Blob> {
 
   if (isOutgoing && letter.attentionLine) {
     headerChildren.push(new Paragraph({
-      children: [new TextRun({ text: letter.attentionLine, bold: true, size: 32, font: LETTER_FONT }), new TextRun({ text: "          المحترمين", bold: true, size: 32, font: LETTER_FONT })],
+      children: [new TextRun({ text: letter.attentionLine, bold: true, size: 32, font: LETTER_FONT }), new TextRun({ text: `          ${attentionHonorific}`, bold: true, size: 32, font: LETTER_FONT })],
       bidirectional: true,
     }));
   }

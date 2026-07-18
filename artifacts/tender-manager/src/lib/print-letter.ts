@@ -12,6 +12,9 @@ interface PrintableLetter {
   attentionLine?: string | null;
   senderName?: string | null;
   companyName?: string | null;
+  /** لقب المخاطبة القابل للاختيار: المحترمين | المحترم | المحترمة */
+  recipientHonorific?: string | null;
+  attentionHonorific?: string | null;
   bodyJson?: string | null;
   bodyHtml?: string | null;
   /** النسخة النهائية المصدَّرة: يُطبع رقم الكتاب عموديًا على حافة الصفحة (بدون تاريخ) */
@@ -63,13 +66,15 @@ export function printLetter(letter: PrintableLetter) {
 
   const spacing = spacingForWordCount(countWords(bodyHtml));
   const isOutgoing = letter.direction !== "incoming";
+  const recipientHonorific = letter.recipientHonorific?.trim() || "المحترمين";
+  const attentionHonorific = letter.attentionHonorific?.trim() || "المحترمين";
   const recipientLine = isOutgoing && letter.recipientName
-    ? `<p class="recipient"><span>السادة: ${escapeHtml(letter.recipientName)}</span><span class="honorific">المحترمين</span></p>`
+    ? `<p class="recipient"><span>السادة: ${escapeHtml(letter.recipientName)}</span><span class="honorific">${escapeHtml(recipientHonorific)}</span></p>`
     : !isOutgoing && letter.senderName
       ? `<p class="recipient"><span>من: ${escapeHtml(letter.senderName)}</span></p>`
       : "";
   const attentionLine = isOutgoing && letter.attentionLine
-    ? `<p class="recipient attention"><span>${escapeHtml(letter.attentionLine)}</span><span class="honorific">المحترمين</span></p>`
+    ? `<p class="recipient attention"><span>${escapeHtml(letter.attentionLine)}</span><span class="honorific">${escapeHtml(attentionHonorific)}</span></p>`
     : "";
 
   const html = `<!DOCTYPE html>

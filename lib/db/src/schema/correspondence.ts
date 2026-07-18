@@ -39,6 +39,8 @@ export const correspondenceLettersTable = pgTable("correspondence_letters", {
   senderName:          text("sender_name"),     // mainly for incoming letters
   recipientName:       text("recipient_name"),  // mainly for outgoing letters
   attentionLine:        text("attention_line"),  // "عناية" — a specific person/department within the recipient entity
+  recipientHonorific:  text("recipient_honorific").notNull().default("المحترمين"), // المحترمين | المحترم — لقب سطر الجهة
+  attentionHonorific:  text("attention_honorific").notNull().default("المحترمين"), // لقب سطر العناية
   companyName:         text("company_name"),    // sender company name shown in the signature block (manual, per letter)
   referenceNumber:     text("reference_number"), // the OTHER party's letter/reference number
   inReplyToId:         integer("in_reply_to_id").references((): AnyPgColumn => correspondenceLettersTable.id, { onDelete: "set null" }),

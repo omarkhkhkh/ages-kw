@@ -82,6 +82,8 @@ export default function LetterEditorDialog({ letterId, sourceType, sourceId, gov
     senderName: "",
     recipientName: "",
     attentionLine: "",
+    recipientHonorific: "المحترمين",
+    attentionHonorific: "المحترمين",
     companyName: "",
     referenceNumber: "",
     governmentEntityId: governmentEntityId ?? null as number | null,
@@ -108,6 +110,8 @@ export default function LetterEditorDialog({ letterId, sourceType, sourceId, gov
       senderName: existing.senderName ?? "",
       recipientName: existing.recipientName ?? "",
       attentionLine: existing.attentionLine ?? "",
+      recipientHonorific: existing.recipientHonorific ?? "المحترمين",
+      attentionHonorific: existing.attentionHonorific ?? "المحترمين",
       companyName: existing.companyName ?? "",
       referenceNumber: existing.referenceNumber ?? "",
       governmentEntityId: existing.governmentEntityId ?? null,
@@ -146,6 +150,8 @@ export default function LetterEditorDialog({ letterId, sourceType, sourceId, gov
     senderName: form.senderName || null,
     recipientName: form.recipientName || null,
     attentionLine: form.attentionLine || null,
+    recipientHonorific: form.recipientHonorific,
+    attentionHonorific: form.attentionHonorific,
     companyName: form.companyName || null,
     referenceNumber: form.referenceNumber || null,
     governmentEntityId: form.governmentEntityId,
@@ -237,6 +243,8 @@ export default function LetterEditorDialog({ letterId, sourceType, sourceId, gov
     direction: form.direction,
     recipientName: form.recipientName,
     attentionLine: form.attentionLine,
+    recipientHonorific: form.recipientHonorific,
+    attentionHonorific: form.attentionHonorific,
     senderName: form.senderName,
     companyName: form.companyName,
     bodyJson: editor ? JSON.stringify(editor.getJSON()) : null,
@@ -417,16 +425,34 @@ export default function LetterEditorDialog({ letterId, sourceType, sourceId, gov
             )}
             <div>
               <label style={labelStyle()}>{form.direction === "outgoing" ? "المرسل إليه" : "المرسل"}</label>
-              <input
-                value={form.direction === "outgoing" ? form.recipientName : form.senderName}
-                onChange={(e) => set(form.direction === "outgoing" ? "recipientName" : "senderName", e.target.value)}
-                style={inputStyle()}
-              />
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  value={form.direction === "outgoing" ? form.recipientName : form.senderName}
+                  onChange={(e) => set(form.direction === "outgoing" ? "recipientName" : "senderName", e.target.value)}
+                  style={{ ...inputStyle(), flex: 1 }}
+                />
+                {form.direction === "outgoing" && (
+                  <select value={form.recipientHonorific} onChange={(e) => set("recipientHonorific", e.target.value)}
+                    title="لقب المخاطبة" style={{ ...inputStyle(), width: 110, cursor: "pointer" }}>
+                    <option value="المحترمين">المحترمين</option>
+                    <option value="المحترم">المحترم</option>
+                    <option value="المحترمة">المحترمة</option>
+                  </select>
+                )}
+              </div>
             </div>
             {form.direction === "outgoing" && (
               <div>
                 <label style={labelStyle()}>عناية (توجيه إضافي)</label>
-                <input value={form.attentionLine} onChange={(e) => set("attentionLine", e.target.value)} placeholder="مثال: السيد/ فلان الفلاني" style={inputStyle()} />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input value={form.attentionLine} onChange={(e) => set("attentionLine", e.target.value)} placeholder="مثال: السيد/ فلان الفلاني" style={{ ...inputStyle(), flex: 1 }} />
+                  <select value={form.attentionHonorific} onChange={(e) => set("attentionHonorific", e.target.value)}
+                    title="لقب المخاطبة" style={{ ...inputStyle(), width: 110, cursor: "pointer" }}>
+                    <option value="المحترمين">المحترمين</option>
+                    <option value="المحترم">المحترم</option>
+                    <option value="المحترمة">المحترمة</option>
+                  </select>
+                </div>
               </div>
             )}
             <div>

@@ -49,6 +49,9 @@ const INDEXES = [
 /* ترحيل حالات الممارسات القديمة إلى دورة حياة المناقصات (idempotent —
    لا يمس السجلات التي تحمل الحالات الجديدة أصلًا) */
 const MIGRATIONS = [
+  // لقب المخاطبة القابل للاختيار (المحترمين/المحترم) على الكتب
+  `ALTER TABLE correspondence_letters ADD COLUMN IF NOT EXISTS recipient_honorific text NOT NULL DEFAULT 'المحترمين'`,
+  `ALTER TABLE correspondence_letters ADD COLUMN IF NOT EXISTS attention_honorific text NOT NULL DEFAULT 'المحترمين'`,
   // أعمدة ميزانية الصيانة v2 — ضمانة إنشاء في الإنتاج حتى لو تخطاها drizzle push
   `ALTER TABLE finance_income ADD COLUMN IF NOT EXISTS source_module text`,
   `ALTER TABLE finance_income ADD COLUMN IF NOT EXISTS income_source text`,

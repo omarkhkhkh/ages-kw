@@ -79,6 +79,8 @@ export default function CorrespondenceList() {
       direction: letter.direction,
       recipientName: letter.recipientName,
       attentionLine: letter.attentionLine,
+      recipientHonorific: letter.recipientHonorific,
+      attentionHonorific: letter.attentionHonorific,
       senderName: letter.senderName,
       companyName: letter.companyName,
       bodyJson: letter.bodyJson,

@@ -11,6 +11,7 @@ const MODULE_FIELDS = [
   "accessTenders", "accessEntities", "accessSuppliers", "accessProjects",
   "accessGuarantees", "accessContracts", "accessRfq", "accessPo", "accessTransportation", "accessFinance",
   "accessCorrespondence", "accessResidency", "accessMaintenance", "accessResearch", "accessPricing", "accessTasks",
+  "accessOpportunities",
 ] as const;
 
 function buildUserResponse(user: any) {
@@ -39,6 +40,9 @@ function buildUserResponse(user: any) {
     accessResearch: user.accessResearch,
     accessPricing: user.accessPricing,
     accessTasks: user.accessTasks,
+    accessOpportunities: user.accessOpportunities,
+    opportunityCanPrice: user.opportunityCanPrice,
+    opportunityCanApprove: user.opportunityCanApprove,
     taskViewScope: user.taskViewScope,
     taskCanApprove: user.taskCanApprove,
     correspondenceViewAll: user.correspondenceViewAll,
@@ -86,6 +90,8 @@ router.post("/login", async (req, res) => {
   }
   req.session.taskViewScope = user.taskViewScope ?? "own";
   req.session.taskCanApprove = user.taskCanApprove ?? false;
+  req.session.opportunityCanPrice = user.opportunityCanPrice ?? false;
+  req.session.opportunityCanApprove = user.opportunityCanApprove ?? false;
   req.session.correspondenceViewAll = user.correspondenceViewAll ?? false;
   req.session.permissions = user.permissions ?? synthesizePermissions(user);
   req.session.recordViewScope = user.recordViewScope ?? "own";
@@ -148,6 +154,9 @@ router.get("/me", (req, res) => {
     accessResearch: req.session.accessResearch ?? true,
     accessPricing: req.session.accessPricing ?? true,
     accessTasks: req.session.accessTasks ?? true,
+    accessOpportunities: req.session.accessOpportunities ?? true,
+    opportunityCanPrice: req.session.opportunityCanPrice ?? false,
+    opportunityCanApprove: req.session.opportunityCanApprove ?? false,
     taskViewScope: req.session.taskViewScope ?? "own",
     taskCanApprove: req.session.taskCanApprove ?? false,
     correspondenceViewAll: req.session.correspondenceViewAll ?? false,

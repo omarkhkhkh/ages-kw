@@ -29,6 +29,9 @@ export interface AuthUser {
   accessResearch: boolean;
   accessPricing: boolean;
   accessTasks: boolean;
+  accessOpportunities: boolean;
+  opportunityCanPrice: boolean;
+  opportunityCanApprove: boolean;
   taskViewScope: "own" | "department" | "all";
   taskCanApprove: boolean;
   correspondenceViewAll: boolean;
@@ -125,7 +128,7 @@ export function useAuth() {
 export function useModuleAccess(module: keyof Pick<AuthUser,
   "accessTenders" | "accessEntities" | "accessSuppliers" | "accessProjects" |
   "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo" | "accessTransportation" | "accessFinance" |
-  "accessCorrespondence" | "accessResidency" | "accessMaintenance" | "accessResearch" | "accessPricing" | "accessTasks"
+  "accessCorrespondence" | "accessResidency" | "accessMaintenance" | "accessResearch" | "accessPricing" | "accessTasks" | "accessOpportunities"
 >): boolean {
   const { user } = useAuth();
   if (!user) return false;

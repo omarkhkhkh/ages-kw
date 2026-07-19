@@ -17,6 +17,7 @@ const MODULE_MAP: Record<string, string> = {
   maintenance: "maintenance",
   research: "research",
   pricing: "pricing",
+  opportunities: "opportunities",
   tasks: "tasks",
 };
 

@@ -29,6 +29,9 @@ interface UserRow {
   accessResearch: boolean;
   accessPricing: boolean;
   accessTasks: boolean;
+  accessOpportunities: boolean;
+  opportunityCanPrice: boolean;
+  opportunityCanApprove: boolean;
   taskViewScope: string;
   taskCanApprove: boolean;
   correspondenceViewAll: boolean;
@@ -82,6 +85,7 @@ const MODULES = [
   { key: "accessResearch",       label: "البحث والتطوير",           icon: "🔬" },
   { key: "accessPricing",        label: "التسعير",                    icon: "🧮" },
   { key: "accessTasks",          label: "المهام / مركز العمليات",    icon: "🗂" },
+  { key: "accessOpportunities",  label: "قسم البحث والتسعير",        icon: "🧭" },
 ] as const;
 
 const GLOBAL_PERMS = [
@@ -99,7 +103,8 @@ const defaultForm = {
   accessRfq: true, accessPo: true, accessTransportation: true, accessFinance: true,
   accessCorrespondence: true, accessResidency: true, accessMaintenance: true, accessResearch: true,
   accessPricing: true,
-  accessTasks: true, taskViewScope: "own", taskCanApprove: false, correspondenceViewAll: false,
+  accessTasks: true, accessOpportunities: true, opportunityCanPrice: false, opportunityCanApprove: false,
+  taskViewScope: "own", taskCanApprove: false, correspondenceViewAll: false,
   permissions: null as PermMatrix | null,
   recordViewScope: "own",
 };
@@ -347,6 +352,14 @@ function UserModal({ open, editing, form, setForm, newPass, setNewPass, onClose,
                   <option value="department">مهام القسم</option>
                   <option value="all">جميع المهام</option>
                 </select>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: (data as any).opportunityCanPrice ? "#ecfeff" : "#f9fafb", border: `1.5px solid ${(data as any).opportunityCanPrice ? "#a5f3fc" : "#e5e7eb"}` }}>
+                <Toggle checked={(data as any).opportunityCanPrice} onChange={v => set("opportunityCanPrice", v)} />
+                <span style={{ fontSize: 12, fontWeight: 600, color: (data as any).opportunityCanPrice ? "#0891b2" : "#9ca3af" }}>قسم التسعير — يعتمد مرحلة التسعير في الفرص</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: (data as any).opportunityCanApprove ? "#f0fdfa" : "#f9fafb", border: `1.5px solid ${(data as any).opportunityCanApprove ? "#99f6e4" : "#e5e7eb"}` }}>
+                <Toggle checked={(data as any).opportunityCanApprove} onChange={v => set("opportunityCanApprove", v)} />
+                <span style={{ fontSize: 12, fontWeight: 600, color: (data as any).opportunityCanApprove ? "#0d9488" : "#9ca3af" }}>الإدارة — يعتمد إرسال عروض أسعار الفرص</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: (data as any).taskCanApprove ? "#f0fdf4" : "#f9fafb", border: `1.5px solid ${(data as any).taskCanApprove ? "#bbf7d0" : "#e5e7eb"}` }}>
                 <Toggle checked={(data as any).taskCanApprove} onChange={v => set("taskCanApprove", v)} />
@@ -1113,6 +1126,9 @@ export default function AdminUsers() {
           accessResearch: editing.accessResearch,
           accessPricing: editing.accessPricing,
           accessTasks: editing.accessTasks,
+          accessOpportunities: (editing as any).accessOpportunities ?? true,
+          opportunityCanPrice: (editing as any).opportunityCanPrice ?? false,
+          opportunityCanApprove: (editing as any).opportunityCanApprove ?? false,
           taskViewScope: editing.taskViewScope,
           taskCanApprove: editing.taskCanApprove,
           correspondenceViewAll: (editing as any).correspondenceViewAll ?? false,

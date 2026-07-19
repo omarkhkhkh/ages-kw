@@ -32,6 +32,8 @@ import TasksList from '@/pages/tasks-list';
 import AdminTaskTypes from '@/pages/admin-task-types';
 import PracticesList from '@/pages/practices-list';
 import PracticeDetail from '@/pages/practice-detail';
+import OpportunitiesList from '@/pages/opportunities/index';
+import OpportunityDetail from '@/pages/opportunities/detail';
 import CompanyDocuments from '@/pages/company-documents';
 import GovernmentRegistrations from '@/pages/government-registrations';
 import CompetitorIntelligence from '@/pages/competitor-intelligence/index';
@@ -158,6 +160,12 @@ function AppRouter() {
         </Route>
         <Route path="/practices/:id">
           <ModuleGuard access={isAdmin || user.accessTenders}><PracticeDetail /></ModuleGuard>
+        </Route>
+        <Route path="/opportunities">
+          <ModuleGuard access={isAdmin || (user as any).accessOpportunities}><OpportunitiesList /></ModuleGuard>
+        </Route>
+        <Route path="/opportunities/:id">
+          <ModuleGuard access={isAdmin || (user as any).accessOpportunities}><OpportunityDetail /></ModuleGuard>
         </Route>
         <Route path="/company-docs">
           <ModuleGuard access={isAdmin || user.accessTenders}><CompanyDocuments /></ModuleGuard>

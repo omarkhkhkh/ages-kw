@@ -15,6 +15,12 @@ export interface PricingSettings {
   /** نظام الحاويات: shared = كل البنود تتقاسم عدد حاويات واحد،
    *  per_item = كل بند له عدد حاوياته الخاص (كما في جدول المرجع) */
   containerMode?: string | null;
+  /** وضع التسعير: import = استيراد كامل | simple = مبسّط محلي (سعر المنتج + نقل + ربح) */
+  pricingMode?: string | null;
+  /** تكلفة النقل الإجمالية (د.ك) — للوضع المبسّط، توزَّع على الكميات */
+  transportCost?: string | number | null;
+  /** نسبة الربح % — للوضع المبسّط، تحدد سعر البيع المقترح */
+  simpleProfitPercent?: string | number | null;
 }
 
 export interface PricingItemRaw {
@@ -34,6 +40,8 @@ export interface ComputedPricingItem {
   itemName: string;
   quantity: number;
   unitCostUsd: number;
+  /** سعر البيع المقترح للوحدة (الوضع المبسّط): التكلفة النهائية × (1 + الربح%) */
+  suggestedSellUnit: number;
   shippingPerUnitUsd: number;
   clearancePerUnitUsd: number;
   customsValueUsd: number;
@@ -68,6 +76,32 @@ export function computeItemRow(item: PricingItemRaw, settings: PricingSettings, 
   const sellPriceUnit = n(item.sellPriceUnit);
   const exchangeRate = n(settings.exchangeRate);
   const customsPercent = n(settings.customsPercent);
+
+  /* ── الوضع المبسّط (شراء محلي): سعر المنتج (د.ك) + نصيب النقل + الربح ──
+     لا شحن ولا جمرك ولا تخليص — الحقل "unitCostUsd" يُقرأ هنا كسعر المنتج بالدينار */
+  if (settings.pricingMode === "simple") {
+    const productPriceKwd = unitCostUsd; // نفس العمود — بالدينار في هذا الوضع
+    const transportPerUnitKwd = totalQty > 0 ? n(settings.transportCost) / totalQty : 0;
+    const finalUnitCost = productPriceKwd + transportPerUnitKwd;
+    const suggestedSellUnit = finalUnitCost * (1 + n(settings.simpleProfitPercent) / 100);
+    const totalItemCostKwd = finalUnitCost * quantity;
+    const totalSales = sellPriceUnit * quantity;
+    const totalProfit = totalSales - totalItemCostKwd;
+    const profitPercent = totalSales > 0 ? (totalProfit / totalSales) * 100 : 0;
+    return {
+      itemNumber: item.itemNumber ?? "",
+      itemName: item.itemName,
+      quantity, unitCostUsd: productPriceKwd, suggestedSellUnit,
+      shippingPerUnitUsd: 0, clearancePerUnitUsd: 0, customsValueUsd: 0,
+      totalUnitCostUsd: 0, totalItemCostUsd: 0,
+      unitCostKwd: productPriceKwd,
+      serviceCostPerUnitKwd: 0,
+      unloadingCostPerUnitKwd: transportPerUnitKwd, // نصيب النقل يُعرض في خانة التوزيع
+      bankFeesPerUnitKwd: 0,
+      finalUnitCost, totalItemCostKwd,
+      sellPriceUnit, totalSales, totalProfit, profitPercent,
+    };
+  }
 
   // الشحن بالدولار لكل حاوية، والتخليص بالدينار الكويتي لكل حاوية:
   // - نظام "لكل بند حاوياته": نصيب الوحدة = سعر الحاوية × حاويات البند ÷ كمية البند
@@ -110,7 +144,7 @@ export function computeItemRow(item: PricingItemRaw, settings: PricingSettings, 
   return {
     itemNumber: item.itemNumber ?? "",
     itemName: item.itemName,
-    quantity, unitCostUsd,
+    quantity, unitCostUsd, suggestedSellUnit: 0,
     shippingPerUnitUsd, clearancePerUnitUsd, customsValueUsd,
     totalUnitCostUsd, totalItemCostUsd,
     unitCostKwd, serviceCostPerUnitKwd, unloadingCostPerUnitKwd, bankFeesPerUnitKwd,
@@ -145,11 +179,15 @@ export function computeSheetSummary(items: PricingItemRaw[], settings: PricingSe
 
   const totalContainers = getTotalContainers(items, settings);
   const exchangeRate = n(settings.exchangeRate);
+  const simple = settings.pricingMode === "simple";
   // الإجماليات بالدينار: الشحن بالدولار × السعر، والتخليص بالدينار مباشرة
-  const totalShipping = n(settings.containerShippingCost) * totalContainers * exchangeRate;
-  const totalClearance = n(settings.clearanceCost) * totalContainers;
+  // (الوضع المبسّط: لا شحن ولا تخليص — النقل فقط)
+  const totalShipping = simple ? 0 : n(settings.containerShippingCost) * totalContainers * exchangeRate;
+  const totalClearance = simple ? 0 : n(settings.clearanceCost) * totalContainers;
   const totalCustoms = rows.reduce((s, r) => s + r.customsValueUsd * r.quantity, 0);
-  const totalExpenses = n(settings.maintenanceCost) + n(settings.unloadingCost) + n(settings.bankFees);
+  const totalExpenses = simple
+    ? n(settings.transportCost)
+    : n(settings.maintenanceCost) + n(settings.unloadingCost) + n(settings.bankFees);
   const totalCost = rows.reduce((s, r) => s + r.totalItemCostKwd, 0);
   const totalSales = rows.reduce((s, r) => s + r.totalSales, 0);
   const totalProfit = totalSales - totalCost;

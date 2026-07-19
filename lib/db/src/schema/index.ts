@@ -28,3 +28,4 @@ export * from "./residency";
 export * from "./maintenance";
 export * from "./research";
 export * from "./pricing";
+export * from "./opportunities";

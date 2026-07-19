@@ -31,6 +31,7 @@ import residencyRouter from "./residency";
 import maintenanceRouter from "./maintenance";
 import researchRouter from "./research";
 import pricingRouter from "./pricing";
+import opportunitiesRouter from "./opportunities";
 import { requireAuth, requireEdit, requireModule, hasModuleAction } from "../middleware/auth";
 import { activityLogger } from "../middleware/activity-logger";
 
@@ -128,6 +129,7 @@ router.use("/maintenance", (req, res, next) => {
 }, maintenanceRouter);
 router.use("/research", requireModule("accessResearch"), researchRouter);
 router.use("/pricing", requireModule("accessPricing"), pricingRouter);
+router.use("/opportunities", requireModule("accessOpportunities"), opportunitiesRouter);
 // حارس المهام يُطبق فقط على مسارات هذا الراوتر (وليس أي مسار غير معروف)
 router.use(["/task-types", "/recurring-templates"], (req, res, next) =>
   requireModule("accessTasks")(req, res, next),

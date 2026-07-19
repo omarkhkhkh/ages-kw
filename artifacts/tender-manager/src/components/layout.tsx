@@ -4,7 +4,7 @@ import {
   FolderOpen, ShieldCheck, FileSignature, Calendar, LogOut, Activity,
   ChevronDown, Clock, Truck, Wallet, ListChecks, ClipboardCheck,
   FileCheck, Landmark, Settings, Bell, HelpCircle, Headphones,
-  MapPin, BarChart3, Plus, X, Menu, Trophy, Sparkles, Mail, IdCard, Wrench, FlaskConical, Calculator,
+  MapPin, BarChart3, Plus, X, Menu, Trophy, Sparkles, Mail, IdCard, Wrench, FlaskConical, Calculator, Compass,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -153,6 +153,10 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
     {
       id: "pricing", label: t("nav.pricing"), icon: Calculator,
       show: can("accessPricing"), href: "/pricing",
+    },
+    {
+      id: "opportunities", label: "قسم البحث والتسعير", icon: Compass,
+      show: can("accessOpportunities" as any), href: "/opportunities",
     },
     {
       id: "transport", label: t("nav.transport"), icon: Truck,

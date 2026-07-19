@@ -69,6 +69,9 @@ const USER_SELECT = {
   accessResearch: usersTable.accessResearch,
   accessPricing: usersTable.accessPricing,
   accessTasks: usersTable.accessTasks,
+  accessOpportunities: usersTable.accessOpportunities,
+  opportunityCanPrice: usersTable.opportunityCanPrice,
+  opportunityCanApprove: usersTable.opportunityCanApprove,
   taskViewScope: usersTable.taskViewScope,
   taskCanApprove: usersTable.taskCanApprove,
   correspondenceViewAll: usersTable.correspondenceViewAll,
@@ -94,6 +97,7 @@ router.post("/users", async (req, res) => {
     accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation, accessFinance,
     accessCorrespondence, accessResidency, accessMaintenance, accessResearch, accessPricing,
     accessTasks, taskViewScope, taskCanApprove, correspondenceViewAll,
+    accessOpportunities, opportunityCanPrice, opportunityCanApprove,
     permissions, recordViewScope,
   } = req.body as any;
 
@@ -133,6 +137,9 @@ router.post("/users", async (req, res) => {
       accessResearch: accessResearch ?? true,
       accessPricing: accessPricing ?? true,
       accessTasks: accessTasks ?? true,
+      accessOpportunities: accessOpportunities ?? true,
+      opportunityCanPrice: opportunityCanPrice ?? false,
+      opportunityCanApprove: opportunityCanApprove ?? false,
       taskViewScope: taskViewScope ?? "own",
       taskCanApprove: taskCanApprove ?? false,
       correspondenceViewAll: correspondenceViewAll ?? false,
@@ -156,6 +163,7 @@ router.patch("/users/:id", async (req, res) => {
     accessGuarantees, accessContracts, accessRfq, accessPo, accessTransportation, accessFinance,
     accessCorrespondence, accessResidency, accessMaintenance, accessResearch, accessPricing,
     accessTasks, taskViewScope, taskCanApprove, correspondenceViewAll,
+    accessOpportunities, opportunityCanPrice, opportunityCanApprove,
     permissions, recordViewScope,
   } = req.body as any;
 
@@ -183,6 +191,9 @@ router.patch("/users/:id", async (req, res) => {
   if (accessResearch !== undefined) updates.accessResearch = accessResearch;
   if (accessPricing !== undefined) updates.accessPricing = accessPricing;
   if (accessTasks !== undefined) updates.accessTasks = accessTasks;
+  if (accessOpportunities !== undefined) updates.accessOpportunities = accessOpportunities;
+  if (opportunityCanPrice !== undefined) updates.opportunityCanPrice = opportunityCanPrice;
+  if (opportunityCanApprove !== undefined) updates.opportunityCanApprove = opportunityCanApprove;
   if (taskViewScope !== undefined) updates.taskViewScope = taskViewScope;
   if (taskCanApprove !== undefined) updates.taskCanApprove = taskCanApprove;
   if (correspondenceViewAll !== undefined) updates.correspondenceViewAll = correspondenceViewAll;

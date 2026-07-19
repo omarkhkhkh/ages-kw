@@ -28,6 +28,9 @@ declare module "express-session" {
     accessResearch: boolean;
     accessPricing: boolean;
     accessTasks: boolean;
+    accessOpportunities: boolean;
+    opportunityCanPrice: boolean;
+    opportunityCanApprove: boolean;
     taskViewScope: string;
     correspondenceViewAll: boolean;
     taskCanApprove: boolean;
@@ -106,6 +109,7 @@ const MODULE_LABELS: Record<string, string> = {
   accessResearch:       "البحث والتطوير",
   accessPricing:        "التسعير",
   accessTasks:          "المهام / مركز العمليات",
+  accessOpportunities:  "قسم البحث والتسعير",
 };
 
 const MODULE_KEY_MAP: Record<string, string> = {
@@ -125,6 +129,7 @@ const MODULE_KEY_MAP: Record<string, string> = {
   accessResearch:       "research",
   accessPricing:        "pricing",
   accessTasks:          "tasks",
+  accessOpportunities:  "opportunities",
 };
 
 // Factory: middleware يفرض مصفوفة الصلاحيات الدقيقة على مستوى الوحدة كاملة —
@@ -133,7 +138,7 @@ const MODULE_KEY_MAP: Record<string, string> = {
 export function requireModule(field: keyof Pick<Express.Request["session"],
   "accessTenders" | "accessEntities" | "accessSuppliers" | "accessProjects" |
   "accessGuarantees" | "accessContracts" | "accessRfq" | "accessPo" | "accessTransportation" | "accessFinance" |
-  "accessCorrespondence" | "accessResidency" | "accessMaintenance" | "accessResearch" | "accessPricing" | "accessTasks"
+  "accessCorrespondence" | "accessResidency" | "accessMaintenance" | "accessResearch" | "accessPricing" | "accessTasks" | "accessOpportunities"
 >) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.session?.userId) {

@@ -501,6 +501,40 @@ export const pricingApi = {
   },
 };
 
+// ── قسم البحث والتسعير — فرص أوامر الشراء الحكومية ──────────────────────
+export const opportunitiesApi = {
+  list: (params: Record<string, string | number | undefined> = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });
+    const q = qs.toString();
+    return apiFetch<any[]>(`/api/opportunities${q ? `?${q}` : ""}`);
+  },
+  get: (id: number) => apiFetch<any>(`/api/opportunities/${id}`),
+  create: (data: any) => apiFetch<any>("/api/opportunities", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: number, data: any) => apiFetch<any>(`/api/opportunities/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  delete: (id: number) => apiFetch<void>(`/api/opportunities/${id}`, { method: "DELETE" }),
+  claim: (id: number) => apiFetch<any>(`/api/opportunities/${id}/claim`, { method: "POST" }),
+  stats: () => apiFetch<any>("/api/opportunities/stats"),
+  createPricingSheet: (id: number) => apiFetch<any>(`/api/opportunities/${id}/create-pricing-sheet`, { method: "POST" }),
+  buildQuotation: (id: number) => apiFetch<any>(`/api/opportunities/${id}/build-quotation`, { method: "POST" }),
+  items: {
+    create: (oppId: number, data: any) => apiFetch<any>(`/api/opportunities/${oppId}/items`, { method: "POST", body: JSON.stringify(data) }),
+    update: (itemId: number, data: any) => apiFetch<any>(`/api/opportunities/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    delete: (itemId: number) => apiFetch<void>(`/api/opportunities/items/${itemId}`, { method: "DELETE" }),
+  },
+  quotes: {
+    create: (itemId: number, data: any) => apiFetch<any>(`/api/opportunities/items/${itemId}/quotes`, { method: "POST", body: JSON.stringify(data) }),
+    update: (quoteId: number, data: any) => apiFetch<any>(`/api/opportunities/quotes/${quoteId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    choose: (quoteId: number) => apiFetch<any>(`/api/opportunities/quotes/${quoteId}/choose`, { method: "POST" }),
+    delete: (quoteId: number) => apiFetch<void>(`/api/opportunities/quotes/${quoteId}`, { method: "DELETE" }),
+  },
+  files: {
+    create: (oppId: number, data: { fileName: string; fileUrl: string }) => apiFetch<any>(`/api/opportunities/${oppId}/files`, { method: "POST", body: JSON.stringify(data) }),
+    updateText: (fileId: number, extractedText: string) => apiFetch<any>(`/api/opportunities/files/${fileId}`, { method: "PATCH", body: JSON.stringify({ extractedText }) }),
+    delete: (fileId: number) => apiFetch<void>(`/api/opportunities/files/${fileId}`, { method: "DELETE" }),
+  },
+};
+
 // ── Tasks / مركز إدارة العمليات ──────────────────────────────────────────
 export const tasksApi = {
   list: (params: Record<string, string | number | undefined> = {}) => {

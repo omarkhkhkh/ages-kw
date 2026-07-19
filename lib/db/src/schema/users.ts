@@ -30,6 +30,9 @@ export const usersTable = pgTable("users", {
   accessResearch: boolean("access_research").notNull().default(true),
   accessPricing: boolean("access_pricing").notNull().default(true),
   accessTasks: boolean("access_tasks").notNull().default(true),
+  accessOpportunities: boolean("access_opportunities").notNull().default(true), // قسم البحث والتسعير
+  opportunityCanPrice: boolean("opportunity_can_price").notNull().default(false),   // قسم التسعير — مرحلة التسعير
+  opportunityCanApprove: boolean("opportunity_can_approve").notNull().default(false), // الإدارة — الاعتماد والإرسال
   taskViewScope: text("task_view_scope").notNull().default("own"), // 'own' | 'department' | 'all'
   taskCanApprove: boolean("task_can_approve").notNull().default(false),
   // خصوصية المراسلات: الموظف يرى كتبه فقط ما لم يمنحه المدير هذه الصلاحية

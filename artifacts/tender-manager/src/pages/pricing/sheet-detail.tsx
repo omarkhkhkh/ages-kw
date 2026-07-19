@@ -20,15 +20,17 @@ const GR = "#132a18";
 
 function fmt(v: number) { return Number(v || 0).toLocaleString("en-KW", { minimumFractionDigits: 3, maximumFractionDigits: 3 }); }
 
-const SETTINGS_FIELDS: { key: keyof PricingSettings; label: string; integer?: boolean; sharedOnly?: boolean }[] = [
-  { key: "containerShippingCost", label: "تكلفة شحن الحاوية ($)" },
-  { key: "containerCount", label: "عدد الحاويات (المشترك)", integer: true, sharedOnly: true },
-  { key: "unloadingCost", label: "تكلفة التنزيل (د.ك)" },
-  { key: "clearanceCost", label: "تكلفة تخليص الحاوية (د.ك)" },
-  { key: "maintenanceCost", label: "تكلفة الصيانة / الخدمات (د.ك)" },
-  { key: "bankFees", label: "المصاريف البنكية (د.ك)" },
-  { key: "exchangeRate", label: "سعر صرف الدولار (د.ك)" },
-  { key: "customsPercent", label: "نسبة الجمرك %" },
+const SETTINGS_FIELDS: { key: keyof PricingSettings; label: string; integer?: boolean; sharedOnly?: boolean; importOnly?: boolean; simpleOnly?: boolean }[] = [
+  { key: "containerShippingCost", label: "تكلفة شحن الحاوية ($)", importOnly: true },
+  { key: "containerCount", label: "عدد الحاويات (المشترك)", integer: true, sharedOnly: true, importOnly: true },
+  { key: "unloadingCost", label: "تكلفة التنزيل (د.ك)", importOnly: true },
+  { key: "clearanceCost", label: "تكلفة تخليص الحاوية (د.ك)", importOnly: true },
+  { key: "maintenanceCost", label: "تكلفة الصيانة / الخدمات (د.ك)", importOnly: true },
+  { key: "bankFees", label: "المصاريف البنكية (د.ك)", importOnly: true },
+  { key: "exchangeRate", label: "سعر صرف الدولار (د.ك)", importOnly: true },
+  { key: "customsPercent", label: "نسبة الجمرك %", importOnly: true },
+  { key: "transportCost", label: "تكلفة النقل الإجمالية (د.ك)", simpleOnly: true },
+  { key: "simpleProfitPercent", label: "نسبة الربح % (لسعر البيع المقترح)", simpleOnly: true },
   { key: "minProfitPercent", label: "الحد الأدنى لنسبة الربح %" },
   { key: "goodProfitPercent", label: "حد الربح الممتاز %" },
 ];
@@ -99,8 +101,12 @@ export default function PricingSheetDetail() {
     exchangeRate: sheet.exchangeRate, customsPercent: sheet.customsPercent,
     minProfitPercent: sheet.minProfitPercent, goodProfitPercent: sheet.goodProfitPercent,
     containerMode: sheet.containerMode ?? "shared",
+    pricingMode: sheet.pricingMode ?? "import",
+    transportCost: sheet.transportCost ?? "0",
+    simpleProfitPercent: sheet.simpleProfitPercent ?? "20",
   } : null;
   const perItemMode = settings?.containerMode === "per_item";
+  const simpleMode = settings?.pricingMode === "simple";
 
   const totalQty = useMemo(() => getTotalQuantity(items), [items]);
   const summary = useMemo(() => settings ? computeSheetSummary(items, settings) : null, [items, settings]);
@@ -193,20 +199,37 @@ export default function PricingSheetDetail() {
         </div>
         {settingsOpen && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12, marginTop: 14 }}>
-            {/* نظام الحاويات — مشترك لكل البنود أو لكل بند حاوياته الخاصة */}
+            {/* وضع التسعير — استيراد كامل أو مبسّط (منتج + نقل + ربح) */}
             <div>
-              <label style={lbl}>نظام الحاويات</label>
+              <label style={lbl}>وضع التسعير</label>
               <select
-                value={sheet.containerMode ?? "shared"}
+                value={sheet.pricingMode ?? "import"}
                 disabled={isApproved}
-                style={{ ...inp, cursor: "pointer", borderColor: perItemMode ? "#7c3aed" : "#e5e7eb" }}
-                onChange={e => updateSheetMut.mutate({ containerMode: e.target.value })}
+                style={{ ...inp, cursor: "pointer", borderColor: simpleMode ? "#16a34a" : "#e5e7eb" }}
+                onChange={e => updateSheetMut.mutate({ pricingMode: e.target.value })}
               >
-                <option value="shared">حاويات مشتركة لكل البنود</option>
-                <option value="per_item">لكل بند عدد حاوياته</option>
+                <option value="import">استيراد كامل (شحن + جمرك + تخليص)</option>
+                <option value="simple">مبسّط — سعر المنتج + النقل + الربح</option>
               </select>
             </div>
-            {SETTINGS_FIELDS.filter(f => !f.sharedOnly || !perItemMode).map(f => (
+            {/* نظام الحاويات — مشترك لكل البنود أو لكل بند حاوياته الخاصة */}
+            {!simpleMode && (
+              <div>
+                <label style={lbl}>نظام الحاويات</label>
+                <select
+                  value={sheet.containerMode ?? "shared"}
+                  disabled={isApproved}
+                  style={{ ...inp, cursor: "pointer", borderColor: perItemMode ? "#7c3aed" : "#e5e7eb" }}
+                  onChange={e => updateSheetMut.mutate({ containerMode: e.target.value })}
+                >
+                  <option value="shared">حاويات مشتركة لكل البنود</option>
+                  <option value="per_item">لكل بند عدد حاوياته</option>
+                </select>
+              </div>
+            )}
+            {SETTINGS_FIELDS
+              .filter(f => (!f.sharedOnly || !perItemMode) && (!f.importOnly || !simpleMode) && (!f.simpleOnly || simpleMode))
+              .map(f => (
               <div key={f.key}>
                 <label style={lbl}>{f.label}</label>
                 <input
@@ -283,7 +306,22 @@ export default function PricingSheetDetail() {
         const sumPct = sumSales > 0 ? (sumProfit / sumSales) * 100 : 0;
 
         // تعريف الأعمدة بمجموعات ملونة — العمود يظهر إن كان أساسيًا أو الوضع مفصّلاً
-        const GROUPS: { label: string; bg: string; fg: string; cols: { h: string; tip?: string; detailedOnly?: boolean }[] }[] = [
+        const GROUPS: { label: string; bg: string; fg: string; cols: { h: string; tip?: string; detailedOnly?: boolean }[] }[] = simpleMode ? [
+          { label: "بيانات الصنف", bg: "#fdf6e3", fg: "#8a6d1a", cols: [
+            { h: "" }, { h: "#" }, { h: "رقم البند" }, { h: "اسم الصنف" }, { h: "الكمية" },
+          ]},
+          { label: "التكلفة (د.ك)", bg: "#f5f3ff", fg: "#6d28d9", cols: [
+            { h: "سعر المنتج", tip: "سعر شراء الوحدة من السوق المحلي بالدينار" },
+            { h: "نقل/وحدة", tip: "تكلفة النقل الإجمالية ÷ إجمالي الكمية", detailedOnly: true },
+            { h: "النهائية/وحدة", tip: "سعر المنتج + نصيب النقل" },
+            { h: "إجمالي التكلفة" },
+          ]},
+          { label: "البيع والربح (د.ك)", bg: "#f0fdf4", fg: "#15803d", cols: [
+            { h: "السعر المقترح", tip: "التكلفة النهائية × (1 + نسبة الربح) — انقر لاعتماده" },
+            { h: "سعر البيع" }, { h: "المبيعات" }, { h: "الربح" }, { h: "النسبة %" },
+          ]},
+          { label: "", bg: "transparent", fg: "#6b7280", cols: [{ h: "" }] },
+        ] : [
           { label: "بيانات الصنف", bg: "#fdf6e3", fg: "#8a6d1a", cols: [
             { h: "" }, { h: "#" }, { h: "رقم البند" }, { h: "اسم الصنف" }, { h: "الكمية" },
             ...(perItemMode ? [{ h: "الحاويات", tip: "عدد حاويات هذا البند — الشحن والتخليص يُحسبان عليه" }] : []),
@@ -336,6 +374,13 @@ export default function PricingSheetDetail() {
                 <button style={btn} onClick={toggleView} title={detailed ? "إخفاء أعمدة التوزيع التفصيلية" : "إظهار كل أعمدة الحساب"}>
                   {detailed ? <LayoutList size={14} /> : <Table2 size={14} />} {detailed ? "عرض مبسّط" : "عرض مفصّل"}
                 </button>
+                {simpleMode && computed.length > 0 && (
+                  <button style={{ ...btn, borderColor: "#86efac", color: "#15803d", background: "#f0fdf4" }} disabled={isApproved}
+                    title="اعتماد السعر المقترح (التكلفة × نسبة الربح) كسعر بيع لكل البنود"
+                    onClick={() => computed.forEach(({ item, c }: any) => updateItemMut.mutate({ id: item.id, d: { sellPriceUnit: c.suggestedSellUnit.toFixed(3) } }))}>
+                    ✓ اعتماد الأسعار المقترحة للكل
+                  </button>
+                )}
                 <button style={btnPrimary} onClick={() => addItemMut.mutate()} disabled={isApproved}><Plus size={14} /> إضافة صنف</button>
               </div>
             </div>
@@ -379,6 +424,43 @@ export default function PricingSheetDetail() {
                     const tier = getProfitTier(c.profitPercent, settings);
                     const zebra = idx % 2 === 1 ? "#fdfcf7" : "white";
                     const ro = { ...roCell, background: zebra };
+                    if (simpleMode) {
+                      return (
+                        <tr key={item.id}
+                          style={{ borderBottom: "1px solid #f5f0e6", background: zebra }}
+                          onMouseEnter={e => (e.currentTarget.style.background = "#fdf8ec")}
+                          onMouseLeave={e => (e.currentTarget.style.background = zebra)}
+                        >
+                          <td style={{ padding: "6px", textAlign: "center", background: "inherit" }} title={PROFIT_TIER_LABEL[tier]}>{PROFIT_TIER_ICON[tier]}</td>
+                          <td style={{ padding: "6px 8px", color: "#b7ac8a", fontWeight: 700, fontFamily: "monospace", background: "inherit" }}>{idx + 1}</td>
+                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemNumber ?? ""} disabled={isApproved} width={70} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemNumber: v } })} /></td>
+                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemName ?? ""} disabled={isApproved} width={170} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemName: v } })} /></td>
+                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.quantity ?? "0")} disabled={isApproved} width={65} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { quantity: v } })} /></td>
+                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.unitCostUsd ?? "0")} disabled={isApproved} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { unitCostUsd: v } })} /></td>
+                          {detailed && <td style={ro}>{fmt(c.unloadingCostPerUnitKwd)}</td>}
+                          <td style={{ ...ro, fontWeight: 700, color: "#6d28d9" }}>{fmt(c.finalUnitCost)}</td>
+                          <td style={{ ...ro, fontWeight: 700, color: "#6d28d9" }}>{fmt(c.totalItemCostKwd)}</td>
+                          <td style={{ padding: "6px 8px", background: "inherit", whiteSpace: "nowrap" }}>
+                            <button
+                              title="اعتماد السعر المقترح كسعر بيع لهذا البند"
+                              disabled={isApproved}
+                              onClick={() => updateItemMut.mutate({ id: item.id, d: { sellPriceUnit: c.suggestedSellUnit.toFixed(3) } })}
+                              style={{ padding: "3px 10px", borderRadius: 8, border: "1.5px dashed #86efac", background: "#f0fdf4", color: "#15803d", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "monospace", direction: "ltr" }}
+                            >{fmt(c.suggestedSellUnit)}</button>
+                          </td>
+                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.sellPriceUnit ?? "0")} disabled={isApproved} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { sellPriceUnit: v } })} /></td>
+                          <td style={ro}>{fmt(c.totalSales)}</td>
+                          <td style={{ ...ro, fontWeight: 800, color: c.totalProfit >= 0 ? "#16a34a" : "#dc2626" }}>{fmt(c.totalProfit)}</td>
+                          <td style={{ padding: "6px 8px", background: "inherit", whiteSpace: "nowrap" }}>{pill(c.profitPercent, tier)}</td>
+                          <td style={{ padding: "6px", background: "inherit" }} onClick={ev => ev.stopPropagation()}>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <button title="نسخ الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={isApproved} onClick={() => duplicateItemMut.mutate(item.id)}><Copy size={13} color={GD} /></button>
+                              <button title="حذف الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={isApproved} onClick={() => { if (confirm("حذف الصنف؟")) deleteItemMut.mutate(item.id); }}><Trash2 size={13} color="#dc2626" /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
                     return (
                       <tr key={item.id}
                         style={{ borderBottom: "1px solid #f5f0e6", background: zebra }}
@@ -417,7 +499,27 @@ export default function PricingSheetDetail() {
                     );
                   })}
                 </tbody>
-                {computed.length > 0 && (
+                {computed.length > 0 && simpleMode && (
+                  <tfoot>
+                    <tr>
+                      <td colSpan={4} style={{ position: "sticky", bottom: 0, background: GR, color: "white", padding: "10px 12px", fontWeight: 800, fontSize: 12 }}>
+                        الإجمالي {itemSearch ? "(المعروض)" : ""}
+                      </td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR, color: "#E8BE55", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{sumQty.toLocaleString()}</td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR }} />
+                      {detailed && <td style={{ position: "sticky", bottom: 0, background: GR }} />}
+                      <td style={{ position: "sticky", bottom: 0, background: GR }} />
+                      <td style={{ position: "sticky", bottom: 0, background: GR, color: "#c4b5fd", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{fmt(sumKwd)}</td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR }} />
+                      <td style={{ position: "sticky", bottom: 0, background: GR }} />
+                      <td style={{ position: "sticky", bottom: 0, background: GR, color: "#86efac", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{fmt(sumSales)}</td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR, color: sumProfit >= 0 ? "#86efac" : "#fca5a5", padding: "10px 8px", fontWeight: 800, direction: "ltr", textAlign: "right", fontFamily: "monospace" }}>{fmt(sumProfit)}</td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR, padding: "10px 8px", whiteSpace: "nowrap" }}>{pill(sumPct, getProfitTier(sumPct, settings))}</td>
+                      <td style={{ position: "sticky", bottom: 0, background: GR }} />
+                    </tr>
+                  </tfoot>
+                )}
+                {computed.length > 0 && !simpleMode && (
                   <tfoot>
                     <tr>
                       {/* الإجماليات — تلتصق بأسفل الجدول */}

@@ -26,6 +26,10 @@ export const pricingSheetsTable = pgTable("pricing_sheets", {
   containerCount: integer("container_count").notNull().default(1),
   // نظام الحاويات: shared = عدد حاويات مشترك لكل البنود | per_item = كل بند له حاوياته
   containerMode: text("container_mode").notNull().default("shared"),
+  // وضع التسعير: import = استيراد كامل (شحن/جمرك/تخليص) | simple = مبسّط محلي (منتج + نقل + ربح)
+  pricingMode: text("pricing_mode").notNull().default("import"),
+  transportCost: numeric("transport_cost", { precision: 15, scale: 3 }).notNull().default("0"), // تكلفة النقل الإجمالية (د.ك) — للوضع المبسّط
+  simpleProfitPercent: numeric("simple_profit_percent", { precision: 5, scale: 2 }).notNull().default("20"), // نسبة الربح للوضع المبسّط
   unloadingCost: numeric("unloading_cost", { precision: 15, scale: 3 }).notNull().default("0"),
   clearanceCost: numeric("clearance_cost", { precision: 15, scale: 3 }).notNull().default("0"),
   maintenanceCost: numeric("maintenance_cost", { precision: 15, scale: 3 }).notNull().default("0"),

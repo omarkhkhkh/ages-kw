@@ -119,16 +119,15 @@ export default function CorrespondenceList() {
             <p style={S.subtitle}>الأرشيف الموحّد لكل الكتب الصادرة والواردة — {data?.total ?? 0} خطاب</p>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          {isOutgoing ? (
-            <button style={S.btnPrimary} onClick={() => setOpenLetterId("new")}>
-              <PenLine size={15} /> كتاب صادر جديد (مكتوب)
-            </button>
-          ) : (
-            <button style={S.btnPrimary} onClick={() => setShowQuickUpload(true)}>
-              <UploadCloud size={15} /> رفع كتاب وارد
-            </button>
-          )}
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {/* الزران ظاهران دائمًا بغضّ النظر عن التبويب — كان زر «رفع كتاب وارد»
+              يختفي في تبويب الصادر فيظن المستخدم أن الرفع غير متاح */}
+          <button style={S.btnPrimary} onClick={() => setOpenLetterId("new")}>
+            <PenLine size={15} /> كتاب صادر جديد (مكتوب)
+          </button>
+          <button style={S.btnPrimary} onClick={() => setShowQuickUpload(true)}>
+            <UploadCloud size={15} /> رفع كتاب وارد
+          </button>
         </div>
       </div>
 
@@ -241,7 +240,7 @@ export default function CorrespondenceList() {
       {showQuickUpload && (
         <QuickUploadIncoming
           onClose={() => setShowQuickUpload(false)}
-          onSaved={() => { refetch(); setShowQuickUpload(false); }}
+          onSaved={() => { refetch(); setShowQuickUpload(false); setTab("incoming"); }}
         />
       )}
     </div>

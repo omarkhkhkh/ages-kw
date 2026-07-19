@@ -12,6 +12,7 @@ const MODULE_KEYS = [
   "accessTenders", "accessEntities", "accessSuppliers", "accessProjects",
   "accessGuarantees", "accessContracts", "accessRfq", "accessPo", "accessTransportation", "accessFinance",
   "accessCorrespondence", "accessResidency", "accessMaintenance", "accessResearch", "accessPricing", "accessTasks",
+  "accessOpportunities",
 ] as const;
 
 type Matrix = Record<string, { view: boolean; add: boolean; edit: boolean; del: boolean }>;

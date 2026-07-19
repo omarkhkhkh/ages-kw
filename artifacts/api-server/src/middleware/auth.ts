@@ -152,7 +152,11 @@ export function requireModule(field: keyof Pick<Express.Request["session"],
     }
 
     const matrix = req.session.permissions ?? synthesizePermissions(req.session as any);
-    const actions = matrix[field] ?? { view: false, add: false, edit: false, del: false };
+    // وحدة أُضيفت بعد حفظ مصفوفة المستخدم: مفتاحها غائب من المصفوفة المخزّنة،
+    // فنشتق صلاحياتها من الأعمدة القديمة (accessX + canEdit) بدل الحجب الكامل.
+    const actions = matrix[field]
+      ?? synthesizePermissions(req.session as any)[field]
+      ?? { view: false, add: false, edit: false, del: false };
     const action = METHOD_ACTION[req.method] ?? "view";
 
     if (!actions[action]) {
@@ -186,7 +190,8 @@ export function requireModule(field: keyof Pick<Express.Request["session"],
 export function hasModuleAction(req: Request, field: string, action: keyof ModuleActions): boolean {
   if (req.session.role === "admin") return true;
   const matrix = req.session.permissions ?? synthesizePermissions(req.session as any);
-  return !!matrix[field]?.[action];
+  const actions = matrix[field] ?? synthesizePermissions(req.session as any)[field];
+  return !!actions?.[action];
 }
 
 /** خصوصية السجلات الرئيسية: هل يجب حصر النتائج بسجلات المستخدم نفسه؟

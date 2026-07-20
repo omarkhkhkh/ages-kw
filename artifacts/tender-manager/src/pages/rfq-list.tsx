@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { rfqApi, suppliersApi, companiesApi } from "@/lib/api";
+import { rfqApi, suppliersApi, companiesApi, contractsApi } from "@/lib/api";
 import { ClipboardList, Plus, Pencil, Trash2, X, Check, Search, Clock, CheckCircle2, XCircle } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { useListTenders } from "@workspace/api-client-react";
 
 const G  = "#D4A534";
 const GL = "#E8BE55";
@@ -16,7 +15,7 @@ const STATUS_MAP: Record<string, { label: string; bg: string; text: string; bord
   rejected: { label: "مرفوض",        bg: "#fee2e2", text: "#991b1b", border: "#fecaca", icon: XCircle },
 };
 
-const emptyForm = { tenderId: "", supplierId: "", companyId: "", rfqNumber: "", itemDescription: "", requestDate: "", responseDeadline: "", quotedPrice: "", status: "pending", notes: "" };
+const emptyForm = { tenderId: "", contractId: "", supplierId: "", companyId: "", rfqNumber: "", itemDescription: "", requestDate: "", responseDeadline: "", quotedPrice: "", status: "pending", notes: "" };
 
 const S = {
   page: { fontFamily: "'Segoe UI', Tahoma, sans-serif", direction: "rtl" as const },
@@ -55,7 +54,7 @@ export default function RfqList() {
   const [search, setSearch] = useState("");
 
   const { data: rfqs = [], isLoading } = useQuery({ queryKey: ["rfq-requests"], queryFn: () => rfqApi.list() });
-  const { data: tenders = [] } = useListTenders({});
+  const { data: contracts = [] } = useQuery({ queryKey: ["contracts", "all"], queryFn: () => contractsApi.list() });
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: () => suppliersApi.list() });
   const { data: companies = [] } = useQuery({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
 
@@ -64,8 +63,8 @@ export default function RfqList() {
   const deleteM = useMutation({ mutationFn: rfqApi.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ["rfq-requests"] }); toast({ title: "تم حذف الطلب" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
 
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
-  const openEdit = (r: any) => { setEditId(r.id); setForm({ tenderId: r.tenderId || "", supplierId: r.supplierId || "", companyId: r.companyId || "", rfqNumber: r.rfqNumber || "", itemDescription: r.itemDescription || "", requestDate: r.requestDate || "", responseDeadline: r.responseDeadline || "", quotedPrice: r.quotedPrice || "", status: r.status, notes: r.notes || "" }); setShowForm(true); };
-  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.itemDescription.trim()) return; const data = { ...form, tenderId: form.tenderId ? Number(form.tenderId) : null, supplierId: form.supplierId ? Number(form.supplierId) : null, companyId: form.companyId ? Number(form.companyId) : null, quotedPrice: form.quotedPrice ? Number(form.quotedPrice) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
+  const openEdit = (r: any) => { setEditId(r.id); setForm({ tenderId: r.tenderId || "", contractId: r.contractId || "", supplierId: r.supplierId || "", companyId: r.companyId || "", rfqNumber: r.rfqNumber || "", itemDescription: r.itemDescription || "", requestDate: r.requestDate || "", responseDeadline: r.responseDeadline || "", quotedPrice: r.quotedPrice || "", status: r.status, notes: r.notes || "" }); setShowForm(true); };
+  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.itemDescription.trim()) return; const data = { ...form, tenderId: form.tenderId ? Number(form.tenderId) : null, contractId: form.contractId ? Number(form.contractId) : null, supplierId: form.supplierId ? Number(form.supplierId) : null, companyId: form.companyId ? Number(form.companyId) : null, quotedPrice: form.quotedPrice ? String(form.quotedPrice) : null, requestDate: form.requestDate || null, responseDeadline: form.responseDeadline || null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
 
   const filtered = (rfqs as any[]).filter(r => {
     const matchTab = tab === "all" || r.status === tab;
@@ -205,10 +204,10 @@ export default function RfqList() {
               <form onSubmit={handleSubmit}>
                 <div style={S.fieldGrid}>
                   <div>
-                    <label style={S.label}>المناقصة</label>
-                    <select style={S.select} value={form.tenderId} onChange={e => setForm(p => ({ ...p, tenderId: e.target.value }))}>
-                      <option value="">اختر المناقصة</option>
-                      {(tenders as any[]).map((t: any) => <option key={t.id} value={t.id}>{t.tenderNumber} — {t.projectName}</option>)}
+                    <label style={S.label}>العقد المرتبط</label>
+                    <select style={S.select} value={form.contractId} onChange={e => setForm(p => ({ ...p, contractId: e.target.value }))}>
+                      <option value="">اختر العقد</option>
+                      {(contracts as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.contractNumber}</option>)}
                     </select>
                   </div>
                   <div>

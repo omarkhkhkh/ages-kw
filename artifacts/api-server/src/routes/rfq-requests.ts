@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
-import { db, rfqRequestsTable, insertRfqRequestSchema, updateRfqRequestSchema, suppliersTable, companiesTable } from "@workspace/db";
+import { db, rfqRequestsTable, insertRfqRequestSchema, updateRfqRequestSchema, suppliersTable, companiesTable, contractsTable } from "@workspace/db";
 
 const router = Router();
 
@@ -11,6 +11,7 @@ router.get("/", async (req: Request, res: Response) => {
       .select({
         id: rfqRequestsTable.id,
         tenderId: rfqRequestsTable.tenderId,
+        contractId: rfqRequestsTable.contractId,
         supplierId: rfqRequestsTable.supplierId,
         companyId: rfqRequestsTable.companyId,
         rfqNumber: rfqRequestsTable.rfqNumber,
@@ -24,10 +25,12 @@ router.get("/", async (req: Request, res: Response) => {
         updatedAt: rfqRequestsTable.updatedAt,
         supplierName: suppliersTable.name,
         companyName: companiesTable.name,
+        contractNumber: contractsTable.contractNumber,
       })
       .from(rfqRequestsTable)
       .leftJoin(suppliersTable, eq(rfqRequestsTable.supplierId, suppliersTable.id))
-      .leftJoin(companiesTable, eq(rfqRequestsTable.companyId, companiesTable.id));
+      .leftJoin(companiesTable, eq(rfqRequestsTable.companyId, companiesTable.id))
+      .leftJoin(contractsTable, eq(rfqRequestsTable.contractId, contractsTable.id));
 
     const results = tenderId
       ? await base.where(eq(rfqRequestsTable.tenderId, tenderId))

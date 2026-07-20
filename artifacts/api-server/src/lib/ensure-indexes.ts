@@ -155,6 +155,8 @@ const MIGRATIONS = [
   // ربط المشروع/العقد بممارسة مرتبطة (بجانب المناقصة المرتبطة الموجودة)
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS practice_id integer REFERENCES practices(id) ON DELETE SET NULL`,
   `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS practice_id integer REFERENCES practices(id) ON DELETE SET NULL`,
+  // طلب عرض السعر: الربط بعقد بدل المناقصة
+  `ALTER TABLE rfq_requests ADD COLUMN IF NOT EXISTS contract_id integer REFERENCES contracts(id) ON DELETE SET NULL`,
   `UPDATE practices SET status = 'won' WHERE status IN ('current', 'previous', 'completed')`,
   `UPDATE practices SET status = 'studying' WHERE status = 'targeted'`,
   `UPDATE practices SET status = 'under_evaluation' WHERE status = 'under_submission'`,

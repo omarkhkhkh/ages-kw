@@ -2,12 +2,14 @@ import { pgTable, serial, text, numeric, timestamp, date, integer } from "drizzl
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { tendersTable } from "./tenders";
+import { contractsTable } from "./contracts";
 import { suppliersTable } from "./suppliers";
 import { companiesTable } from "./company-documents";
 
 export const rfqRequestsTable = pgTable("rfq_requests", {
   id: serial("id").primaryKey(),
   tenderId: integer("tender_id").references(() => tendersTable.id, { onDelete: "cascade" }),
+  contractId: integer("contract_id").references(() => contractsTable.id, { onDelete: "set null" }), // العقد المرتبط (بدل المناقصة)
   supplierId: integer("supplier_id").references(() => suppliersTable.id, { onDelete: "set null" }),
   companyId: integer("company_id").references(() => companiesTable.id, { onDelete: "set null" }), // الشركة المشاركة
   rfqNumber: text("rfq_number"),

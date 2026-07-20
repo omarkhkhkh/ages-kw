@@ -184,6 +184,13 @@ export default function OpportunityDetail() {
       {/* ══ البنود والموردون ══ */}
       {tab === "items" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {!canWork && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#fffbeb", border: "1.5px solid #fbbf24", borderRadius: 12, padding: "12px 16px", fontSize: 12.5, fontWeight: 700, color: "#92400e" }}>
+              ⚠️ {opp.claimedByUserId
+                ? `هذه الفرصة مستلمة من قِبل «${opp.claimedByName ?? "موظف آخر"}» — إضافة البنود وعروض الموردين متاحة للمستلم والمدير فقط.`
+                : "استلم المهمة أولًا (زر «استلام المهمة» في الأعلى) لتتمكن من إضافة البنود وعروض الموردين."}
+            </div>
+          )}
           {canWork && (
             <div style={card}>
               <div style={{ fontSize: 12, fontWeight: 800, color: GR, marginBottom: 10 }}>إضافة بند جديد</div>

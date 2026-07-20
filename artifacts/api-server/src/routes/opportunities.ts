@@ -10,6 +10,7 @@ import {
   correspondenceLettersTable,
 } from "@workspace/db";
 import { createNotification } from "./notifications";
+import { hasModuleAction } from "../middleware/auth";
 import { generateLetterNumber } from "../lib/correspondence-numbering";
 import { ObjectStorageService } from "../lib/objectStorage";
 
@@ -35,6 +36,41 @@ const TRANSITIONS: Record<string, string[]> = {
 /* الصلاحيات الدقيقة داخل الدورة (المدير يتجاوز دائمًا) */
 function canPrice(req: Request) { return req.session.role === "admin" || !!(req.session as any).opportunityCanPrice; }
 function canApprove(req: Request) { return req.session.role === "admin" || !!(req.session as any).opportunityCanApprove; }
+
+/* استثناء الملكية: مستلم الفرصة يعمل عليها (بنود/عروض/ملفات/انتقالات) حتى لو
+   كانت صلاحيته على الوحدة "عرض" فقط — نفس نمط الفني المكلّف في الصيانة
+   والموظف المسؤول في الممارسات. أصحاب صلاحية إضافة/تعديل بالمصفوفة يعملون
+   على أي فرصة. */
+function hasMatrixWrite(req: Request): boolean {
+  return hasModuleAction(req, "accessOpportunities", "add") || hasModuleAction(req, "accessOpportunities", "edit");
+}
+const OWNER_ONLY_MSG = "هذه الفرصة يعمل عليها مستلمها فقط — استلم المهمة أولًا أو اطلب صلاحية الإضافة في القسم";
+
+async function canWorkOn(req: Request, opportunityId: number): Promise<boolean> {
+  if (hasMatrixWrite(req)) return true;
+  const [o] = await db.select({ claimedByUserId: procurementOpportunitiesTable.claimedByUserId })
+    .from(procurementOpportunitiesTable)
+    .where(eq(procurementOpportunitiesTable.id, opportunityId));
+  return !!o?.claimedByUserId && o.claimedByUserId === req.session.userId;
+}
+
+async function oppIdOfItem(itemId: number): Promise<number | null> {
+  const [i] = await db.select({ opportunityId: opportunityItemsTable.opportunityId })
+    .from(opportunityItemsTable).where(eq(opportunityItemsTable.id, itemId));
+  return i?.opportunityId ?? null;
+}
+async function oppIdOfQuote(quoteId: number): Promise<number | null> {
+  const { rows } = await pool.query(
+    `SELECT i.opportunity_id AS oid FROM opportunity_item_quotes q JOIN opportunity_items i ON i.id = q.item_id WHERE q.id = $1`,
+    [quoteId]
+  );
+  return rows[0]?.oid ?? null;
+}
+async function oppIdOfFile(fileId: number): Promise<number | null> {
+  const [f] = await db.select({ opportunityId: opportunityFilesTable.opportunityId })
+    .from(opportunityFilesTable).where(eq(opportunityFilesTable.id, fileId));
+  return f?.opportunityId ?? null;
+}
 
 function parseId(raw: string | string[]): number | null {
   const s = Array.isArray(raw) ? raw[0] : raw;
@@ -278,6 +314,12 @@ router.patch("/:id", async (req: Request, res: Response) => {
     const [existing] = await db.select().from(procurementOpportunitiesTable).where(eq(procurementOpportunitiesTable.id, id));
     if (!existing) return res.status(404).json({ error: "الفرصة غير موجودة" });
 
+    // المستلم أو أصحاب صلاحية الكتابة أو مسؤولو التسعير/الاعتماد
+    const isClaimer = existing.claimedByUserId != null && existing.claimedByUserId === req.session.userId;
+    if (!isClaimer && !hasMatrixWrite(req) && !canPrice(req) && !canApprove(req)) {
+      return res.status(403).json({ error: OWNER_ONLY_MSG });
+    }
+
     const data = updateOpportunitySchema.parse(req.body) as Record<string, any>;
     for (const f of ["issueDate", "submissionDeadline", "openingDate", "bondValue", "winnerPrice", "ourPrice"]) {
       if (data[f] === "") data[f] = null;
@@ -358,6 +400,7 @@ router.post("/:id/items", async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    if (!(await canWorkOn(req, id))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     const body = { ...req.body, opportunityId: id };
     if (body.quantity === "" || body.quantity == null) body.quantity = "1";
     if (typeof body.quantity === "number") body.quantity = String(body.quantity);
@@ -374,6 +417,9 @@ router.patch("/items/:itemId", async (req: Request, res: Response) => {
   const itemId = parseId(req.params.itemId);
   if (!itemId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    const oppId = await oppIdOfItem(itemId);
+    if (!oppId) return res.status(404).json({ error: "البند غير موجود" });
+    if (!(await canWorkOn(req, oppId))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     const body = { ...req.body };
     if (typeof body.quantity === "number") body.quantity = String(body.quantity);
     if (body.quantity === "") body.quantity = "1";
@@ -391,6 +437,8 @@ router.delete("/items/:itemId", async (req: Request, res: Response) => {
   const itemId = parseId(req.params.itemId);
   if (!itemId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    const oppId = await oppIdOfItem(itemId);
+    if (oppId && !(await canWorkOn(req, oppId))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     await db.delete(opportunityItemsTable).where(eq(opportunityItemsTable.id, itemId));
     return res.status(204).send();
   } catch {
@@ -405,6 +453,9 @@ router.post("/items/:itemId/quotes", async (req: Request, res: Response) => {
   const itemId = parseId(req.params.itemId);
   if (!itemId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    const oppId = await oppIdOfItem(itemId);
+    if (!oppId) return res.status(404).json({ error: "البند غير موجود" });
+    if (!(await canWorkOn(req, oppId))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     const body = { ...req.body, itemId };
     for (const f of ["price"]) {
       if (typeof body[f] === "number") body[f] = String(body[f]);
@@ -430,6 +481,8 @@ router.patch("/quotes/:quoteId", async (req: Request, res: Response) => {
   const quoteId = parseId(req.params.quoteId);
   if (!quoteId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    const oppId = await oppIdOfQuote(quoteId);
+    if (oppId && !(await canWorkOn(req, oppId))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     const body = { ...req.body };
     if (typeof body.price === "number") body.price = String(body.price);
     if (body.price === "") body.price = "0";
@@ -454,6 +507,8 @@ router.post("/quotes/:quoteId/choose", async (req: Request, res: Response) => {
   try {
     const [quote] = await db.select().from(opportunityItemQuotesTable).where(eq(opportunityItemQuotesTable.id, quoteId));
     if (!quote) return res.status(404).json({ error: "العرض غير موجود" });
+    const oppId = await oppIdOfItem(quote.itemId);
+    if (oppId && !(await canWorkOn(req, oppId))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     await db.update(opportunityItemQuotesTable).set({ isChosen: false }).where(eq(opportunityItemQuotesTable.itemId, quote.itemId));
     const [row] = await db.update(opportunityItemQuotesTable).set({ isChosen: true }).where(eq(opportunityItemQuotesTable.id, quoteId)).returning();
     return res.json(row);
@@ -466,6 +521,8 @@ router.delete("/quotes/:quoteId", async (req: Request, res: Response) => {
   const quoteId = parseId(req.params.quoteId);
   if (!quoteId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    const oppId = await oppIdOfQuote(quoteId);
+    if (oppId && !(await canWorkOn(req, oppId))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     await db.delete(opportunityItemQuotesTable).where(eq(opportunityItemQuotesTable.id, quoteId));
     return res.status(204).send();
   } catch {
@@ -480,6 +537,7 @@ router.post("/:id/files", async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    if (!(await canWorkOn(req, id))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     const { fileName, fileUrl } = req.body as { fileName?: string; fileUrl?: string };
     if (!fileName || !fileUrl) return res.status(400).json({ error: "اسم الملف ومساره مطلوبان" });
 
@@ -518,6 +576,8 @@ router.patch("/files/:fileId", async (req: Request, res: Response) => {
   const fileId = parseId(req.params.fileId);
   if (!fileId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    const oppId = await oppIdOfFile(fileId);
+    if (oppId && !(await canWorkOn(req, oppId))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     const { extractedText } = req.body as { extractedText?: string };
     const [row] = await db.update(opportunityFilesTable)
       .set({ extractedText: extractedText ?? null })
@@ -533,6 +593,8 @@ router.delete("/files/:fileId", async (req: Request, res: Response) => {
   const fileId = parseId(req.params.fileId);
   if (!fileId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    const oppId = await oppIdOfFile(fileId);
+    if (oppId && !(await canWorkOn(req, oppId))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     await db.delete(opportunityFilesTable).where(eq(opportunityFilesTable.id, fileId));
     return res.status(204).send();
   } catch {
@@ -551,6 +613,10 @@ router.post("/:id/create-pricing-sheet", async (req: Request, res: Response) => 
     const [opp] = await db.select().from(procurementOpportunitiesTable).where(eq(procurementOpportunitiesTable.id, id));
     if (!opp) return res.status(404).json({ error: "الفرصة غير موجودة" });
     if (opp.pricingSheetId) return res.status(400).json({ error: "توجد ورقة تسعير مرتبطة بالفعل بهذه الفرصة" });
+    const isClaimerSheet = opp.claimedByUserId != null && opp.claimedByUserId === req.session.userId;
+    if (!isClaimerSheet && !hasMatrixWrite(req) && !canPrice(req)) {
+      return res.status(403).json({ error: OWNER_ONLY_MSG });
+    }
 
     const { rows: items } = await pool.query(
       `SELECT i.id, i.item_name AS "itemName", i.quantity,
@@ -605,6 +671,10 @@ router.post("/:id/build-quotation", async (req: Request, res: Response) => {
     if (!opp) return res.status(404).json({ error: "الفرصة غير موجودة" });
     if (opp.quotationLetterId) return res.status(400).json({ error: "يوجد كتاب عرض سعر مرتبط بالفعل" });
     if (!opp.pricingSheetId) return res.status(400).json({ error: "أنشئ ورقة التسعير أولًا واعتمد أسعار البيع" });
+    const isClaimerQuot = opp.claimedByUserId != null && opp.claimedByUserId === req.session.userId;
+    if (!isClaimerQuot && !hasMatrixWrite(req) && !canPrice(req) && !canApprove(req)) {
+      return res.status(403).json({ error: OWNER_ONLY_MSG });
+    }
 
     // بنود الفرصة + سعر البيع من ورقة التسعير (مطابقة بالاسم والترتيب)
     const { rows: priced } = await pool.query(

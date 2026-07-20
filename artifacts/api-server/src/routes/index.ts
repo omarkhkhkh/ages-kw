@@ -129,7 +129,27 @@ router.use("/maintenance", (req, res, next) => {
 }, maintenanceRouter);
 router.use("/research", requireModule("accessResearch"), researchRouter);
 router.use("/pricing", requireModule("accessPricing"), pricingRouter);
-router.use("/opportunities", requireModule("accessOpportunities"), opportunitiesRouter);
+// قسم البحث والتسعير: مسارات العمل اليومي (استلام الفرصة، البنود، عروض الموردين،
+// الملفات، انتقالات الحالة، ورقة التسعير وكتاب العرض) تمرّ هنا بصلاحية العرض فقط،
+// والمسارات نفسها تتحقق داخليًا من (المستلم || صلاحية إضافة/تعديل بالمصفوفة ||
+// دورَي التسعير/الاعتماد) — إنشاء فرصة جديدة وحذفها يبقيان على المصفوفة الكاملة.
+router.use("/opportunities", (req, res, next) => {
+  const p = req.path;
+  const ownerScoped =
+    (req.method === "POST" && (
+      /^\/\d+\/(claim|items|files|create-pricing-sheet|build-quotation)$/.test(p) ||
+      /^\/items\/\d+\/quotes$/.test(p) ||
+      /^\/quotes\/\d+\/choose$/.test(p)
+    )) ||
+    ((req.method === "PATCH" || req.method === "DELETE") && /^\/(items|quotes|files)\/\d+$/.test(p)) ||
+    (req.method === "PATCH" && /^\/\d+$/.test(p));
+  if (ownerScoped) {
+    if (!req.session?.userId) return res.status(401).json({ error: "غير مصرح. يرجى تسجيل الدخول." });
+    if (req.session.role === "admin" || hasModuleAction(req, "accessOpportunities", "view")) return next();
+    return res.status(403).json({ error: "ليس لديك صلاحية الوصول إلى هذه الوحدة." });
+  }
+  return requireModule("accessOpportunities")(req, res, next);
+}, opportunitiesRouter);
 // حارس المهام يُطبق فقط على مسارات هذا الراوتر (وليس أي مسار غير معروف)
 router.use(["/task-types", "/recurring-templates"], (req, res, next) =>
   requireModule("accessTasks")(req, res, next),

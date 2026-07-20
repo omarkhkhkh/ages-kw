@@ -4,7 +4,7 @@ export interface PricingSettings {
   /** عدد الحاويات الكلي — يُستخدم في نظام "حاويات مشتركة" فقط */
   containerCount: number;
   unloadingCost: string | number;
-  /** تكلفة تخليص الحاوية الواحدة بالدينار الكويتي (د.ك) */
+  /** تكلفة تخليص الحاوية الواحدة بالدولار ($) — مثل الشحن تمامًا */
   clearanceCost: string | number;
   maintenanceCost: string | number;
   bankFees: string | number;
@@ -103,25 +103,23 @@ export function computeItemRow(item: PricingItemRaw, settings: PricingSettings, 
     };
   }
 
-  // الشحن بالدولار لكل حاوية، والتخليص بالدينار الكويتي لكل حاوية:
-  // - نظام "لكل بند حاوياته": نصيب الوحدة = سعر الحاوية × حاويات البند ÷ كمية البند
-  // - نظام "حاويات مشتركة": نصيب الوحدة = سعر الحاوية × العدد الكلي ÷ الكمية الكلية
+  // الشحن والتخليص كلاهما بالدولار لكل حاوية (بلا أي تحويل ذهاب/إياب):
+  // - نظام "لكل بند حاوياته": نصيب الوحدة = سعر الحاوية $ × حاويات البند ÷ كمية البند
+  // - نظام "حاويات مشتركة": نصيب الوحدة = سعر الحاوية $ × العدد الكلي ÷ الكمية الكلية
   const shipPerContainerUsd = n(settings.containerShippingCost);
-  const clearancePerContainerKwd = n(settings.clearanceCost);
+  const clearancePerContainerUsd = n(settings.clearanceCost);
   const perItemMode = settings.containerMode === "per_item";
   const itemContainers = n(item.containers);
 
   let shippingPerUnitUsd = 0;
-  let clearancePerUnitKwd = 0;
+  let clearancePerUnitUsd = 0;
   if (perItemMode) {
     shippingPerUnitUsd = quantity > 0 ? (shipPerContainerUsd * itemContainers) / quantity : 0;
-    clearancePerUnitKwd = quantity > 0 ? (clearancePerContainerKwd * itemContainers) / quantity : 0;
+    clearancePerUnitUsd = quantity > 0 ? (clearancePerContainerUsd * itemContainers) / quantity : 0;
   } else {
     shippingPerUnitUsd = totalQty > 0 ? (shipPerContainerUsd * n(settings.containerCount)) / totalQty : 0;
-    clearancePerUnitKwd = totalQty > 0 ? (clearancePerContainerKwd * n(settings.containerCount)) / totalQty : 0;
+    clearancePerUnitUsd = totalQty > 0 ? (clearancePerContainerUsd * n(settings.containerCount)) / totalQty : 0;
   }
-  // يُحوَّل التخليص للدولار ليدخل في إجمالي تكلفة الوحدة $ ثم يعود للدينار بنفس السعر
-  const clearancePerUnitUsd = exchangeRate > 0 ? clearancePerUnitKwd / exchangeRate : 0;
 
   const customsValueUsd = unitCostUsd * (customsPercent / 100);
 
@@ -180,10 +178,10 @@ export function computeSheetSummary(items: PricingItemRaw[], settings: PricingSe
   const totalContainers = getTotalContainers(items, settings);
   const exchangeRate = n(settings.exchangeRate);
   const simple = settings.pricingMode === "simple";
-  // الإجماليات بالدينار: الشحن بالدولار × السعر، والتخليص بالدينار مباشرة
+  // الإجماليات بالدينار: الشحن والتخليص كلاهما بالدولار × عدد الحاويات × سعر الصرف
   // (الوضع المبسّط: لا شحن ولا تخليص — النقل فقط)
   const totalShipping = simple ? 0 : n(settings.containerShippingCost) * totalContainers * exchangeRate;
-  const totalClearance = simple ? 0 : n(settings.clearanceCost) * totalContainers;
+  const totalClearance = simple ? 0 : n(settings.clearanceCost) * totalContainers * exchangeRate;
   const totalCustoms = rows.reduce((s, r) => s + r.customsValueUsd * r.quantity, 0);
   const totalExpenses = simple
     ? n(settings.transportCost)

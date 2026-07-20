@@ -25,7 +25,7 @@ const SETTINGS_FIELDS: { key: keyof PricingSettings; label: string; integer?: bo
   { key: "containerShippingCost", label: "تكلفة شحن الحاوية ($)", importOnly: true },
   { key: "containerCount", label: "عدد الحاويات (المشترك)", integer: true, sharedOnly: true, importOnly: true },
   { key: "unloadingCost", label: "تكلفة التنزيل (د.ك)", importOnly: true },
-  { key: "clearanceCost", label: "تكلفة تخليص الحاوية (د.ك)", importOnly: true },
+  { key: "clearanceCost", label: "تكلفة تخليص الحاوية ($)", importOnly: true },
   { key: "maintenanceCost", label: "تكلفة الصيانة / الخدمات (د.ك)", importOnly: true },
   { key: "bankFees", label: "المصاريف البنكية (د.ك)", importOnly: true },
   { key: "exchangeRate", label: "سعر صرف الدولار (د.ك)", importOnly: true },
@@ -367,7 +367,7 @@ export default function PricingSheetDetail() {
           { label: "تكاليف الاستيراد ($)", bg: "#eff6ff", fg: "#1d4ed8", cols: [
             { h: "تكلفة الوحدة $" },
             { h: "شحن/وحدة", tip: perItemMode ? "شحن الحاوية $ × حاويات البند ÷ كمية البند" : "شحن الحاوية $ × عدد الحاويات ÷ إجمالي الكمية", detailedOnly: true },
-            { h: "تخليص/وحدة", tip: perItemMode ? "تخليص الحاوية د.ك × حاويات البند ÷ كمية البند ÷ سعر الصرف" : "تخليص الحاوية د.ك × عدد الحاويات ÷ إجمالي الكمية ÷ سعر الصرف", detailedOnly: true },
+            { h: "تخليص/وحدة", tip: perItemMode ? "تخليص الحاوية $ × حاويات البند ÷ كمية البند" : "تخليص الحاوية $ × عدد الحاويات ÷ إجمالي الكمية", detailedOnly: true },
             { h: "جمرك", tip: "تكلفة الوحدة $ × نسبة الجمرك", detailedOnly: true },
             { h: "إجمالي الوحدة $", tip: "التكلفة + الشحن + التخليص + الجمرك", detailedOnly: true },
             { h: "إجمالي الصنف $", detailedOnly: true },

@@ -8,6 +8,7 @@ import {
   updateProjectSchema,
   governmentEntitiesTable,
   tendersTable,
+  practicesTable,
   companiesTable,
   departmentsTable,
   governmentContactsTable,
@@ -22,6 +23,7 @@ router.get("/", async (req: Request, res: Response) => {
       .select({
         id: projectsTable.id,
         tenderId: projectsTable.tenderId,
+        practiceId: projectsTable.practiceId,
         projectNumber: projectsTable.projectNumber,
         name: projectsTable.name,
         governmentEntityId: projectsTable.governmentEntityId,
@@ -39,6 +41,7 @@ router.get("/", async (req: Request, res: Response) => {
         updatedAt: projectsTable.updatedAt,
         entityName: governmentEntitiesTable.name,
         tenderNumber: tendersTable.tenderNumber,
+        practiceNumber: practicesTable.practiceNumber,
         companyName: companiesTable.name,
         departmentName: departmentsTable.name,
         contactName: governmentContactsTable.name,
@@ -46,6 +49,7 @@ router.get("/", async (req: Request, res: Response) => {
       .from(projectsTable)
       .leftJoin(governmentEntitiesTable, eq(projectsTable.governmentEntityId, governmentEntitiesTable.id))
       .leftJoin(tendersTable, eq(projectsTable.tenderId, tendersTable.id))
+      .leftJoin(practicesTable, eq(projectsTable.practiceId, practicesTable.id))
       .leftJoin(companiesTable, eq(projectsTable.companyId, companiesTable.id))
       .leftJoin(departmentsTable, eq(projectsTable.departmentId, departmentsTable.id))
       .leftJoin(governmentContactsTable, eq(projectsTable.contactId, governmentContactsTable.id))

@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { contractsApi, companiesApi } from "@/lib/api";
+import { contractsApi, companiesApi, apiFetch } from "@/lib/api";
 import {
   FileSignature, Plus, Pencil, Trash2, X, Check, Download,
   Building2, Banknote, CalendarDays, CheckCircle2, XCircle, Clock,
@@ -37,7 +37,7 @@ const STAT_CARDS = [
 ];
 
 const emptyForm = {
-  tenderId: "", contractNumber: "", governmentEntityId: "" as string | number | null, departmentId: "" as string | number | null, contactId: "" as string | number | null, companyId: "",
+  tenderId: "", practiceId: "", contractNumber: "", governmentEntityId: "" as string | number | null, departmentId: "" as string | number | null, contactId: "" as string | number | null, companyId: "",
   contractValue: "", signDate: "", startDate: "", endDate: "",
   status: "active", notes: "",
   // final bond
@@ -59,7 +59,7 @@ function formatBytes(n: number) {
 }
 
 /* ─── Contract Form Modal ─── */
-function ContractModal({ open, editId, form, setForm, onClose, onSubmit, isPending, tenders, companies }: any) {
+function ContractModal({ open, editId, form, setForm, onClose, onSubmit, isPending, tenders, companies, practices }: any) {
   if (!open) return null;
   const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 13, color: "#1e2a1e", background: "#fafaf8", outline: "none", fontFamily: "inherit", transition: "border-color 0.15s,box-shadow 0.15s" };
   const lbl: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 700, color: GR, marginBottom: 5 };
@@ -93,6 +93,7 @@ function ContractModal({ open, editId, form, setForm, onClose, onSubmit, isPendi
               <div><label style={lbl}>رقم العقد <span style={{ color: "#dc2626" }}>*</span></label><input value={form.contractNumber} onChange={f("contractNumber")} placeholder="CONT-2025-001" dir="ltr" required style={inp} onFocus={focus} onBlur={blur} /></div>
               <div><label style={lbl}>الحالة</label><select value={form.status} onChange={f("status")} style={{ ...inp, height: 42 }} onFocus={focus} onBlur={blur}>{Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
               <div><label style={lbl}>المناقصة المرتبطة</label><select value={form.tenderId} onChange={f("tenderId")} style={{ ...inp, height: 42 }} onFocus={focus} onBlur={blur}><option value="">— اختر المناقصة —</option>{(tenders as any[]).map((t: any) => <option key={t.id} value={t.id}>{t.tenderNumber} · {t.projectName}</option>)}</select></div>
+              <div><label style={lbl}>الممارسة المرتبطة</label><select value={form.practiceId} onChange={f("practiceId")} style={{ ...inp, height: 42 }} onFocus={focus} onBlur={blur}><option value="">— اختر الممارسة —</option>{(practices as any[]).map((pr: any) => <option key={pr.id} value={pr.id}>{pr.practiceNumber} · {pr.projectName}</option>)}</select></div>
               <div><label style={lbl}>الشركة المشاركة</label><select value={form.companyId} onChange={f("companyId")} style={{ ...inp, height: 42 }} onFocus={focus} onBlur={blur}><option value="">— اختر الشركة —</option>{(companies as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
               <div><label style={lbl}>قيمة العقد (د.ك)</label><input type="number" value={form.contractValue} onChange={f("contractValue")} min="0" dir="ltr" placeholder="0.000" style={inp} onFocus={focus} onBlur={blur} /></div>
               <div style={{ gridColumn: "1/-1" }}>
@@ -421,6 +422,7 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
                   <InfoRow icon={UserCheck}     label="المسؤول"          value={contract.contactName} />
                   <InfoRow icon={Users}         label="الشركة المشاركة" value={contract.companyName} />
                   <InfoRow icon={FileSignature} label="المناقصة المرتبطة" value={contract.tenderNumber} />
+                  <InfoRow icon={FileSignature} label="الممارسة المرتبطة" value={contract.practiceNumber} />
                 </div>
 
                 <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "4px 14px" }}>
@@ -851,6 +853,7 @@ export default function ContractsList() {
   const { data: contracts = [], isLoading } = useQuery({ queryKey: ["contracts", tab], queryFn: () => contractsApi.list(statusFilter) });
   const { data: companies = [] } = useQuery({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
   const { data: tenders   = [] } = useListTenders({});
+  const { data: practices = [] } = useQuery({ queryKey: ["practices", "for-contracts"], queryFn: () => apiFetch<any[]>("/api/practices") });
 
   // Employees list for permissions & comments (admin fetches all users)
   const { data: employees = [] } = useQuery({
@@ -885,7 +888,7 @@ export default function ContractsList() {
   const openEdit  = (c: any) => {
     setEditId(c.id);
     setForm({
-      tenderId: c.tenderId || "", contractNumber: c.contractNumber,
+      tenderId: c.tenderId || "", practiceId: c.practiceId || "", contractNumber: c.contractNumber,
       governmentEntityId: c.governmentEntityId || "", departmentId: c.departmentId || "", contactId: c.contactId || "",
       companyId: c.companyId || "", contractValue: c.contractValue || "",
       signDate: c.signDate || "", startDate: c.startDate || "", endDate: c.endDate || "",
@@ -902,6 +905,7 @@ export default function ContractsList() {
     const data = {
       ...form,
       tenderId:            form.tenderId            ? Number(form.tenderId)            : null,
+      practiceId:          form.practiceId          ? Number(form.practiceId)          : null,
       governmentEntityId:  form.governmentEntityId  ? Number(form.governmentEntityId)  : null,
       departmentId:        form.departmentId         ? Number(form.departmentId)        : null,
       contactId:           form.contactId            ? Number(form.contactId)           : null,
@@ -925,7 +929,7 @@ export default function ContractsList() {
   return (
     <div dir="rtl" style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif", display: "flex", flexDirection: "column", gap: 22 }}>
 
-      <ContractModal open={showForm} editId={editId} form={form} setForm={setForm} onClose={closeForm} onSubmit={handleSubmit} isPending={createM.isPending || updateM.isPending} tenders={tenders} companies={companies} />
+      <ContractModal open={showForm} editId={editId} form={form} setForm={setForm} onClose={closeForm} onSubmit={handleSubmit} isPending={createM.isPending || updateM.isPending} tenders={tenders} companies={companies} practices={practices} />
 
       {correspondenceFor && (
         <CorrespondenceSheet

@@ -2,6 +2,7 @@ import { pgTable, serial, text, numeric, timestamp, date, integer } from "drizzl
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { tendersTable } from "./tenders";
+import { practicesTable } from "./practices";
 import { governmentEntitiesTable } from "./government-entities";
 import { companiesTable } from "./company-documents";
 import { departmentsTable, governmentContactsTable } from "./entity-directory";
@@ -10,6 +11,7 @@ import { usersTable } from "./users";
 export const contractsTable = pgTable("contracts", {
   id: serial("id").primaryKey(),
   tenderId: integer("tender_id").references(() => tendersTable.id, { onDelete: "set null" }),
+  practiceId: integer("practice_id").references(() => practicesTable.id, { onDelete: "set null" }), // الممارسة المرتبطة
   contractNumber: text("contract_number").notNull(),
   governmentEntityId: integer("government_entity_id").references(() => governmentEntitiesTable.id, { onDelete: "set null" }),
   departmentId: integer("department_id").references(() => departmentsTable.id, { onDelete: "set null" }), // الاختصاص

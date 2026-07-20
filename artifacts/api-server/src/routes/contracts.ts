@@ -40,7 +40,7 @@ router.get("/", async (req: Request, res: Response) => {
     // Build base query
     let query = `
       SELECT
-        c.id, c.tender_id as "tenderId", c.contract_number as "contractNumber",
+        c.id, c.tender_id as "tenderId", c.practice_id as "practiceId", c.contract_number as "contractNumber",
         c.government_entity_id as "governmentEntityId", c.contract_value as "contractValue",
         c.sign_date as "signDate", c.start_date as "startDate", c.end_date as "endDate",
         c.status, c.notes, c.created_at as "createdAt", c.updated_at as "updatedAt",
@@ -52,10 +52,12 @@ router.get("/", async (req: Request, res: Response) => {
         c.company_id as "companyId",
         c.department_id as "departmentId", c.contact_id as "contactId",
         ge.name as "entityName", t.tender_number as "tenderNumber", co.name as "companyName",
+        pr.practice_number as "practiceNumber",
         dep.name as "departmentName", gc.name as "contactName"
       FROM contracts c
       LEFT JOIN government_entities ge ON c.government_entity_id = ge.id
       LEFT JOIN tenders t ON c.tender_id = t.id
+      LEFT JOIN practices pr ON c.practice_id = pr.id
       LEFT JOIN companies co ON c.company_id = co.id
       LEFT JOIN departments dep ON c.department_id = dep.id
       LEFT JOIN government_contacts gc ON c.contact_id = gc.id

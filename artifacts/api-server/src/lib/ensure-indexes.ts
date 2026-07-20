@@ -152,8 +152,9 @@ const MIGRATIONS = [
   `ALTER TABLE finance_income ADD COLUMN IF NOT EXISTS inventory_item_id integer REFERENCES maintenance_inventory(id) ON DELETE SET NULL`,
   `ALTER TABLE finance_income ADD COLUMN IF NOT EXISTS quantity numeric(12,3)`,
   `ALTER TABLE finance_expenses ADD COLUMN IF NOT EXISTS source_module text`,
-  // ربط المشروع بممارسة مرتبطة (بجانب المناقصة المرتبطة الموجودة)
+  // ربط المشروع/العقد بممارسة مرتبطة (بجانب المناقصة المرتبطة الموجودة)
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS practice_id integer REFERENCES practices(id) ON DELETE SET NULL`,
+  `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS practice_id integer REFERENCES practices(id) ON DELETE SET NULL`,
   `UPDATE practices SET status = 'won' WHERE status IN ('current', 'previous', 'completed')`,
   `UPDATE practices SET status = 'studying' WHERE status = 'targeted'`,
   `UPDATE practices SET status = 'under_evaluation' WHERE status = 'under_submission'`,

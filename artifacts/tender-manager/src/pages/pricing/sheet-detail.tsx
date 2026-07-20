@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Table2, LayoutList } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
@@ -41,16 +41,38 @@ const cardStyle: React.CSSProperties = { background: "white", borderRadius: 16, 
 const btn: React.CSSProperties = { display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, fontSize: 12.5, fontWeight: 700, border: "1.5px solid #e5dfc8", background: "white", color: GR, cursor: "pointer" };
 const btnPrimary: React.CSSProperties = { ...btn, background: `linear-gradient(135deg, #E8BE55, ${GD})`, color: "white", border: "none" };
 
+/** هل تغيّرت القيمة فعليًا؟ مقارنة رقمية عند الإمكان ("10" تساوي "10.0000") */
+function cellChanged(a: string, b: string): boolean {
+  const na = Number(a), nb = Number(b);
+  if (Number.isFinite(na) && Number.isFinite(nb) && a.trim() !== "" && b.trim() !== "") return na !== nb;
+  return a !== b;
+}
+
 function EditableCell({ value, onCommit, disabled, width, mono }: { value: string; onCommit: (v: string) => void; disabled?: boolean; width?: number; mono?: boolean }) {
   const [local, setLocal] = useState(value);
   const [focused, setFocused] = useState(false);
+  const cancelled = useRef(false);
+  // مزامنة الخلية مع القيمة المحفوظة عندما تتغيّر من الخارج
+  // (زر الأسعار المقترحة، استيراد Excel، نسخ الورقة) — دون مقاطعة كتابة المستخدم
+  useEffect(() => {
+    if (!focused) setLocal(value);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
   return (
     <input
       value={local}
       disabled={disabled}
       onChange={e => setLocal(e.target.value)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => { setFocused(false); if (local !== value) onCommit(local); }}
+      onFocus={() => { cancelled.current = false; setFocused(true); }}
+      onKeyDown={e => {
+        if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+        if (e.key === "Escape") { cancelled.current = true; setLocal(value); (e.target as HTMLInputElement).blur(); }
+      }}
+      onBlur={() => {
+        setFocused(false);
+        if (cancelled.current) { cancelled.current = false; setLocal(value); return; }
+        if (cellChanged(local, value)) onCommit(local);
+      }}
       style={{
         width: width ?? 90, boxSizing: "border-box", padding: "5px 7px", borderRadius: 6,
         border: `1.5px solid ${focused ? G : "#eadfba"}`,

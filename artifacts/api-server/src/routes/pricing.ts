@@ -10,8 +10,28 @@ import {
   insertPricingItemSchema,
   updatePricingItemSchema,
 } from "@workspace/db";
+import { hasModuleAction } from "../middleware/auth";
 
 const router = Router();
+
+/* استثناء الملكية: مُنشئ ورقة التسعير يعمل عليها كاملة (أصناف/أسعار/اعتماد)
+   حتى لو كانت صلاحيته على الوحدة "عرض" فقط — نفس نمط مستلم الفرصة والفني
+   المكلّف. أصحاب صلاحية الإضافة/التعديل بالمصفوفة يعملون على أي ورقة. */
+const OWNER_ONLY_MSG = "هذه الورقة يعمل عليها مُنشئها فقط — أنشئ ورقة جديدة خاصة بك أو اطلب صلاحية التعديل في قسم التسعير";
+function hasMatrixWrite(req: Request): boolean {
+  return hasModuleAction(req, "accessPricing", "add") || hasModuleAction(req, "accessPricing", "edit");
+}
+async function canWorkOnSheet(req: Request, sheetId: number): Promise<boolean> {
+  if (req.session.role === "admin" || hasMatrixWrite(req)) return true;
+  const [s] = await db.select({ createdByUserId: pricingSheetsTable.createdByUserId })
+    .from(pricingSheetsTable).where(eq(pricingSheetsTable.id, sheetId));
+  return !!s?.createdByUserId && s.createdByUserId === req.session.userId;
+}
+async function sheetIdOfItem(itemId: number): Promise<number | null> {
+  const [i] = await db.select({ sheetId: pricingItemsTable.sheetId })
+    .from(pricingItemsTable).where(eq(pricingItemsTable.id, itemId));
+  return i?.sheetId ?? null;
+}
 
 const NUMERIC_SHEET_FIELDS = [
   "containerShippingCost", "unloadingCost", "clearanceCost", "maintenanceCost",
@@ -106,6 +126,7 @@ router.patch("/sheets/:id", async (req: Request, res: Response) => {
   try {
     const [existing] = await db.select().from(pricingSheetsTable).where(eq(pricingSheetsTable.id, id));
     if (!existing) return res.status(404).json({ error: "ورقة التسعير غير موجودة" });
+    if (!(await canWorkOnSheet(req, id))) return res.status(403).json({ error: OWNER_ONLY_MSG });
 
     const data = updatePricingSheetSchema.parse(normalizeSheetBody({ ...req.body })) as Record<string, any>;
     const patch: Record<string, any> = { ...data, updatedAt: new Date() };
@@ -133,6 +154,7 @@ router.delete("/sheets/:id", async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    if (!(await canWorkOnSheet(req, id))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     await db.delete(pricingSheetsTable).where(eq(pricingSheetsTable.id, id));
     return res.status(204).send();
   } catch {
@@ -146,6 +168,7 @@ router.post("/sheets/:id/duplicate", async (req: Request, res: Response) => {
   try {
     const [original] = await db.select().from(pricingSheetsTable).where(eq(pricingSheetsTable.id, id));
     if (!original) return res.status(404).json({ error: "ورقة التسعير غير موجودة" });
+    if (!(await canWorkOnSheet(req, id))) return res.status(403).json({ error: OWNER_ONLY_MSG });
 
     const { id: _id, createdAt: _c, updatedAt: _u, approvedByUserId: _a, approvedAt: _ap, ...rest } = original as any;
     const [copy] = await db.insert(pricingSheetsTable).values({
@@ -181,6 +204,7 @@ router.post("/sheets/:id/items", async (req: Request, res: Response) => {
   const sheetId = parseId(req.params.id);
   if (!sheetId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    if (!(await canWorkOnSheet(req, sheetId))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     const data = insertPricingItemSchema.parse({ ...req.body, sheetId });
     const [row] = await db.insert(pricingItemsTable).values(data).returning();
     return res.status(201).json(row);
@@ -194,6 +218,7 @@ router.post("/sheets/:id/items/bulk", async (req: Request, res: Response) => {
   const sheetId = parseId(req.params.id);
   if (!sheetId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    if (!(await canWorkOnSheet(req, sheetId))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     const rows = Array.isArray(req.body?.items) ? req.body.items : [];
     if (!rows.length) return res.status(400).json({ error: "لا توجد أصناف للاستيراد" });
     const parsed = rows.map((r: any) => insertPricingItemSchema.parse({ ...r, sheetId }));
@@ -210,6 +235,9 @@ router.patch("/items/:itemId", async (req: Request, res: Response) => {
   const itemId = parseId(req.params.itemId);
   if (!itemId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    const sid = await sheetIdOfItem(itemId);
+    if (!sid) return res.status(404).json({ error: "الصنف غير موجود" });
+    if (!(await canWorkOnSheet(req, sid))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     const data = updatePricingItemSchema.parse(req.body) as Record<string, any>;
     for (const f of ["quantity", "unitCostUsd", "sellPriceUnit", "containers"]) if (data[f] === "") data[f] = "0";
     const [row] = await db.update(pricingItemsTable).set({ ...data, updatedAt: new Date() }).where(eq(pricingItemsTable.id, itemId)).returning();
@@ -227,6 +255,7 @@ router.post("/items/:itemId/duplicate", async (req: Request, res: Response) => {
   try {
     const [original] = await db.select().from(pricingItemsTable).where(eq(pricingItemsTable.id, itemId));
     if (!original) return res.status(404).json({ error: "الصنف غير موجود" });
+    if (!(await canWorkOnSheet(req, original.sheetId))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = original as any;
     const [copy] = await db.insert(pricingItemsTable).values(rest).returning();
     return res.status(201).json(copy);
@@ -240,6 +269,8 @@ router.delete("/items/:itemId", async (req: Request, res: Response) => {
   const itemId = parseId(req.params.itemId);
   if (!itemId) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
+    const sid = await sheetIdOfItem(itemId);
+    if (sid && !(await canWorkOnSheet(req, sid))) return res.status(403).json({ error: OWNER_ONLY_MSG });
     await db.delete(pricingItemsTable).where(eq(pricingItemsTable.id, itemId));
     return res.status(204).send();
   } catch {

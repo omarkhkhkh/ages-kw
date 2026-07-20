@@ -128,7 +128,25 @@ router.use("/maintenance", (req, res, next) => {
   return requireModule("accessMaintenance")(req, res, next);
 }, maintenanceRouter);
 router.use("/research", requireModule("accessResearch"), researchRouter);
-router.use("/pricing", requireModule("accessPricing"), pricingRouter);
+// التسعير: مسارات العمل على ورقة قائمة (أصناف، أسعار، اعتماد، إعدادات، نسخ، حذف)
+// تمرّ هنا بصلاحية العرض فقط، والمسارات نفسها تتحقق داخليًا من (مُنشئ الورقة ||
+// صلاحية إضافة/تعديل بالمصفوفة). إنشاء ورقة جديدة مستقلة يبقى على صلاحية الإضافة.
+router.use("/pricing", (req, res, next) => {
+  const p = req.path;
+  const ownerScoped =
+    (req.method === "POST" && (
+      /^\/sheets\/\d+\/(items|items\/bulk|duplicate)$/.test(p) ||
+      /^\/items\/\d+\/duplicate$/.test(p)
+    )) ||
+    (req.method === "PATCH" && (/^\/sheets\/\d+$/.test(p) || /^\/items\/\d+$/.test(p))) ||
+    (req.method === "DELETE" && (/^\/sheets\/\d+$/.test(p) || /^\/items\/\d+$/.test(p)));
+  if (ownerScoped) {
+    if (!req.session?.userId) return res.status(401).json({ error: "غير مصرح. يرجى تسجيل الدخول." });
+    if (req.session.role === "admin" || hasModuleAction(req, "accessPricing", "view")) return next();
+    return res.status(403).json({ error: "ليس لديك صلاحية الوصول إلى هذه الوحدة." });
+  }
+  return requireModule("accessPricing")(req, res, next);
+}, pricingRouter);
 // قسم البحث والتسعير: مسارات العمل اليومي (استلام الفرصة، البنود، عروض الموردين،
 // الملفات، انتقالات الحالة، ورقة التسعير وكتاب العرض) تمرّ هنا بصلاحية العرض فقط،
 // والمسارات نفسها تتحقق داخليًا من (المستلم || صلاحية إضافة/تعديل بالمصفوفة ||

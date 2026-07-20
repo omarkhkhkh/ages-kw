@@ -13,6 +13,7 @@ import {
 } from "@/lib/pricing-calc";
 import { importPricingItemsFromExcel, exportPricingSheetToExcel } from "@/lib/pricing-excel";
 import { printPricingSheet } from "@/lib/print-pricing-sheet";
+import { useAuth } from "@/contexts/auth";
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -90,6 +91,7 @@ export default function PricingSheetDetail() {
   const sheetId = Number(params.id);
   const [, navigate] = useLocation();
   const qc = useQueryClient();
+  const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [detailed, setDetailed] = useState(() => localStorage.getItem("pricing-table-view") !== "simple");
@@ -134,6 +136,14 @@ export default function PricingSheetDetail() {
   const summary = useMemo(() => settings ? computeSheetSummary(items, settings) : null, [items, settings]);
   const isApproved = sheet?.status === "approved";
 
+  // من يملك التعديل: المدير، أو صاحب صلاحية إضافة/تعديل بالمصفوفة، أو مُنشئ الورقة نفسه
+  const isAdmin = user?.role === "admin";
+  const matrixWrite = !!(user?.permissions?.accessPricing?.add || user?.permissions?.accessPricing?.edit);
+  const isOwner = sheet?.createdByUserId != null && sheet.createdByUserId === user?.id;
+  const canEdit = isAdmin || matrixWrite || isOwner;
+  // القفل الفعلي على التعديل: إمّا الورقة معتمدة، أو المستخدم غير مخوّل للتعديل
+  const locked = isApproved || !canEdit;
+
   if (!sheet || !settings) return <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>جارٍ التحميل...</div>;
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,7 +175,7 @@ export default function PricingSheetDetail() {
             <input
               placeholder="عنوان ورقة التسعير (اختياري)"
               defaultValue={sheet.title ?? ""}
-              disabled={isApproved}
+              disabled={locked}
               onBlur={e => e.target.value !== (sheet.title ?? "") && updateSheetMut.mutate({ title: e.target.value })}
               style={{ border: "none", outline: "none", fontSize: 12.5, color: "#6b7280", background: "transparent", marginTop: 4, width: 320 }}
             />
@@ -173,17 +183,23 @@ export default function PricingSheetDetail() {
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleImport} />
-          <button style={btn} onClick={() => fileInputRef.current?.click()} disabled={isApproved}><Upload size={14} /> استيراد Excel</button>
+          <button style={btn} onClick={() => fileInputRef.current?.click()} disabled={locked}><Upload size={14} /> استيراد Excel</button>
           <button style={btn} onClick={() => exportPricingSheetToExcel(sheet.sheetNumber, items, settings)}><Download size={14} /> تصدير Excel</button>
           <button style={btn} onClick={() => printPricingSheet(sheet.sheetNumber, sheet.title, items, settings)}><Printer size={14} /> طباعة / PDF</button>
-          <button style={btn} onClick={() => duplicateMut.mutate()} disabled={duplicateMut.isPending}><FilePlus2 size={14} /> نسخة جديدة</button>
-          {isApproved ? (
+          <button style={btn} onClick={() => duplicateMut.mutate()} disabled={duplicateMut.isPending || !canEdit}><FilePlus2 size={14} /> نسخة جديدة</button>
+          {canEdit && (isApproved ? (
             <button style={btn} onClick={() => updateSheetMut.mutate({ status: "draft" })}><RotateCcw size={14} /> حفظ كمسودة</button>
           ) : (
             <button style={{ ...btnPrimary }} onClick={() => updateSheetMut.mutate({ status: "approved" })}><CheckCircle2 size={14} /> اعتماد التسعير</button>
-          )}
+          ))}
         </div>
       </div>
+
+      {!canEdit && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 12, background: "#fffbeb", border: "1.5px solid #fbbf24", color: "#92400e", fontSize: 12.5, fontWeight: 700, marginBottom: 16 }}>
+          👁️ عرض فقط — هذه الورقة أنشأها موظف آخر. لتتمكن من التعديل والاعتماد، أنشئ ورقة تسعير خاصة بك أو اطلب من المدير صلاحية التعديل في قسم التسعير.
+        </div>
+      )}
 
       {lowProfitAlert && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", borderRadius: 12, background: "#fff1f2", border: "1.5px solid #fecaca", color: "#dc2626", fontSize: 12.5, fontWeight: 700, marginBottom: 16 }}>
@@ -226,7 +242,7 @@ export default function PricingSheetDetail() {
               <label style={lbl}>وضع التسعير</label>
               <select
                 value={sheet.pricingMode ?? "import"}
-                disabled={isApproved}
+                disabled={locked}
                 style={{ ...inp, cursor: "pointer", borderColor: simpleMode ? "#16a34a" : "#e5e7eb" }}
                 onChange={e => updateSheetMut.mutate({ pricingMode: e.target.value })}
               >
@@ -240,7 +256,7 @@ export default function PricingSheetDetail() {
                 <label style={lbl}>نظام الحاويات</label>
                 <select
                   value={sheet.containerMode ?? "shared"}
-                  disabled={isApproved}
+                  disabled={locked}
                   style={{ ...inp, cursor: "pointer", borderColor: perItemMode ? "#7c3aed" : "#e5e7eb" }}
                   onChange={e => updateSheetMut.mutate({ containerMode: e.target.value })}
                 >
@@ -257,7 +273,7 @@ export default function PricingSheetDetail() {
                 <input
                   type="number" step="any" dir="ltr"
                   defaultValue={String(sheet[f.key] ?? "")}
-                  disabled={isApproved}
+                  disabled={locked}
                   style={inp}
                   onBlur={e => {
                     const v = e.target.value;
@@ -277,35 +293,35 @@ export default function PricingSheetDetail() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
           <div>
             <label style={lbl}>المناقصة</label>
-            <select style={inp} defaultValue={sheet.tenderId ?? ""} disabled={isApproved} onChange={e => updateSheetMut.mutate({ tenderId: e.target.value ? Number(e.target.value) : null })}>
+            <select style={inp} defaultValue={sheet.tenderId ?? ""} disabled={locked} onChange={e => updateSheetMut.mutate({ tenderId: e.target.value ? Number(e.target.value) : null })}>
               <option value="">— بدون —</option>
               {tenders.map((t: any) => <option key={t.id} value={t.id}>{t.tenderNumber}</option>)}
             </select>
           </div>
           <div>
             <label style={lbl}>الممارسة</label>
-            <select style={inp} defaultValue={sheet.practiceId ?? ""} disabled={isApproved} onChange={e => updateSheetMut.mutate({ practiceId: e.target.value ? Number(e.target.value) : null })}>
+            <select style={inp} defaultValue={sheet.practiceId ?? ""} disabled={locked} onChange={e => updateSheetMut.mutate({ practiceId: e.target.value ? Number(e.target.value) : null })}>
               <option value="">— بدون —</option>
               {practices.map((p: any) => <option key={p.id} value={p.id}>{p.practiceNumber}</option>)}
             </select>
           </div>
           <div>
             <label style={lbl}>أمر الشراء</label>
-            <select style={inp} defaultValue={sheet.purchaseOrderId ?? ""} disabled={isApproved} onChange={e => updateSheetMut.mutate({ purchaseOrderId: e.target.value ? Number(e.target.value) : null })}>
+            <select style={inp} defaultValue={sheet.purchaseOrderId ?? ""} disabled={locked} onChange={e => updateSheetMut.mutate({ purchaseOrderId: e.target.value ? Number(e.target.value) : null })}>
               <option value="">— بدون —</option>
               {purchaseOrders.map((p: any) => <option key={p.id} value={p.id}>{p.orderNumber}</option>)}
             </select>
           </div>
           <div>
             <label style={lbl}>المورد</label>
-            <select style={inp} defaultValue={sheet.supplierId ?? ""} disabled={isApproved} onChange={e => updateSheetMut.mutate({ supplierId: e.target.value ? Number(e.target.value) : null })}>
+            <select style={inp} defaultValue={sheet.supplierId ?? ""} disabled={locked} onChange={e => updateSheetMut.mutate({ supplierId: e.target.value ? Number(e.target.value) : null })}>
               <option value="">— بدون —</option>
               {suppliers.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div>
             <label style={lbl}>العقد</label>
-            <select style={inp} defaultValue={sheet.contractId ?? ""} disabled={isApproved} onChange={e => updateSheetMut.mutate({ contractId: e.target.value ? Number(e.target.value) : null })}>
+            <select style={inp} defaultValue={sheet.contractId ?? ""} disabled={locked} onChange={e => updateSheetMut.mutate({ contractId: e.target.value ? Number(e.target.value) : null })}>
               <option value="">— بدون —</option>
               {contracts.map((c: any) => <option key={c.id} value={c.id}>{c.contractNumber}</option>)}
             </select>
@@ -397,13 +413,13 @@ export default function PricingSheetDetail() {
                   {detailed ? <LayoutList size={14} /> : <Table2 size={14} />} {detailed ? "عرض مبسّط" : "عرض مفصّل"}
                 </button>
                 {simpleMode && computed.length > 0 && (
-                  <button style={{ ...btn, borderColor: "#86efac", color: "#15803d", background: "#f0fdf4" }} disabled={isApproved}
+                  <button style={{ ...btn, borderColor: "#86efac", color: "#15803d", background: "#f0fdf4" }} disabled={locked}
                     title="اعتماد السعر المقترح (التكلفة × نسبة الربح) كسعر بيع لكل البنود"
                     onClick={() => computed.forEach(({ item, c }: any) => updateItemMut.mutate({ id: item.id, d: { sellPriceUnit: c.suggestedSellUnit.toFixed(3) } }))}>
                     ✓ اعتماد الأسعار المقترحة للكل
                   </button>
                 )}
-                <button style={btnPrimary} onClick={() => addItemMut.mutate()} disabled={isApproved}><Plus size={14} /> إضافة صنف</button>
+                <button style={btnPrimary} onClick={() => addItemMut.mutate()} disabled={locked}><Plus size={14} /> إضافة صنف</button>
               </div>
             </div>
             <div style={{ overflow: "auto", maxHeight: "62vh" }}>
@@ -455,29 +471,29 @@ export default function PricingSheetDetail() {
                         >
                           <td style={{ padding: "6px", textAlign: "center", background: "inherit" }} title={PROFIT_TIER_LABEL[tier]}>{PROFIT_TIER_ICON[tier]}</td>
                           <td style={{ padding: "6px 8px", color: "#b7ac8a", fontWeight: 700, fontFamily: "monospace", background: "inherit" }}>{idx + 1}</td>
-                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemNumber ?? ""} disabled={isApproved} width={70} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemNumber: v } })} /></td>
-                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemName ?? ""} disabled={isApproved} width={170} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemName: v } })} /></td>
-                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.quantity ?? "0")} disabled={isApproved} width={65} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { quantity: v } })} /></td>
-                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.unitCostUsd ?? "0")} disabled={isApproved} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { unitCostUsd: v } })} /></td>
+                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemNumber ?? ""} disabled={locked} width={70} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemNumber: v } })} /></td>
+                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemName ?? ""} disabled={locked} width={170} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemName: v } })} /></td>
+                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.quantity ?? "0")} disabled={locked} width={65} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { quantity: v } })} /></td>
+                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.unitCostUsd ?? "0")} disabled={locked} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { unitCostUsd: v } })} /></td>
                           {detailed && <td style={ro}>{fmt(c.unloadingCostPerUnitKwd)}</td>}
                           <td style={{ ...ro, fontWeight: 700, color: "#6d28d9" }}>{fmt(c.finalUnitCost)}</td>
                           <td style={{ ...ro, fontWeight: 700, color: "#6d28d9" }}>{fmt(c.totalItemCostKwd)}</td>
                           <td style={{ padding: "6px 8px", background: "inherit", whiteSpace: "nowrap" }}>
                             <button
                               title="اعتماد السعر المقترح كسعر بيع لهذا البند"
-                              disabled={isApproved}
+                              disabled={locked}
                               onClick={() => updateItemMut.mutate({ id: item.id, d: { sellPriceUnit: c.suggestedSellUnit.toFixed(3) } })}
                               style={{ padding: "3px 10px", borderRadius: 8, border: "1.5px dashed #86efac", background: "#f0fdf4", color: "#15803d", fontWeight: 800, fontSize: 11, cursor: "pointer", fontFamily: "monospace", direction: "ltr" }}
                             >{fmt(c.suggestedSellUnit)}</button>
                           </td>
-                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.sellPriceUnit ?? "0")} disabled={isApproved} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { sellPriceUnit: v } })} /></td>
+                          <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.sellPriceUnit ?? "0")} disabled={locked} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { sellPriceUnit: v } })} /></td>
                           <td style={ro}>{fmt(c.totalSales)}</td>
                           <td style={{ ...ro, fontWeight: 800, color: c.totalProfit >= 0 ? "#16a34a" : "#dc2626" }}>{fmt(c.totalProfit)}</td>
                           <td style={{ padding: "6px 8px", background: "inherit", whiteSpace: "nowrap" }}>{pill(c.profitPercent, tier)}</td>
                           <td style={{ padding: "6px", background: "inherit" }} onClick={ev => ev.stopPropagation()}>
                             <div style={{ display: "flex", gap: 4 }}>
-                              <button title="نسخ الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={isApproved} onClick={() => duplicateItemMut.mutate(item.id)}><Copy size={13} color={GD} /></button>
-                              <button title="حذف الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={isApproved} onClick={() => { if (confirm("حذف الصنف؟")) deleteItemMut.mutate(item.id); }}><Trash2 size={13} color="#dc2626" /></button>
+                              <button title="نسخ الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={locked} onClick={() => duplicateItemMut.mutate(item.id)}><Copy size={13} color={GD} /></button>
+                              <button title="حذف الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={locked} onClick={() => { if (confirm("حذف الصنف؟")) deleteItemMut.mutate(item.id); }}><Trash2 size={13} color="#dc2626" /></button>
                             </div>
                           </td>
                         </tr>
@@ -491,11 +507,11 @@ export default function PricingSheetDetail() {
                       >
                         <td style={{ padding: "6px", textAlign: "center", background: "inherit" }} title={PROFIT_TIER_LABEL[tier]}>{PROFIT_TIER_ICON[tier]}</td>
                         <td style={{ padding: "6px 8px", color: "#b7ac8a", fontWeight: 700, fontFamily: "monospace", background: "inherit" }}>{idx + 1}</td>
-                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemNumber ?? ""} disabled={isApproved} width={70} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemNumber: v } })} /></td>
-                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemName ?? ""} disabled={isApproved} width={150} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemName: v } })} /></td>
-                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.quantity ?? "0")} disabled={isApproved} width={65} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { quantity: v } })} /></td>
-                        {perItemMode && <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String((item as any).containers ?? "0")} disabled={isApproved} width={60} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { containers: v } })} /></td>}
-                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.unitCostUsd ?? "0")} disabled={isApproved} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { unitCostUsd: v } })} /></td>
+                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemNumber ?? ""} disabled={locked} width={70} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemNumber: v } })} /></td>
+                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={item.itemName ?? ""} disabled={locked} width={150} onCommit={v => updateItemMut.mutate({ id: item.id, d: { itemName: v } })} /></td>
+                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.quantity ?? "0")} disabled={locked} width={65} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { quantity: v } })} /></td>
+                        {perItemMode && <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String((item as any).containers ?? "0")} disabled={locked} width={60} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { containers: v } })} /></td>}
+                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.unitCostUsd ?? "0")} disabled={locked} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { unitCostUsd: v } })} /></td>
                         {detailed && <td style={ro}>{fmt(c.shippingPerUnitUsd)}</td>}
                         {detailed && <td style={ro}>{fmt(c.clearancePerUnitUsd)}</td>}
                         {detailed && <td style={ro}>{fmt(c.customsValueUsd)}</td>}
@@ -507,14 +523,14 @@ export default function PricingSheetDetail() {
                         {detailed && <td style={ro}>{fmt(c.bankFeesPerUnitKwd)}</td>}
                         <td style={{ ...ro, fontWeight: 700, color: "#6d28d9" }}>{fmt(c.finalUnitCost)}</td>
                         <td style={{ ...ro, fontWeight: 700, color: "#6d28d9" }}>{fmt(c.totalItemCostKwd)}</td>
-                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.sellPriceUnit ?? "0")} disabled={isApproved} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { sellPriceUnit: v } })} /></td>
+                        <td style={{ padding: "6px", background: "inherit" }}><EditableCell value={String(item.sellPriceUnit ?? "0")} disabled={locked} width={85} mono onCommit={v => updateItemMut.mutate({ id: item.id, d: { sellPriceUnit: v } })} /></td>
                         <td style={ro}>{fmt(c.totalSales)}</td>
                         <td style={{ ...ro, fontWeight: 800, color: c.totalProfit >= 0 ? "#16a34a" : "#dc2626" }}>{fmt(c.totalProfit)}</td>
                         <td style={{ padding: "6px 8px", background: "inherit", whiteSpace: "nowrap" }}>{pill(c.profitPercent, tier)}</td>
                         <td style={{ padding: "6px", background: "inherit" }} onClick={ev => ev.stopPropagation()}>
                           <div style={{ display: "flex", gap: 4 }}>
-                            <button title="نسخ الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={isApproved} onClick={() => duplicateItemMut.mutate(item.id)}><Copy size={13} color={GD} /></button>
-                            <button title="حذف الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={isApproved} onClick={() => { if (confirm("حذف الصنف؟")) deleteItemMut.mutate(item.id); }}><Trash2 size={13} color="#dc2626" /></button>
+                            <button title="نسخ الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={locked} onClick={() => duplicateItemMut.mutate(item.id)}><Copy size={13} color={GD} /></button>
+                            <button title="حذف الصنف" style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }} disabled={locked} onClick={() => { if (confirm("حذف الصنف؟")) deleteItemMut.mutate(item.id); }}><Trash2 size={13} color="#dc2626" /></button>
                           </div>
                         </td>
                       </tr>

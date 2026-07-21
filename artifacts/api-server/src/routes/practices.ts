@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
-import { desc, ilike, eq, or, sql, and } from "drizzle-orm";
-import { db, practicesTable, insertPracticeSchema, updatePracticeSchema } from "@workspace/db";
+import { desc, ilike, eq, or, sql, and, getTableColumns } from "drizzle-orm";
+import { db, practicesTable, insertPracticeSchema, updatePracticeSchema, usersTable } from "@workspace/db";
 import { ownRecordsOnly } from "../middleware/auth";
 
 const router = Router();
@@ -11,9 +11,9 @@ router.get("/", async (req: Request, res: Response) => {
     const { status, search } = req.query as Record<string, string>;
 
     const conditions: any[] = [];
-    // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
+    // خصوصية السجلات: الموظف بنطاق 'own' يرى ما هو مُسنَد إليه فقط (وغير المُسنَد للمدير فقط)
     if (ownRecordsOnly(req)) {
-      conditions.push(sql`(${practicesTable.createdByUserId} IS NULL OR ${practicesTable.createdByUserId} = ${req.session.userId})`);
+      conditions.push(sql`${practicesTable.assignedUserId} = ${req.session.userId}`);
     }
     if (status && status !== "all") conditions.push(eq(practicesTable.status, status));
     if (search) conditions.push(or(
@@ -23,7 +23,10 @@ router.get("/", async (req: Request, res: Response) => {
       ilike(practicesTable.description,    `%${search}%`),
     ));
 
-    let query = db.select().from(practicesTable).$dynamic();
+    let query = db.select({ ...getTableColumns(practicesTable), assignedName: usersTable.fullName })
+      .from(practicesTable)
+      .leftJoin(usersTable, eq(practicesTable.assignedUserId, usersTable.id))
+      .$dynamic();
     if (conditions.length > 0) query = query.where(and(...conditions));
 
     const rows = await query.orderBy(desc(practicesTable.createdAt));
@@ -37,7 +40,7 @@ router.get("/", async (req: Request, res: Response) => {
 router.get("/stats", async (req: Request, res: Response) => {
   try {
     const privacy = ownRecordsOnly(req)
-      ? sql`(created_by_user_id IS NULL OR created_by_user_id = ${req.session.userId})`
+      ? sql`assigned_user_id = ${req.session.userId}`
       : sql`true`;
     // قائمة ثابتة من الكود — تُدرج حرفيًا (تمرير مصفوفة عبر قالب sql`` يكسر ANY)
     const activeStatusesList = sql.raw(
@@ -86,7 +89,11 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertPracticeSchema.parse(req.body);
-    const [row] = await db.insert(practicesTable).values({ ...data, createdByUserId: req.session.userId ?? null }).returning();
+    // المُنشئ يصبح المسؤول افتراضيًا (إلا إذا حدّد المدير مسؤولًا في النموذج)؛ المدير وحده يعيد التعيين لاحقًا
+    const assignedUserId = req.session.role === "admin" && data.assignedUserId != null
+      ? Number(data.assignedUserId)
+      : (req.session.userId ?? null);
+    const [row] = await db.insert(practicesTable).values({ ...data, assignedUserId, createdByUserId: req.session.userId ?? null }).returning();
     return res.status(201).json(row);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
@@ -128,7 +135,9 @@ router.patch("/:id", async (req: Request, res: Response) => {
       }
     }
 
-    const data = updatePracticeSchema.parse(req.body);
+    const data = updatePracticeSchema.parse(req.body) as Record<string, any>;
+    // إعادة تعيين الموظف المسؤول للمدير فقط
+    if (!isAdmin) delete data.assignedUserId;
     const [row] = await db.update(practicesTable)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(practicesTable.id, id))

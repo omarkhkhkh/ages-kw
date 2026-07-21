@@ -165,10 +165,12 @@ const MIGRATIONS = [
   `ALTER TABLE government_registrations ADD COLUMN IF NOT EXISTS assigned_user_id integer REFERENCES users(id) ON DELETE SET NULL`,
   `ALTER TABLE bank_guarantees ADD COLUMN IF NOT EXISTS assigned_user_id integer REFERENCES users(id) ON DELETE SET NULL`,
   `ALTER TABLE company_documents ADD COLUMN IF NOT EXISTS assigned_user_id integer REFERENCES users(id) ON DELETE SET NULL`,
+  `ALTER TABLE practices ADD COLUMN IF NOT EXISTS assigned_user_id integer REFERENCES users(id) ON DELETE SET NULL`,
   // مرة واحدة: الوحدات التي كانت تُخصّص بالمنشئ تبقى مرئية لمنشئيها (نُسند المسؤول = المنشئ حيث لم يُسنَد بعد)
   `UPDATE projects SET assigned_user_id = created_by_user_id WHERE assigned_user_id IS NULL AND created_by_user_id IS NOT NULL`,
   `UPDATE contracts SET assigned_user_id = created_by_user_id WHERE assigned_user_id IS NULL AND created_by_user_id IS NOT NULL`,
   `UPDATE direct_purchase_orders SET assigned_user_id = created_by_user_id WHERE assigned_user_id IS NULL AND created_by_user_id IS NOT NULL`,
+  `UPDATE practices SET assigned_user_id = created_by_user_id WHERE assigned_user_id IS NULL AND created_by_user_id IS NOT NULL`,
   `UPDATE practices SET status = 'won' WHERE status IN ('current', 'previous', 'completed')`,
   `UPDATE practices SET status = 'studying' WHERE status = 'targeted'`,
   `UPDATE practices SET status = 'under_evaluation' WHERE status = 'under_submission'`,

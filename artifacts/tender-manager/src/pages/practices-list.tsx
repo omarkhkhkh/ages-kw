@@ -11,6 +11,7 @@ import { STATUS_ARABIC } from "@/lib/constants";
 import { exportToExcel } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 import EntityDirectoryPicker from "@/components/entity-directory-picker";
+import { AssignedEmployee } from "@/components/assigned-employee";
 import { companiesApi } from "@/lib/api";
 
 /* ─── colours ─── */
@@ -113,6 +114,16 @@ export default function PracticesList() {
       qc.invalidateQueries({ queryKey: ["practices"] });
       qc.invalidateQueries({ queryKey: ["practices-stats"] });
       toast({ title: "تم حذف الممارسة" });
+    },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
+  const reassignM = useMutation({
+    mutationFn: ({ id, assignedUserId }: { id: number; assignedUserId: number | null }) =>
+      apiFetch(`/api/practices/${id}`, { method: "PATCH", body: JSON.stringify({ assignedUserId }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["practices"] });
+      qc.invalidateQueries({ queryKey: ["practices-stats"] });
+      toast({ title: "✅ تم تحديث الموظف المسؤول" });
     },
     onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
@@ -263,7 +274,7 @@ export default function PracticesList() {
                   <th style={S.th}>آخر موعد</th>
                   <th style={S.th}>قيمة العرض</th>
                   <th style={S.th}>الحالة</th>
-                  <th style={S.th}>المسؤول</th>
+                  <th style={S.th}>الموظف المسؤول</th>
                   {isAdmin && <th style={S.th}></th>}
                 </tr>
               </thead>
@@ -295,7 +306,10 @@ export default function PracticesList() {
                           {STATUS_ARABIC[p.status] ?? p.status}
                         </span>
                       </td>
-                      <td style={{ ...S.td, color: "#64748b", whiteSpace: "nowrap" }}>{p.responsibleEmployee || "—"}</td>
+                      <td style={S.td} onClick={(e) => e.stopPropagation()}>
+                        <AssignedEmployee value={p.assignedUserId} displayName={p.assignedName ?? p.responsibleEmployee} compact
+                          onReassign={(uid) => reassignM.mutate({ id: p.id, assignedUserId: uid })} />
+                      </td>
                       {isAdmin && (
                         <td style={{ ...S.td, width: 44 }}>
                           <button onClick={(e) => { e.stopPropagation(); if (confirm("حذف هذه الممارسة؟")) deleteM.mutate(p.id); }}

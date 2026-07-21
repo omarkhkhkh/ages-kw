@@ -42,6 +42,7 @@ export const practicesTable = pgTable("practices", {
   offerValue:           numeric("offer_value", { precision: 15, scale: 3 }), // قيمة العرض المقدَّم
   isSubmitted:          boolean("is_submitted").notNull().default(false),    // تم التقديم فعليًا
   winner:               text("winner"),             // اسم الفائز عند الحسم
+  assignedUserId:      integer("assigned_user_id").references(() => usersTable.id, { onDelete: "set null" }), // الموظف المسؤول (يُسنده المدير) — يقود الخصوصية
   createdByUserId:      integer("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }), // منشئ السجل — لخصوصية العرض
   createdAt:            timestamp("created_at").notNull().defaultNow(),
   updatedAt:            timestamp("updated_at").notNull().defaultNow(),

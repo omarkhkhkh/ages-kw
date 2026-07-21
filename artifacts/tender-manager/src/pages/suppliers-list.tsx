@@ -161,10 +161,16 @@ export default function SuppliersList() {
   const { data: dbTypes = [] } = useQuery({ queryKey: ["supplier-types"], queryFn: () => suppliersApi.types.list() });
 
   const [newTypeName, setNewTypeName] = useState("");
+  const [showTypeManager, setShowTypeManager] = useState(false);
   const typeNames = (dbTypes as { name: string }[]).length ? (dbTypes as { name: string }[]).map(t => t.name) : FALLBACK_TYPES;
   const addTypeM = useMutation({
     mutationFn: (name: string) => suppliersApi.types.create(name),
     onSuccess: (row: any) => { qc.invalidateQueries({ queryKey: ["supplier-types"] }); setForm(p => ({ ...p, type: row.name })); setNewTypeName(""); toast({ title: "✅ تم إضافة التصنيف" }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
+  const delTypeM = useMutation({
+    mutationFn: (id: number) => suppliersApi.types.delete(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["supplier-types"] }); toast({ title: "🗑 تم حذف التصنيف" }); },
     onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
@@ -368,7 +374,15 @@ export default function SuppliersList() {
                     <input style={S.input} value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="اسم الشركة أو المورد" required />
                   </div>
                   <div>
-                    <label style={S.label}>النوع / التصنيف</label>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <label style={S.label}>النوع / التصنيف</label>
+                      {isAdmin && (
+                        <button type="button" onClick={() => setShowTypeManager(v => !v)}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: GD, fontSize: 11, fontWeight: 700, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 3, padding: 0 }}>
+                          <Trash2 size={12} /> إدارة التصنيفات
+                        </button>
+                      )}
+                    </div>
                     <select style={S.select} value={form.type === ADD_NEW ? ADD_NEW : form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}>
                       <option value="">اختر النوع</option>
                       {typeNames.map(t => <option key={t} value={t}>{t}</option>)}
@@ -391,6 +405,30 @@ export default function SuppliersList() {
                           style={{ ...S.saveBtn, padding: "0 16px", whiteSpace: "nowrap" as const }}>
                           <Plus size={14} /> إضافة
                         </button>
+                      </div>
+                    )}
+                    {isAdmin && showTypeManager && (
+                      <div style={{ marginTop: 8, border: "1.5px solid #f0ead8", borderRadius: 10, padding: 10, background: "#fdfcf8" }}>
+                        <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, marginBottom: 6 }}>
+                          حذف تصنيف (لا يؤثّر على الموردين المسجّلين به مسبقًا)
+                        </div>
+                        {(dbTypes as { id: number; name: string }[]).length === 0 ? (
+                          <div style={{ fontSize: 12, color: "#9ca3af" }}>لا توجد تصنيفات مضافة</div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            {(dbTypes as { id: number; name: string }[]).map(t => (
+                              <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 8px", background: "white", border: "1px solid #eee7d3", borderRadius: 7 }}>
+                                <span style={{ fontSize: 13, color: "#374151", fontWeight: 600 }}>{t.name}</span>
+                                <button type="button" disabled={delTypeM.isPending}
+                                  onClick={() => { if (confirm(`حذف التصنيف "${t.name}"؟`)) delTypeM.mutate(t.id); }}
+                                  title="حذف"
+                                  style={{ background: "#fff1f2", border: "1px solid #fecaca", borderRadius: 6, padding: 4, cursor: "pointer", display: "flex", alignItems: "center" }}>
+                                  <Trash2 size={13} color="#dc2626" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

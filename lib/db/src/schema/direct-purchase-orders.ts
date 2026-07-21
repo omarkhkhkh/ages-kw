@@ -13,6 +13,7 @@ import { departmentsTable, governmentContactsTable } from "./entity-directory";
 
 export const directPurchaseOrdersTable = pgTable("direct_purchase_orders", {
   id: serial("id").primaryKey(),
+  assignedUserId: integer("assigned_user_id"), // الموظف المسؤول (يُسنده المدير) — يقود الخصوصية
   orderNumber: text("order_number").notNull(),
   supplierId: integer("supplier_id").references(() => suppliersTable.id, { onDelete: "set null" }),
   companyId: integer("company_id").references(() => companiesTable.id, { onDelete: "set null" }), // الشركة المشاركة

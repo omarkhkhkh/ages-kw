@@ -6,6 +6,7 @@ import { companiesTable } from "./company-documents";
 
 export const bankGuaranteesTable = pgTable("bank_guarantees", {
   id: serial("id").primaryKey(),
+  assignedUserId: integer("assigned_user_id"), // الموظف المسؤول (يُسنده المدير) — يقود الخصوصية
   tenderId: integer("tender_id").references(() => tendersTable.id, { onDelete: "set null" }),
   companyId: integer("company_id").references(() => companiesTable.id, { onDelete: "set null" }), // الشركة المشاركة
   guaranteeNumber: text("guarantee_number"),

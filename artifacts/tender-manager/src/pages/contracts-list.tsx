@@ -18,6 +18,7 @@ import { useListTenders } from "@workspace/api-client-react";
 import EntityDirectoryPicker from "@/components/entity-directory-picker";
 import LinkedPricingSheets from "@/components/linked-pricing-sheets";
 import LinkedTasks from "@/components/linked-tasks";
+import { AssignedEmployee } from "@/components/assigned-employee";
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -1017,6 +1018,7 @@ export default function ContractsList() {
                   { label: "تاريخ التوقيع",  icon: CalendarDays  },
                   { label: "تاريخ الانتهاء", icon: CalendarDays  },
                   { label: "الحالة",          icon: null          },
+                  { label: "الموظف المسؤول",  icon: null          },
                   { label: "الكفالة النهائية", icon: Landmark      },
                   { label: "إجراءات",         icon: null          },
                 ].map((h, i) => (
@@ -1033,12 +1035,12 @@ export default function ContractsList() {
               {isLoading ? (
                 [...Array(3)].map((_, i) => (
                   <tr key={i} style={{ borderBottom: "1px solid #f5f0e6" }}>
-                    {[...Array(9)].map((_, j) => <td key={j} style={{ padding: 16 }}><div style={{ height: 14, background: "#f1f5f9", borderRadius: 6, width: 80, animation: "pulse 1.5s infinite" }} /></td>)}
+                    {[...Array(10)].map((_, j) => <td key={j} style={{ padding: 16 }}><div style={{ height: 14, background: "#f1f5f9", borderRadius: 6, width: 80, animation: "pulse 1.5s infinite" }} /></td>)}
                   </tr>
                 ))
               ) : !(contracts as any[]).length ? (
                 <tr>
-                  <td colSpan={9} style={{ padding: "64px 0", textAlign: "center" }}>
+                  <td colSpan={10} style={{ padding: "64px 0", textAlign: "center" }}>
                     <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
                       <div style={{ width: 72, height: 72, borderRadius: 20, background: "#fdf8ec", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <FileSignature size={30} color="#e2d5b0" />
@@ -1075,6 +1077,10 @@ export default function ContractsList() {
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.color, border: `1px solid ${st.color}22` }}>
                           <st.icon size={11} />{st.label}
                         </span>
+                      </td>
+                      <td style={{ padding: "14px 16px" }} onClick={e => e.stopPropagation()}>
+                        <AssignedEmployee value={c.assignedUserId} displayName={c.assignedName} compact
+                          onReassign={(uid) => updateM.mutate({ id: c.id, data: { assignedUserId: uid } })} />
                       </td>
                       <td style={{ padding: "14px 16px" }}>
                         {(() => {

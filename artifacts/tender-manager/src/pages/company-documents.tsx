@@ -11,6 +11,7 @@ import FileUpload, { objectPathToUrl } from "@/components/file-upload";
 import { useUpload } from "@workspace/object-storage-web";
 import { useToast } from "@/hooks/use-toast";
 import { CompanyChips } from "@/components/company-switcher";
+import { AssignedEmployee } from "@/components/assigned-employee";
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -167,6 +168,12 @@ export default function CompanyDocuments() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["company-docs"] }); qc.invalidateQueries({ queryKey: ["company-docs-stats"] }); qc.invalidateQueries({ queryKey: ["companies-list"] }); },
   });
 
+  const reassign = useMutation({
+    mutationFn: ({ id, assignedUserId }: { id: number; assignedUserId: number | null }) =>
+      apiFetch(`/api/company-documents/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assignedUserId }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["company-docs"] }),
+  });
+
   const openAdd  = () => { setEditId(null); setForm({ ...emptyForm }); setCustomName(false); setShowForm(true); };
   const openEdit = (d: any) => {
     setEditId(d.id);
@@ -289,16 +296,16 @@ export default function CompanyDocuments() {
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 800 }}>
             <thead>
               <tr style={{ background: "#f9fafb", borderBottom: "2px solid #e5e7eb" }}>
-                {["الوثيقة", "رقم الوثيقة", "الجهة المصدرة", "تاريخ الإصدار", "تاريخ الانتهاء", "الحالة", "الأيام المتبقية", "المسؤول", ""].map((h, i) => (
+                {["الوثيقة", "رقم الوثيقة", "الجهة المصدرة", "تاريخ الإصدار", "تاريخ الانتهاء", "الحالة", "الأيام المتبقية", "المسؤول", "الموظف المسؤول", ""].map((h, i) => (
                   <th key={i} style={{ ...S.td, fontWeight: 800, fontSize: 12, color: "#374151", borderBottom: "none", background: "transparent", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={9} style={{ ...S.td, textAlign: "center", color: "#9ca3af", padding: 40 }}>جاري التحميل...</td></tr>
+                <tr><td colSpan={10} style={{ ...S.td, textAlign: "center", color: "#9ca3af", padding: 40 }}>جاري التحميل...</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={9} style={{ ...S.td, textAlign: "center", color: "#9ca3af", padding: 48 }}>
+                <tr><td colSpan={10} style={{ ...S.td, textAlign: "center", color: "#9ca3af", padding: 48 }}>
                   <FileCheck size={36} style={{ margin: "0 auto 8px", display: "block", opacity: 0.3 }} />
                   لا توجد وثائق
                 </td></tr>
@@ -332,6 +339,10 @@ export default function CompanyDocuments() {
                           <User size={12} color="#9ca3af" /> {d.responsibleEmployee}
                         </div>
                       ) : "—"}
+                    </td>
+                    <td style={{ ...S.td }}>
+                      <AssignedEmployee value={d.assignedUserId} displayName={d.assignedName} compact
+                        onReassign={(uid) => reassign.mutate({ id: d.id, assignedUserId: uid })} />
                     </td>
                     <td style={{ ...S.td, whiteSpace: "nowrap" }} >
                       <div style={{ display: "flex", gap: 5, alignItems: "center" }}>

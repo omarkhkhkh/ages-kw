@@ -10,6 +10,7 @@ export const rfqRequestsTable = pgTable("rfq_requests", {
   id: serial("id").primaryKey(),
   tenderId: integer("tender_id").references(() => tendersTable.id, { onDelete: "cascade" }),
   contractId: integer("contract_id").references(() => contractsTable.id, { onDelete: "set null" }), // العقد المرتبط (بدل المناقصة)
+  assignedUserId: integer("assigned_user_id"), // الموظف المسؤول (يُسنده المدير) — يقود الخصوصية
   supplierId: integer("supplier_id").references(() => suppliersTable.id, { onDelete: "set null" }),
   companyId: integer("company_id").references(() => companiesTable.id, { onDelete: "set null" }), // الشركة المشاركة
   rfqNumber: text("rfq_number"),

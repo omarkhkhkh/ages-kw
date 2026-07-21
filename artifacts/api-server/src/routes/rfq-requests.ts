@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
-import { eq } from "drizzle-orm";
-import { db, rfqRequestsTable, insertRfqRequestSchema, updateRfqRequestSchema, suppliersTable, companiesTable, contractsTable } from "@workspace/db";
+import { eq, and, sql } from "drizzle-orm";
+import { ownRecordsOnly } from "../middleware/auth";
+import { db, rfqRequestsTable, insertRfqRequestSchema, updateRfqRequestSchema, suppliersTable, companiesTable, contractsTable, usersTable } from "@workspace/db";
 
 const router = Router();
 
@@ -14,6 +15,8 @@ router.get("/", async (req: Request, res: Response) => {
         contractId: rfqRequestsTable.contractId,
         supplierId: rfqRequestsTable.supplierId,
         companyId: rfqRequestsTable.companyId,
+        assignedUserId: rfqRequestsTable.assignedUserId,
+        assignedName: usersTable.fullName,
         rfqNumber: rfqRequestsTable.rfqNumber,
         itemDescription: rfqRequestsTable.itemDescription,
         requestDate: rfqRequestsTable.requestDate,
@@ -30,10 +33,18 @@ router.get("/", async (req: Request, res: Response) => {
       .from(rfqRequestsTable)
       .leftJoin(suppliersTable, eq(rfqRequestsTable.supplierId, suppliersTable.id))
       .leftJoin(companiesTable, eq(rfqRequestsTable.companyId, companiesTable.id))
-      .leftJoin(contractsTable, eq(rfqRequestsTable.contractId, contractsTable.id));
+      .leftJoin(contractsTable, eq(rfqRequestsTable.contractId, contractsTable.id))
+      .leftJoin(usersTable, eq(rfqRequestsTable.assignedUserId, usersTable.id));
 
-    const results = tenderId
-      ? await base.where(eq(rfqRequestsTable.tenderId, tenderId))
+    const conditions: any[] = [];
+    // خصوصية السجلات: الموظف بنطاق 'own' يرى ما هو مُسنَد إليه فقط (وغير المُسنَد للمدير فقط)
+    if (ownRecordsOnly(req)) {
+      conditions.push(sql`${rfqRequestsTable.assignedUserId} = ${req.session.userId}`);
+    }
+    if (tenderId) conditions.push(eq(rfqRequestsTable.tenderId, tenderId));
+
+    const results = conditions.length
+      ? await base.where(and(...conditions))
       : await base;
     return res.json(results);
   } catch {
@@ -55,7 +66,8 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertRfqRequestSchema.parse(req.body);
-    const [rfq] = await db.insert(rfqRequestsTable).values(data).returning();
+    // المُنشئ يصبح المسؤول افتراضيًا؛ المدير وحده يعيد التعيين لاحقًا
+    const [rfq] = await db.insert(rfqRequestsTable).values({ ...data, assignedUserId: req.session.userId ?? null }).returning();
     return res.status(201).json(rfq);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
@@ -66,7 +78,9 @@ router.post("/", async (req: Request, res: Response) => {
 router.patch("/:id", async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const data = updateRfqRequestSchema.parse(req.body);
+    const data = updateRfqRequestSchema.parse(req.body) as Record<string, any>;
+    // إعادة تعيين الموظف المسؤول للمدير فقط
+    if (req.session.role !== "admin") delete data.assignedUserId;
     const [rfq] = await db
       .update(rfqRequestsTable)
       .set({ ...data, updatedAt: new Date() })

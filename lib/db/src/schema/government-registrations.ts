@@ -7,6 +7,7 @@ export const governmentRegistrationsTable = pgTable("government_registrations", 
   id:                  serial("id").primaryKey(),
   companyId:           integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }),
   entityName:          text("entity_name").notNull(),
+  assignedUserId:      integer("assigned_user_id"), // الموظف المسؤول (يُسنده المدير) — يقود الخصوصية
   registrationNumber:  text("registration_number"),
   supplierNumber:      text("supplier_number"),
   fileNumber:          text("file_number"),

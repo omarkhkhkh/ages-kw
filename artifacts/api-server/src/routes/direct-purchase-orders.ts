@@ -29,6 +29,7 @@ const PO_COLUMNS = `
   po.project_id AS "projectId", po.tender_id AS "tenderId", po.practice_id AS "practiceId",
   po.description, po.amount, po.order_date AS "orderDate", po.delivery_date AS "deliveryDate",
   po.status, po.priority, po.assigned_to_user_id AS "assignedToUserId",
+  po.assigned_user_id AS "assignedUserId", asg.full_name AS "assignedName",
   po.follow_up_manager_id AS "followUpManagerId", po.execution_stage AS "executionStage",
   po.po_file_url AS "poFileUrl", po.notes, po.created_at AS "createdAt", po.updated_at AS "updatedAt"
 `;
@@ -50,7 +51,7 @@ router.get("/", async (req: Request, res: Response) => {
     // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
     if (ownRecordsOnly(req)) {
       params.push(req.session.userId);
-      conditions.push(`(po.created_by_user_id IS NULL OR po.created_by_user_id = $${params.length})`);
+      conditions.push(`po.assigned_user_id = $${params.length}`);
     }
     if (status) { params.push(status); conditions.push(`po.status = $${params.length}`); }
     if (contractId) { params.push(Number(contractId)); conditions.push(`po.contract_id = $${params.length}`); }
@@ -71,6 +72,7 @@ router.get("/", async (req: Request, res: Response) => {
        LEFT JOIN practices pr ON pr.id = po.practice_id
        LEFT JOIN users au ON au.id = po.assigned_to_user_id
        LEFT JOIN users fu ON fu.id = po.follow_up_manager_id
+       LEFT JOIN users asg ON asg.id = po.assigned_user_id
        LEFT JOIN companies co ON co.id = po.company_id
        LEFT JOIN departments dep ON dep.id = po.department_id
        LEFT JOIN government_contacts gc ON gc.id = po.contact_id
@@ -141,6 +143,7 @@ router.get("/:id", async (req: Request, res: Response) => {
        LEFT JOIN practices pr ON pr.id = po.practice_id
        LEFT JOIN users au ON au.id = po.assigned_to_user_id
        LEFT JOIN users fu ON fu.id = po.follow_up_manager_id
+       LEFT JOIN users asg ON asg.id = po.assigned_user_id
        LEFT JOIN companies co ON co.id = po.company_id
        LEFT JOIN departments dep ON dep.id = po.department_id
        LEFT JOIN government_contacts gc ON gc.id = po.contact_id
@@ -164,7 +167,7 @@ router.post("/", async (req: Request, res: Response) => {
     for (const f of ["orderDate", "deliveryDate", "amount"]) {
       if (data[f] === "") data[f] = null;
     }
-    const [order] = await db.insert(directPurchaseOrdersTable).values({ ...data, createdByUserId: req.session.userId ?? null } as any).returning();
+    const [order] = await db.insert(directPurchaseOrdersTable).values({ ...data, createdByUserId: req.session.userId ?? null, assignedUserId: req.session.userId ?? null } as any).returning();
     return res.status(201).json(order);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
@@ -182,6 +185,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
     // عمود numeric يتوقع نصًا في Zod — بعض النماذج ترسل رقمًا
     if (typeof req.body?.amount === "number") req.body.amount = String(req.body.amount);
     const data = updateDirectPurchaseOrderSchema.parse(req.body) as Record<string, any>;
+    if (req.session.role !== "admin") delete data.assignedUserId; // إعادة التعيين للمدير فقط
     if (data.executionStage !== undefined && !EXECUTION_STAGES.includes(data.executionStage)) {
       return res.status(400).json({ error: "مرحلة تنفيذ غير صالحة" });
     }

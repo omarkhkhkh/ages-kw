@@ -10,6 +10,7 @@ import { useListTenders } from "@workspace/api-client-react";
 import CorrespondenceSheet from "@/components/correspondence/correspondence-sheet";
 import EntityDirectoryPicker from "@/components/entity-directory-picker";
 import LinkedTasks from "@/components/linked-tasks";
+import { AssignedEmployee } from "@/components/assigned-employee";
 
 const G  = "#D4A534";
 const GL = "#E8BE55";
@@ -154,16 +155,16 @@ export default function ProjectsList() {
           <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: 13, textAlign: "right" as const }}>
             <thead style={S.thead}>
               <tr>
-                {["المشروع", "الجهة", "مدير المشروع", "قيمة العقد", "الإنجاز", "تاريخ الانتهاء", "الحالة", ""].map(h => (
+                {["المشروع", "الجهة", "مدير المشروع", "قيمة العقد", "الإنجاز", "تاريخ الانتهاء", "الموظف المسؤول", "الحالة", ""].map(h => (
                   <th key={h} style={S.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? [...Array(3)].map((_, i) => (
-                <tr key={i}>{[...Array(8)].map((_, j) => <td key={j} style={S.td}><div style={{ height: 14, background: "#f3f0e6", borderRadius: 4, width: 80, animation: "pulse 1.5s infinite" }} /></td>)}</tr>
+                <tr key={i}>{[...Array(9)].map((_, j) => <td key={j} style={S.td}><div style={{ height: 14, background: "#f3f0e6", borderRadius: 4, width: 80, animation: "pulse 1.5s infinite" }} /></td>)}</tr>
               )) : filtered.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: 48, textAlign: "center" as const, color: "#94a3b8" }}>
+                <tr><td colSpan={9} style={{ padding: 48, textAlign: "center" as const, color: "#94a3b8" }}>
                   <FolderOpen size={40} color="#e2d5b0" style={{ margin: "0 auto 12px", display: "block" }} />
                   <p style={{ margin: 0 }}>لا توجد مشاريع</p>
                 </td></tr>
@@ -192,6 +193,10 @@ export default function ProjectsList() {
                       </div>
                     </td>
                     <td style={{ ...S.td, color: "#4b5563", whiteSpace: "nowrap" as const }}>{formatDate(p.endDate)}</td>
+                    <td style={S.td}>
+                      <AssignedEmployee value={p.assignedUserId} displayName={p.assignedName} compact
+                        onReassign={(uid) => updateM.mutate({ id: p.id, data: { assignedUserId: uid } })} />
+                    </td>
                     <td style={S.td}>
                       <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.text, border: `1px solid ${st.border}`, display: "inline-flex", alignItems: "center", gap: 4 }}>
                         <st.icon size={11} /> {st.label}

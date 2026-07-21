@@ -53,11 +53,13 @@ router.get("/", async (req: Request, res: Response) => {
         c.department_id as "departmentId", c.contact_id as "contactId",
         ge.name as "entityName", t.tender_number as "tenderNumber", co.name as "companyName",
         pr.practice_number as "practiceNumber",
+        c.assigned_user_id as "assignedUserId", asg.full_name as "assignedName",
         dep.name as "departmentName", gc.name as "contactName"
       FROM contracts c
       LEFT JOIN government_entities ge ON c.government_entity_id = ge.id
       LEFT JOIN tenders t ON c.tender_id = t.id
       LEFT JOIN practices pr ON c.practice_id = pr.id
+      LEFT JOIN users asg ON c.assigned_user_id = asg.id
       LEFT JOIN companies co ON c.company_id = co.id
       LEFT JOIN departments dep ON c.department_id = dep.id
       LEFT JOIN government_contacts gc ON c.contact_id = gc.id
@@ -84,8 +86,7 @@ router.get("/", async (req: Request, res: Response) => {
     if (ownRecordsOnly(req)) {
       params.push(userId);
       conditions.push(`(
-        c.created_by_user_id IS NULL
-        OR c.created_by_user_id = $${params.length}
+        c.assigned_user_id = $${params.length}
         OR EXISTS (SELECT 1 FROM contract_comments cc WHERE cc.contract_id = c.id AND cc.to_user_id = $${params.length})
       )`);
     }
@@ -127,7 +128,7 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertContractSchema.parse(req.body);
-    const [contract] = await db.insert(contractsTable).values({ ...data, createdByUserId: req.session.userId ?? null }).returning();
+    const [contract] = await db.insert(contractsTable).values({ ...data, createdByUserId: req.session.userId ?? null, assignedUserId: req.session.userId ?? null }).returning();
     if (contract.signDate) {
       insertAutomationTask({
         title: `متابعة تنفيذ عقد موقّع: ${contract.contractNumber}`,
@@ -149,7 +150,8 @@ router.patch("/:id", async (req: Request, res: Response) => {
     const isAdmin = req.session.role === "admin";
     if (!await canAccessContract(id, userId, isAdmin))
       return res.status(403).json({ error: "لا تملك صلاحية تعديل هذا العقد" });
-    const data = updateContractSchema.parse(req.body);
+    const data = updateContractSchema.parse(req.body) as Record<string, any>;
+    if (req.session.role !== "admin") delete data.assignedUserId; // إعادة التعيين للمدير فقط
     const [contract] = await db
       .update(contractsTable)
       .set({ ...data, updatedAt: new Date() })

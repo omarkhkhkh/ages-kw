@@ -4,6 +4,7 @@ import { rfqApi, suppliersApi, companiesApi, contractsApi } from "@/lib/api";
 import { ClipboardList, Plus, Pencil, Trash2, X, Check, Search, Clock, CheckCircle2, XCircle } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { AssignedEmployee } from "@/components/assigned-employee";
 
 const G  = "#D4A534";
 const GL = "#E8BE55";
@@ -135,16 +136,16 @@ export default function RfqList() {
           <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: 13, textAlign: "right" as const }}>
             <thead style={S.thead}>
               <tr>
-                {["رقم الطلب", "وصف البند", "المورد", "تاريخ الطلب", "آخر موعد للرد", "السعر المقدم", "الحالة", ""].map(h => (
+                {["رقم الطلب", "وصف البند", "المورد", "تاريخ الطلب", "آخر موعد للرد", "السعر المقدم", "الموظف المسؤول", "الحالة", ""].map(h => (
                   <th key={h} style={S.th}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {isLoading ? [...Array(3)].map((_, i) => (
-                <tr key={i}>{[...Array(8)].map((_, j) => <td key={j} style={S.td}><div style={{ height: 14, background: "#f3f0e6", borderRadius: 4, width: 80, animation: "pulse 1.5s infinite" }} /></td>)}</tr>
+                <tr key={i}>{[...Array(9)].map((_, j) => <td key={j} style={S.td}><div style={{ height: 14, background: "#f3f0e6", borderRadius: 4, width: 80, animation: "pulse 1.5s infinite" }} /></td>)}</tr>
               )) : filtered.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: 48, textAlign: "center" as const, color: "#94a3b8" }}>
+                <tr><td colSpan={9} style={{ padding: 48, textAlign: "center" as const, color: "#94a3b8" }}>
                   <ClipboardList size={40} color="#e2d5b0" style={{ margin: "0 auto 12px", display: "block" }} />
                   <p style={{ margin: 0 }}>لا توجد طلبات عروض أسعار</p>
                 </td></tr>
@@ -164,6 +165,10 @@ export default function RfqList() {
                     <td style={{ ...S.td, color: "#4b5563", whiteSpace: "nowrap" as const }}>{formatDate(r.requestDate)}</td>
                     <td style={{ ...S.td, color: overdue ? "#c2410c" : "#4b5563", fontWeight: overdue ? 700 : 400, whiteSpace: "nowrap" as const }}>{formatDate(r.responseDeadline)}</td>
                     <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: "#132a18" }}>{r.quotedPrice ? formatCurrency(r.quotedPrice) : "—"}</td>
+                    <td style={S.td}>
+                      <AssignedEmployee value={r.assignedUserId} displayName={r.assignedName} compact
+                        onReassign={(uid) => updateM.mutate({ id: r.id, data: { assignedUserId: uid } })} />
+                    </td>
                     <td style={S.td}>
                       <span style={{ padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.text, border: `1px solid ${st.border}`, display: "inline-flex", alignItems: "center", gap: 4 }}>
                         <st.icon size={11} /> {st.label}

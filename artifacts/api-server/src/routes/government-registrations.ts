@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { desc, ilike, or, and, sql, eq } from "drizzle-orm";
-import { db, governmentRegistrationsTable, insertGovernmentRegistrationSchema, updateGovernmentRegistrationSchema } from "@workspace/db";
+import { ownRecordsOnly } from "../middleware/auth";
+import { db, governmentRegistrationsTable, insertGovernmentRegistrationSchema, updateGovernmentRegistrationSchema, usersTable } from "@workspace/db";
 
 const router = Router();
 
@@ -41,7 +42,28 @@ router.get("/", async (req: Request, res: Response) => {
       ilike(governmentRegistrationsTable.registrationNumber, `%${search}%`),
       ilike(governmentRegistrationsTable.responsibleEmployee, `%${search}%`),
     )!);
-    let query = db.select().from(governmentRegistrationsTable).$dynamic();
+    // خصوصية السجلات: الموظف بنطاق 'own' يرى ما هو مُسنَد إليه فقط (وغير المُسنَد للمدير فقط)
+    if (ownRecordsOnly(req)) conditions.push(eq(governmentRegistrationsTable.assignedUserId, req.session.userId!));
+    let query = db.select({
+      id: governmentRegistrationsTable.id,
+      companyId: governmentRegistrationsTable.companyId,
+      entityName: governmentRegistrationsTable.entityName,
+      assignedUserId: governmentRegistrationsTable.assignedUserId,
+      assignedName: usersTable.fullName,
+      registrationNumber: governmentRegistrationsTable.registrationNumber,
+      supplierNumber: governmentRegistrationsTable.supplierNumber,
+      fileNumber: governmentRegistrationsTable.fileNumber,
+      registrationDate: governmentRegistrationsTable.registrationDate,
+      expiryDate: governmentRegistrationsTable.expiryDate,
+      status: governmentRegistrationsTable.status,
+      notes: governmentRegistrationsTable.notes,
+      responsibleEmployee: governmentRegistrationsTable.responsibleEmployee,
+      fileUrl: governmentRegistrationsTable.fileUrl,
+      createdAt: governmentRegistrationsTable.createdAt,
+      updatedAt: governmentRegistrationsTable.updatedAt,
+    }).from(governmentRegistrationsTable)
+      .leftJoin(usersTable, eq(governmentRegistrationsTable.assignedUserId, usersTable.id))
+      .$dynamic();
     if (conditions.length) query = query.where(and(...conditions));
     const rows = await query.orderBy(governmentRegistrationsTable.entityName);
     return res.json(rows);
@@ -67,7 +89,8 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertGovernmentRegistrationSchema.parse(req.body);
-    const [row] = await db.insert(governmentRegistrationsTable).values(data).returning();
+    // المُنشئ يصبح المسؤول افتراضيًا؛ المدير وحده يعيد التعيين لاحقًا
+    const [row] = await db.insert(governmentRegistrationsTable).values({ ...data, assignedUserId: req.session.userId ?? null }).returning();
     return res.status(201).json(row);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
@@ -80,7 +103,9 @@ router.patch("/:id", async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
-    const data = updateGovernmentRegistrationSchema.parse(req.body);
+    const data = updateGovernmentRegistrationSchema.parse(req.body) as Record<string, any>;
+    // إعادة تعيين الموظف المسؤول للمدير فقط
+    if (req.session.role !== "admin") delete data.assignedUserId;
     const [row] = await db.update(governmentRegistrationsTable)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(governmentRegistrationsTable.id, id))

@@ -1,9 +1,11 @@
 import { Router, type Request, type Response } from "express";
 import { desc, ilike, or, and, sql, eq } from "drizzle-orm";
+import { ownRecordsOnly } from "../middleware/auth";
 import {
   db, pool,
   companiesTable, insertCompanySchema, updateCompanySchema,
   companyDocumentsTable, insertCompanyDocumentSchema, updateCompanyDocumentSchema,
+  usersTable,
 } from "@workspace/db";
 
 const router = Router();
@@ -106,7 +108,26 @@ router.get("/", async (req: Request, res: Response) => {
       ilike(companyDocumentsTable.issuingBody, `%${search}%`),
       ilike(companyDocumentsTable.responsibleEmployee, `%${search}%`),
     )!);
-    let query = db.select().from(companyDocumentsTable).$dynamic();
+    // خصوصية السجلات: الموظف بنطاق 'own' يرى ما هو مُسنَد إليه فقط (وغير المُسنَد للمدير فقط)
+    if (ownRecordsOnly(req)) conditions.push(eq(companyDocumentsTable.assignedUserId, req.session.userId!));
+    let query = db.select({
+      id: companyDocumentsTable.id,
+      companyId: companyDocumentsTable.companyId,
+      name: companyDocumentsTable.name,
+      assignedUserId: companyDocumentsTable.assignedUserId,
+      assignedName: usersTable.fullName,
+      documentNumber: companyDocumentsTable.documentNumber,
+      issuingBody: companyDocumentsTable.issuingBody,
+      issueDate: companyDocumentsTable.issueDate,
+      expiryDate: companyDocumentsTable.expiryDate,
+      fileUrl: companyDocumentsTable.fileUrl,
+      notes: companyDocumentsTable.notes,
+      responsibleEmployee: companyDocumentsTable.responsibleEmployee,
+      createdAt: companyDocumentsTable.createdAt,
+      updatedAt: companyDocumentsTable.updatedAt,
+    }).from(companyDocumentsTable)
+      .leftJoin(usersTable, eq(companyDocumentsTable.assignedUserId, usersTable.id))
+      .$dynamic();
     if (conditions.length) query = query.where(and(...conditions));
     const rows = await query.orderBy(companyDocumentsTable.name);
     return res.json(rows);
@@ -132,7 +153,8 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertCompanyDocumentSchema.parse(req.body);
-    const [row] = await db.insert(companyDocumentsTable).values(data).returning();
+    // المُنشئ يصبح المسؤول افتراضيًا؛ المدير وحده يعيد التعيين لاحقًا
+    const [row] = await db.insert(companyDocumentsTable).values({ ...data, assignedUserId: req.session.userId ?? null }).returning();
     return res.status(201).json(row);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
@@ -145,7 +167,9 @@ router.patch("/:id", async (req: Request, res: Response) => {
   const id = parseId(req.params.id);
   if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
-    const data = updateCompanyDocumentSchema.parse(req.body);
+    const data = updateCompanyDocumentSchema.parse(req.body) as Record<string, any>;
+    // إعادة تعيين الموظف المسؤول للمدير فقط
+    if (req.session.role !== "admin") delete data.assignedUserId;
     const [row] = await db.update(companyDocumentsTable)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(companyDocumentsTable.id, id))

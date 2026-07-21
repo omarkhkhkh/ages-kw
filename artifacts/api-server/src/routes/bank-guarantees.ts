@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
+import { ownRecordsOnly } from "../middleware/auth";
 import {
   db,
   bankGuaranteesTable,
@@ -7,6 +8,7 @@ import {
   updateBankGuaranteeSchema,
   tendersTable,
   companiesTable,
+  usersTable,
 } from "@workspace/db";
 
 const router = Router();
@@ -20,6 +22,8 @@ router.get("/", async (req: Request, res: Response) => {
         id: bankGuaranteesTable.id,
         tenderId: bankGuaranteesTable.tenderId,
         companyId: bankGuaranteesTable.companyId,
+        assignedUserId: bankGuaranteesTable.assignedUserId,
+        assignedName: usersTable.fullName,
         guaranteeNumber: bankGuaranteesTable.guaranteeNumber,
         type: bankGuaranteesTable.type,
         bankName: bankGuaranteesTable.bankName,
@@ -37,12 +41,17 @@ router.get("/", async (req: Request, res: Response) => {
       .from(bankGuaranteesTable)
       .leftJoin(tendersTable, eq(bankGuaranteesTable.tenderId, tendersTable.id))
       .leftJoin(companiesTable, eq(bankGuaranteesTable.companyId, companiesTable.id))
+      .leftJoin(usersTable, eq(bankGuaranteesTable.assignedUserId, usersTable.id))
       .orderBy(bankGuaranteesTable.expiryDate);
 
-    const results = tenderId
-      ? await base.where(eq(bankGuaranteesTable.tenderId, tenderId))
-      : status
-      ? await base.where(eq(bankGuaranteesTable.status, status as string))
+    const conditions: any[] = [];
+    // خصوصية السجلات: الموظف بنطاق 'own' يرى ما هو مُسنَد إليه فقط (وغير المُسنَد للمدير فقط)
+    if (ownRecordsOnly(req)) conditions.push(sql`${bankGuaranteesTable.assignedUserId} = ${req.session.userId}`);
+    if (tenderId) conditions.push(eq(bankGuaranteesTable.tenderId, tenderId));
+    if (status) conditions.push(eq(bankGuaranteesTable.status, status as string));
+
+    const results = conditions.length
+      ? await base.where(and(...conditions))
       : await base;
     return res.json(results);
   } catch {
@@ -64,7 +73,8 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertBankGuaranteeSchema.parse(req.body);
-    const [guarantee] = await db.insert(bankGuaranteesTable).values(data).returning();
+    // المُنشئ يصبح المسؤول افتراضيًا؛ المدير وحده يعيد التعيين لاحقًا
+    const [guarantee] = await db.insert(bankGuaranteesTable).values({ ...data, assignedUserId: req.session.userId ?? null }).returning();
     return res.status(201).json(guarantee);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
@@ -75,7 +85,9 @@ router.post("/", async (req: Request, res: Response) => {
 router.patch("/:id", async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const data = updateBankGuaranteeSchema.parse(req.body);
+    const data = updateBankGuaranteeSchema.parse(req.body) as Record<string, any>;
+    // إعادة تعيين الموظف المسؤول للمدير فقط
+    if (req.session.role !== "admin") delete data.assignedUserId;
     const [guarantee] = await db
       .update(bankGuaranteesTable)
       .set({ ...data, updatedAt: new Date() })

@@ -21,6 +21,7 @@ export const companyDocumentsTable = pgTable("company_documents", {
   id:                  serial("id").primaryKey(),
   companyId:           integer("company_id").notNull().references(() => companiesTable.id, { onDelete: "cascade" }),
   name:                text("name").notNull(),
+  assignedUserId:      integer("assigned_user_id"), // الموظف المسؤول (يُسنده المدير) — يقود الخصوصية
   documentNumber:      text("document_number"),
   issuingBody:         text("issuing_body"),
   issueDate:           date("issue_date"),

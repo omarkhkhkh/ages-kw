@@ -10,7 +10,7 @@ import {
   correspondenceLettersTable,
 } from "@workspace/db";
 import { createNotification } from "./notifications";
-import { hasModuleAction } from "../middleware/auth";
+import { hasModuleAction, ownRecordsOnly } from "../middleware/auth";
 import { generateLetterNumber } from "../lib/correspondence-numbering";
 import { ObjectStorageService } from "../lib/objectStorage";
 
@@ -158,6 +158,8 @@ router.get("/", async (req: Request, res: Response) => {
     const params: any[] = [];
     if (status && status !== "all") { params.push(status); conditions.push(`o.status = $${params.length}`); }
     if (claimedBy) { params.push(Number(claimedBy)); conditions.push(`o.claimed_by_user_id = $${params.length}`); }
+    // خصوصية السجلات: الموظف بنطاق 'own' يرى فرصه فقط + الفرص غير المستلَمة (لتبقى قابلة للاستلام)
+    if (ownRecordsOnly(req)) { params.push(req.session.userId); conditions.push(`(o.claimed_by_user_id = $${params.length} OR o.claimed_by_user_id IS NULL)`); }
     if (urgent === "1") conditions.push(`o.is_urgent = true`);
     if (search) {
       params.push(`%${search}%`);
@@ -326,6 +328,17 @@ router.patch("/:id", async (req: Request, res: Response) => {
     }
 
     const extra: Record<string, any> = {};
+
+    // إعادة تعيين الموظف المسؤول (المستلِم) — للمدير فقط. عند التغيير تختفي الفرصة من عند السابق
+    if (req.session.role === "admin" && req.body.claimedByUserId !== undefined) {
+      const newClaimer = req.body.claimedByUserId === null || req.body.claimedByUserId === "" ? null : Number(req.body.claimedByUserId);
+      extra.claimedByUserId = newClaimer;
+      extra.claimedAt = newClaimer ? new Date() : null;
+      if (newClaimer && newClaimer !== existing.claimedByUserId) {
+        createNotification({ recipientUserId: newClaimer, type: "opportunity_reassigned", message: `تم إسناد الفرصة ${existing.orderNumber} إليك`, link: `/opportunities/${id}` });
+      }
+    }
+
     if (data.status !== undefined && data.status !== existing.status) {
       if (!STATUSES.includes(data.status)) return res.status(400).json({ error: "حالة غير صالحة" });
       const allowed = TRANSITIONS[existing.status] ?? [];

@@ -12,6 +12,7 @@ import {
   companiesTable,
   departmentsTable,
   governmentContactsTable,
+  usersTable,
 } from "@workspace/db";
 
 const router = Router();
@@ -24,6 +25,8 @@ router.get("/", async (req: Request, res: Response) => {
         id: projectsTable.id,
         tenderId: projectsTable.tenderId,
         practiceId: projectsTable.practiceId,
+        assignedUserId: projectsTable.assignedUserId,
+        assignedName: usersTable.fullName,
         projectNumber: projectsTable.projectNumber,
         name: projectsTable.name,
         governmentEntityId: projectsTable.governmentEntityId,
@@ -53,12 +56,13 @@ router.get("/", async (req: Request, res: Response) => {
       .leftJoin(companiesTable, eq(projectsTable.companyId, companiesTable.id))
       .leftJoin(departmentsTable, eq(projectsTable.departmentId, departmentsTable.id))
       .leftJoin(governmentContactsTable, eq(projectsTable.contactId, governmentContactsTable.id))
+      .leftJoin(usersTable, eq(projectsTable.assignedUserId, usersTable.id))
       .orderBy(projectsTable.createdAt);
 
     const conditions: any[] = [];
-    // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
+    // خصوصية السجلات: الموظف بنطاق 'own' يرى ما هو مُسنَد إليه فقط (وغير المُسنَد للمدير فقط)
     if (ownRecordsOnly(req)) {
-      conditions.push(sql`(${projectsTable.createdByUserId} IS NULL OR ${projectsTable.createdByUserId} = ${req.session.userId})`);
+      conditions.push(sql`${projectsTable.assignedUserId} = ${req.session.userId}`);
     }
     if (status) conditions.push(eq(projectsTable.status, status as string));
 
@@ -85,7 +89,8 @@ router.get("/:id", async (req: Request, res: Response) => {
 router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertProjectSchema.parse(req.body);
-    const [project] = await db.insert(projectsTable).values({ ...data, createdByUserId: req.session.userId ?? null }).returning();
+    // المُنشئ يصبح المسؤول افتراضيًا؛ المدير وحده يعيد التعيين لاحقًا
+    const [project] = await db.insert(projectsTable).values({ ...data, createdByUserId: req.session.userId ?? null, assignedUserId: req.session.userId ?? null }).returning();
     return res.status(201).json(project);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
@@ -96,7 +101,9 @@ router.post("/", async (req: Request, res: Response) => {
 router.patch("/:id", async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
-    const data = updateProjectSchema.parse(req.body);
+    const data = updateProjectSchema.parse(req.body) as Record<string, any>;
+    // إعادة تعيين الموظف المسؤول للمدير فقط
+    if (req.session.role !== "admin") delete data.assignedUserId;
     const [project] = await db
       .update(projectsTable)
       .set({ ...data, updatedAt: new Date() })

@@ -157,10 +157,25 @@ const MIGRATIONS = [
   `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS practice_id integer REFERENCES practices(id) ON DELETE SET NULL`,
   // طلب عرض السعر: الربط بعقد بدل المناقصة
   `ALTER TABLE rfq_requests ADD COLUMN IF NOT EXISTS contract_id integer REFERENCES contracts(id) ON DELETE SET NULL`,
+  // الموظف المسؤول (assigned_user_id) عبر 7 وحدات — يقود خصوصية "سجلاتي فقط" ويُسنده المدير
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS assigned_user_id integer REFERENCES users(id) ON DELETE SET NULL`,
+  `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS assigned_user_id integer REFERENCES users(id) ON DELETE SET NULL`,
+  `ALTER TABLE direct_purchase_orders ADD COLUMN IF NOT EXISTS assigned_user_id integer REFERENCES users(id) ON DELETE SET NULL`,
+  `ALTER TABLE rfq_requests ADD COLUMN IF NOT EXISTS assigned_user_id integer REFERENCES users(id) ON DELETE SET NULL`,
+  `ALTER TABLE government_registrations ADD COLUMN IF NOT EXISTS assigned_user_id integer REFERENCES users(id) ON DELETE SET NULL`,
+  `ALTER TABLE bank_guarantees ADD COLUMN IF NOT EXISTS assigned_user_id integer REFERENCES users(id) ON DELETE SET NULL`,
+  `ALTER TABLE company_documents ADD COLUMN IF NOT EXISTS assigned_user_id integer REFERENCES users(id) ON DELETE SET NULL`,
+  // مرة واحدة: الوحدات التي كانت تُخصّص بالمنشئ تبقى مرئية لمنشئيها (نُسند المسؤول = المنشئ حيث لم يُسنَد بعد)
+  `UPDATE projects SET assigned_user_id = created_by_user_id WHERE assigned_user_id IS NULL AND created_by_user_id IS NOT NULL`,
+  `UPDATE contracts SET assigned_user_id = created_by_user_id WHERE assigned_user_id IS NULL AND created_by_user_id IS NOT NULL`,
+  `UPDATE direct_purchase_orders SET assigned_user_id = created_by_user_id WHERE assigned_user_id IS NULL AND created_by_user_id IS NOT NULL`,
   `UPDATE practices SET status = 'won' WHERE status IN ('current', 'previous', 'completed')`,
   `UPDATE practices SET status = 'studying' WHERE status = 'targeted'`,
   `UPDATE practices SET status = 'under_evaluation' WHERE status = 'under_submission'`,
   `UPDATE practices SET status = 'new' WHERE status = 'future'`,
+  // قائمة تصنيفات الموردين المركزية القابلة للتوسّع + زرع الأنواع الافتراضية
+  `CREATE TABLE IF NOT EXISTS supplier_types (id serial PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamp NOT NULL DEFAULT now())`,
+  `INSERT INTO supplier_types (name) VALUES ('مقاول'), ('مورد'), ('استشاري'), ('مصنّع') ON CONFLICT (name) DO NOTHING`,
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

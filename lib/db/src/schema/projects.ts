@@ -12,6 +12,7 @@ export const projectsTable = pgTable("projects", {
   id: serial("id").primaryKey(),
   tenderId: integer("tender_id").references(() => tendersTable.id, { onDelete: "set null" }),
   practiceId: integer("practice_id").references(() => practicesTable.id, { onDelete: "set null" }), // الممارسة المرتبطة
+  assignedUserId: integer("assigned_user_id"), // الموظف المسؤول (يُسنده المدير) — يقود الخصوصية
   projectNumber: text("project_number"),
   name: text("name").notNull(),
   governmentEntityId: integer("government_entity_id").references(() => governmentEntitiesTable.id, { onDelete: "set null" }),

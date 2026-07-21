@@ -12,6 +12,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useListTenders } from "@workspace/api-client-react";
 import LinkedTasks from "@/components/linked-tasks";
+import { AssignedEmployee } from "@/components/assigned-employee";
 
 /* ─── palette ─── */
 const G  = "#D4A534";
@@ -90,10 +91,11 @@ const S = {
    GUARANTEE TABLE — shared between tabs
 ════════════════════════════════════════════════════ */
 function GuaranteeTable({
-  rows, isLoading, emptyMsg, canEdit, onEdit, onDelete, typeDef,
+  rows, isLoading, emptyMsg, canEdit, onEdit, onDelete, onReassign, typeDef,
 }: {
   rows: any[]; isLoading: boolean; emptyMsg: string;
   canEdit: boolean; onEdit: (g: any) => void; onDelete: (id: number) => void;
+  onReassign: (id: number, assignedUserId: number | null) => void;
   typeDef: TypeDef;
 }) {
   return (
@@ -102,7 +104,7 @@ function GuaranteeTable({
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "right" }}>
           <thead style={{ background: typeDef.bg, borderBottom: `1.5px solid ${typeDef.border}` }}>
             <tr>
-              {["رقم الكفالة / الشيك", "الجهة / البنك", "الموضوع", "مكان الكفالة", "المبلغ (د.ك)", "تاريخ الإصدار", "تاريخ الانتهاء", "الحالة", ""].map(h => (
+              {["رقم الكفالة / الشيك", "الجهة / البنك", "الموضوع", "مكان الكفالة", "المبلغ (د.ك)", "تاريخ الإصدار", "تاريخ الانتهاء", "الموظف المسؤول", "الحالة", ""].map(h => (
                 <th key={h} style={S.th}>{h}</th>
               ))}
             </tr>
@@ -111,7 +113,7 @@ function GuaranteeTable({
             {isLoading
               ? [...Array(4)].map((_, i) => (
                   <tr key={i}>
-                    {[...Array(8)].map((_, j) => (
+                    {[...Array(9)].map((_, j) => (
                       <td key={j} style={S.td}>
                         <div style={{ height: 13, background: "#f3f0e6", borderRadius: 4, width: j === 2 ? 160 : 80, animation: "pulse 1.5s infinite" }} />
                       </td>
@@ -121,7 +123,7 @@ function GuaranteeTable({
               : rows.length === 0
               ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: 52, textAlign: "center", color: "#94a3b8" }}>
+                  <td colSpan={9} style={{ padding: 52, textAlign: "center", color: "#94a3b8" }}>
                     <typeDef.icon size={42} color="#e2d5b0" style={{ margin: "0 auto 12px", display: "block" }} />
                     <p style={{ margin: 0, fontSize: 14 }}>{emptyMsg}</p>
                   </td>
@@ -179,6 +181,11 @@ function GuaranteeTable({
                           {near && <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 1 }}>بعد {dl} يوم</div>}
                         </div>
                       </td>
+                      {/* assigned employee */}
+                      <td style={S.td}>
+                        <AssignedEmployee value={g.assignedUserId} displayName={g.assignedName} compact
+                          onReassign={(uid) => onReassign(g.id, uid)} />
+                      </td>
                       {/* status */}
                       <td style={S.td}>
                         <span style={{ padding: "3px 11px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.text, border: `1px solid ${st.border}`, whiteSpace: "nowrap" }}>
@@ -218,7 +225,7 @@ function GuaranteeTable({
                 <td style={{ ...S.td, fontFamily: "monospace", fontWeight: 900, color: typeDef.color, whiteSpace: "nowrap" }}>
                   {formatCurrency(rows.reduce((s: number, g: any) => s + (Number(g.amount) || 0), 0))}
                 </td>
-                <td colSpan={4} style={{ ...S.td }}>
+                <td colSpan={5} style={{ ...S.td }}>
                   <div style={{ display: "flex", gap: 14, fontSize: 11 }}>
                     {Object.entries(STATUS_MAP).map(([k, v]) => {
                       const cnt = rows.filter((g: any) => g.status === k).length;
@@ -423,6 +430,7 @@ export default function GuaranteesList() {
         canEdit={canEdit}
         onEdit={openEdit}
         onDelete={id => deleteM.mutate(id)}
+        onReassign={(id, assignedUserId) => updateM.mutate({ id, data: { assignedUserId } })}
         typeDef={currentTypeDef}
       />
 

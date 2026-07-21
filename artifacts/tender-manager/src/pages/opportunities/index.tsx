@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/auth";
 import { opportunitiesApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import EntityDirectoryPicker from "@/components/entity-directory-picker";
+import { AssignedEmployee } from "@/components/assigned-employee";
 
 const G = "#D4A534";
 const GD = "#A87C20";
@@ -70,6 +71,11 @@ export default function OpportunitiesList() {
   const deleteMut = useMutation({
     mutationFn: (id: number) => opportunitiesApi.delete(id),
     onSuccess: invalidate,
+  });
+  const reassignMut = useMutation({
+    mutationFn: ({ id, claimedByUserId }: { id: number; claimedByUserId: number | null }) => opportunitiesApi.update(id, { claimedByUserId }),
+    onSuccess: () => { invalidate(); toast({ title: "✅ تم تحديث الموظف المسؤول" }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
 
   const filtered = rows.filter(r =>
@@ -207,7 +213,10 @@ export default function OpportunitiesList() {
                         {o.submissionDeadline ? new Date(o.submissionDeadline).toLocaleDateString("ar-KW") : "—"}
                       </td>
                       <td style={{ padding: "10px 14px", whiteSpace: "nowrap", color: "#64748b" }}>{o.openingDate ? new Date(o.openingDate).toLocaleDateString("ar-KW") : "—"}</td>
-                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap", color: "#64748b" }}>{o.claimedByName ?? "—"}</td>
+                      <td style={{ padding: "10px 14px", whiteSpace: "nowrap", color: "#64748b" }} onClick={e => e.stopPropagation()}>
+                        <AssignedEmployee value={o.claimedByUserId} displayName={o.claimedByName} compact
+                          onReassign={(uid) => reassignMut.mutate({ id: o.id, claimedByUserId: uid })} />
+                      </td>
                       <td style={{ padding: "10px 14px" }}>
                         <span style={{ padding: "3px 11px", borderRadius: 999, fontSize: 11, fontWeight: 800, background: st.bg, color: st.color, whiteSpace: "nowrap" }}>{st.label}</span>
                       </td>

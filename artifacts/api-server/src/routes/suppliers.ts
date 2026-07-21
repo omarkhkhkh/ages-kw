@@ -1,9 +1,43 @@
 import { Router, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
-import { db, pool, suppliersTable, insertSupplierSchema, updateSupplierSchema } from "@workspace/db";
+import { db, pool, suppliersTable, insertSupplierSchema, updateSupplierSchema, supplierTypesTable, insertSupplierTypeSchema } from "@workspace/db";
 
 const router = Router();
 const isAdmin = (req: Request) => req.session.role === "admin";
+
+/* ── تصنيفات الموردين المركزية (قائمة قابلة للتوسّع، الإضافة/الحذف للمدير فقط) ── */
+router.get("/types", async (_req: Request, res: Response) => {
+  try {
+    const rows = await db.select().from(supplierTypesTable).orderBy(supplierTypesTable.name);
+    return res.json(rows);
+  } catch {
+    return res.status(500).json({ error: "فشل في جلب تصنيفات الموردين" });
+  }
+});
+
+router.post("/types", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "إضافة التصنيفات للمدير فقط" });
+  try {
+    const data = insertSupplierTypeSchema.parse({ name: String(req.body?.name ?? "").trim() });
+    if (!data.name) return res.status(400).json({ error: "اسم التصنيف مطلوب" });
+    const [row] = await db.insert(supplierTypesTable).values(data).returning();
+    return res.status(201).json(row);
+  } catch (err: any) {
+    if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
+    if (err?.code === "23505") return res.status(409).json({ error: "التصنيف موجود بالفعل" });
+    return res.status(500).json({ error: "فشل في إضافة التصنيف" });
+  }
+});
+
+router.delete("/types/:id", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "حذف التصنيفات للمدير فقط" });
+  try {
+    await db.delete(supplierTypesTable).where(eq(supplierTypesTable.id, Number(req.params.id)));
+    return res.status(204).send();
+  } catch {
+    return res.status(500).json({ error: "فشل في حذف التصنيف" });
+  }
+});
 
 router.get("/", async (req: Request, res: Response) => {
   try {

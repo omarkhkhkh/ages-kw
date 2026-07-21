@@ -33,3 +33,14 @@ export const updateSupplierSchema = insertSupplierSchema.partial();
 export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
 export type UpdateSupplier = z.infer<typeof updateSupplierSchema>;
 export type Supplier = typeof suppliersTable.$inferSelect;
+
+// قائمة "تصنيفات الموردين" المركزية القابلة للتوسّع (يديرها المدير)
+export const supplierTypesTable = pgTable("supplier_types", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSupplierTypeSchema = createInsertSchema(supplierTypesTable).omit({ id: true, createdAt: true });
+export type InsertSupplierType = z.infer<typeof insertSupplierTypeSchema>;
+export type SupplierType = typeof supplierTypesTable.$inferSelect;

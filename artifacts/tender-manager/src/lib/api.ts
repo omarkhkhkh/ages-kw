@@ -86,6 +86,11 @@ export const suppliersApi = {
   update: (id: number, data: any) => apiFetch<any>(`/api/suppliers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id: number) => apiFetch<void>(`/api/suppliers/${id}`, { method: "DELETE" }),
   approve: (id: number) => apiFetch<any>(`/api/suppliers/${id}/approve`, { method: "PATCH" }),
+  types: {
+    list: () => apiFetch<{ id: number; name: string }[]>("/api/suppliers/types"),
+    create: (name: string) => apiFetch<{ id: number; name: string }>("/api/suppliers/types", { method: "POST", body: JSON.stringify({ name }) }),
+    delete: (id: number) => apiFetch<void>(`/api/suppliers/types/${id}`, { method: "DELETE" }),
+  },
 };
 
 // ── RFQ Requests ───────────────────────────────────────────────────────────

@@ -13,7 +13,10 @@ const G  = "#D4A534";
 const GL = "#E8BE55";
 const GD = "#A87C20";
 
-const SUPPLIER_TYPES = ["مقاول", "مورد", "استشاري", "مصنّع", "أخرى"];
+// احتياطي يُعرض ريثما تُحمَّل القائمة المركزية من الخادم
+const FALLBACK_TYPES = ["مقاول", "مورد", "استشاري", "مصنّع"];
+// قيمة خاصة في القائمة المنسدلة تفتح إدخال "إضافة تصنيف جديد" (للمدير فقط)
+const ADD_NEW = "__add_new__";
 const emptyForm = { name: "", type: "", contactPerson: "", phone: "", email: "", address: "", specialization: "", commercialRegNo: "", notes: "", companyId: "" };
 
 const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
@@ -155,6 +158,15 @@ export default function SuppliersList() {
 
   const { data: suppliers = [], isLoading } = useQuery({ queryKey: ["suppliers", pendingOnly ? "draft" : "all"], queryFn: () => suppliersApi.list(isAdmin && pendingOnly ? "draft" : undefined) });
   const { data: companies = [] } = useQuery<any[]>({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
+  const { data: dbTypes = [] } = useQuery({ queryKey: ["supplier-types"], queryFn: () => suppliersApi.types.list() });
+
+  const [newTypeName, setNewTypeName] = useState("");
+  const typeNames = (dbTypes as { name: string }[]).length ? (dbTypes as { name: string }[]).map(t => t.name) : FALLBACK_TYPES;
+  const addTypeM = useMutation({
+    mutationFn: (name: string) => suppliersApi.types.create(name),
+    onSuccess: (row: any) => { qc.invalidateQueries({ queryKey: ["supplier-types"] }); setForm(p => ({ ...p, type: row.name })); setNewTypeName(""); toast({ title: "✅ تم إضافة التصنيف" }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
 
   const createM = useMutation({ mutationFn: suppliersApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ["suppliers"] }); closeForm(); toast({ title: "✅ تم إضافة المورد" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
   const updateM = useMutation({ mutationFn: ({ id, data }: any) => suppliersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ["suppliers"] }); closeForm(); toast({ title: "✅ تم تحديث المورد" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
@@ -163,7 +175,7 @@ export default function SuppliersList() {
 
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
   const openEdit = (s: any) => { setEditId(s.id); setForm({ name: s.name, type: s.type || "", contactPerson: s.contactPerson || "", phone: s.phone || "", email: s.email || "", address: s.address || "", specialization: s.specialization || "", commercialRegNo: s.commercialRegNo || "", notes: s.notes || "", companyId: s.companyId || "" }); setShowForm(true); };
-  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.name.trim()) return; const data = { ...form, companyId: form.companyId ? Number(form.companyId) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
+  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.name.trim()) return; const data = { ...form, type: form.type === ADD_NEW ? "" : form.type, companyId: form.companyId ? Number(form.companyId) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
 
   const filtered = (suppliers as any[]).filter((s: any) => {
     const matchSearch = !search || s.name.toLowerCase().includes(search.toLowerCase()) || (s.specialization || "").toLowerCase().includes(search.toLowerCase());
@@ -171,7 +183,7 @@ export default function SuppliersList() {
     return matchSearch && matchType;
   });
 
-  const typeCounts = SUPPLIER_TYPES.reduce((acc, t) => { acc[t] = (suppliers as any[]).filter((s: any) => s.type === t).length; return acc; }, {} as Record<string, number>);
+  const typeCounts = typeNames.reduce((acc, t) => { acc[t] = (suppliers as any[]).filter((s: any) => s.type === t).length; return acc; }, {} as Record<string, number>);
 
   return (
     <div style={S.page}>
@@ -202,7 +214,7 @@ export default function SuppliersList() {
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" as const }}>
         {[
           { label: "إجمالي الموردين", value: suppliers.length, color: G },
-          ...SUPPLIER_TYPES.slice(0, 3).map((t, i) => ({ label: t, value: typeCounts[t] || 0, color: ["#1d4ed8", "#7c3aed", "#059669"][i] })),
+          ...typeNames.slice(0, 3).map((t, i) => ({ label: t, value: typeCounts[t] || 0, color: ["#1d4ed8", "#7c3aed", "#059669"][i] })),
         ].map(s => (
           <div key={s.label} style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "14px 20px", display: "flex", alignItems: "center", gap: 12, boxShadow: "0 2px 10px rgba(0,0,0,0.04)" }}>
             <div style={{ width: 36, height: 36, borderRadius: 9, background: `${s.color}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -224,7 +236,7 @@ export default function SuppliersList() {
           {search && <button onClick={() => setSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af" }}><X size={13} /></button>}
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" as const }}>
-          {["all", ...SUPPLIER_TYPES].map(t => (
+          {["all", ...typeNames].map(t => (
             <button key={t} onClick={() => setTypeFilter(t)} style={{ padding: "6px 14px", borderRadius: 20, fontSize: 12, fontWeight: 600, border: "1.5px solid", cursor: "pointer", transition: "all 0.15s", borderColor: typeFilter === t ? GD : "#e5dfc8", background: typeFilter === t ? `linear-gradient(135deg, ${GL}33, ${GD}22)` : "white", color: typeFilter === t ? GD : "#6b7280" }}>
               {t === "all" ? "الجميع" : t}
             </button>
@@ -356,11 +368,31 @@ export default function SuppliersList() {
                     <input style={S.input} value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="اسم الشركة أو المورد" required />
                   </div>
                   <div>
-                    <label style={S.label}>النوع</label>
-                    <select style={S.select} value={form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}>
+                    <label style={S.label}>النوع / التصنيف</label>
+                    <select style={S.select} value={form.type === ADD_NEW ? ADD_NEW : form.type} onChange={e => setForm(p => ({ ...p, type: e.target.value }))}>
                       <option value="">اختر النوع</option>
-                      {SUPPLIER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                      {typeNames.map(t => <option key={t} value={t}>{t}</option>)}
+                      {/* نوع محفوظ سابقًا غير موجود في القائمة المركزية — يبقى ظاهرًا */}
+                      {form.type && form.type !== ADD_NEW && !typeNames.includes(form.type) && <option value={form.type}>{form.type}</option>}
+                      {isAdmin && <option value={ADD_NEW}>➕ أخرى (إضافة تصنيف جديد)…</option>}
                     </select>
+                    {isAdmin && form.type === ADD_NEW && (
+                      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                        <input
+                          autoFocus
+                          style={{ ...S.input, flex: 1 }}
+                          value={newTypeName}
+                          onChange={e => setNewTypeName(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); if (newTypeName.trim()) addTypeM.mutate(newTypeName.trim()); } }}
+                          placeholder="اسم التصنيف الجديد"
+                        />
+                        <button type="button" disabled={!newTypeName.trim() || addTypeM.isPending}
+                          onClick={() => newTypeName.trim() && addTypeM.mutate(newTypeName.trim())}
+                          style={{ ...S.saveBtn, padding: "0 16px", whiteSpace: "nowrap" as const }}>
+                          <Plus size={14} /> إضافة
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label style={S.label}>التخصص</label>

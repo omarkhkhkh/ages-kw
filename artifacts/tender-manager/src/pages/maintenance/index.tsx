@@ -1169,7 +1169,7 @@ export default function MaintenanceIndex() {
   const { user } = useAuth();
   const canEdit = user?.role === "admin" || !!user?.canEdit;
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "equipment" | "workOrders" | "preventive" | "inventory" | "budget">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "equipment" | "workOrders" | "preventive" | "inventory">("dashboard");
 
   const TABS = [
     { key: "dashboard", label: "لوحة التحكم", icon: LayoutDashboard },
@@ -1177,7 +1177,6 @@ export default function MaintenanceIndex() {
     { key: "workOrders", label: "أوامر الصيانة", icon: ClipboardList },
     { key: "preventive", label: "الصيانة الوقائية", icon: CalendarClock },
     { key: "inventory", label: "المستودع", icon: Package },
-    { key: "budget", label: "الميزانية", icon: Wallet },
   ] as const;
 
   return (
@@ -1187,7 +1186,7 @@ export default function MaintenanceIndex() {
           <div style={{ width: 4, height: 26, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
           <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>إدارة الصيانة</h1>
         </div>
-        <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>المعدات · أوامر الصيانة · الصيانة الوقائية · المستودع · الميزانية</p>
+        <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>المعدات · أوامر الصيانة · الصيانة الوقائية · المستودع</p>
       </div>
 
       <div style={{ display: "flex", gap: 4, background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: 6, alignSelf: "flex-start", flexWrap: "wrap" }}>
@@ -1204,7 +1203,6 @@ export default function MaintenanceIndex() {
       {activeTab === "workOrders" && <WorkOrdersTab canEdit={canEdit} />}
       {activeTab === "preventive" && <PreventiveTab canEdit={canEdit} />}
       {activeTab === "inventory" && <InventoryTab canEdit={canEdit} />}
-      {activeTab === "budget" && <BudgetTab canEdit={canEdit} />}
     </div>
   );
 }

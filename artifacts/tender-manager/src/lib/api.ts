@@ -106,6 +106,11 @@ export type CompanyDashboard = {
   waterfall: { label: string; value: number; kind: "start" | "down" | "total" }[];
   forecast: { monthsElapsed: number; isComplete: boolean; projectedIncome: number; projectedExpense: number; projectedNet: number };
 };
+export type BudgetSummary = {
+  costCenterId: number; year: number;
+  annualBudget: number; annualSpent: number; annualRemaining: number; annualIncome: number; annualCapex: number; annualNet: number;
+  monthly: { month: number; budget: number; spent: number; income: number; capex: number; net: number }[];
+};
 export const costCentersApi = {
   list: () => apiFetch<CostCenter[]>("/api/cost-centers"),
   create: (data: Partial<CostCenter>) => apiFetch<CostCenter>("/api/cost-centers", { method: "POST", body: JSON.stringify(data) }),
@@ -119,6 +124,8 @@ export const costCentersApi = {
   },
   profitability: (year: number) => apiFetch<Profitability>(`/api/cost-centers/profitability?year=${year}`),
   companyDashboard: (year: number) => apiFetch<CompanyDashboard>(`/api/cost-centers/company-dashboard?year=${year}`),
+  budgetSummary: (id: number, year: number) => apiFetch<BudgetSummary>(`/api/cost-centers/${id}/budget-summary?year=${year}`),
+  setBudget: (id: number, d: { year: number; month: number; targetAmount: number }) => apiFetch<{ ok: boolean }>(`/api/cost-centers/${id}/budget`, { method: "POST", body: JSON.stringify(d) }),
   financialEvents: (year: number, type?: string) => apiFetch<FinancialEvent[]>(`/api/cost-centers/financial-events?year=${year}${type ? `&type=${type}` : ""}`),
   reverseEvent: (id: number, reason?: string) => apiFetch<FinancialEvent>(`/api/cost-centers/financial-events/${id}/reverse`, { method: "POST", body: JSON.stringify({ reason }) }),
   ledgerIntegrity: () => apiFetch<LedgerIntegrity>(`/api/cost-centers/ledger-integrity`),

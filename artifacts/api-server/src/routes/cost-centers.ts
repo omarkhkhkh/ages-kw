@@ -362,6 +362,27 @@ router.get("/:id/budget-summary", async (req: Request, res: Response) => {
   }
 });
 
+/* تحديد/تعديل الميزانية المستهدفة الشهرية لقسم (upsert في cost_center_budgets) */
+router.post("/:id/budget", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  const cc = Number(req.params.id);
+  const year = Number(req.body?.year);
+  const month = Number(req.body?.month);
+  if (!cc || !year || !month || month < 1 || month > 12) return res.status(400).json({ error: "بيانات غير صالحة" });
+  try {
+    await pool.query(
+      `INSERT INTO cost_center_budgets (cost_center_id, year, month, target_amount)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (cost_center_id, year, month) DO UPDATE SET target_amount = EXCLUDED.target_amount, updated_at = now()`,
+      [cc, year, month, String(Number(req.body?.targetAmount) || 0)]
+    );
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في حفظ الميزانية" });
+  }
+});
+
 router.post("/", async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
   try {

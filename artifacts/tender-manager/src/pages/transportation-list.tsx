@@ -1245,7 +1245,7 @@ export default function TransportationList() {
   const canEdit = user?.role === "admin" || !!user?.canEdit;
   const isAdmin = user?.role === "admin";
 
-  const [activeTab, setActiveTab] = useState<"fleet"|"orders"|"teams"|"calendar"|"budget">("fleet");
+  const [activeTab, setActiveTab] = useState<"fleet"|"orders"|"teams"|"calendar">("fleet");
 
   const { data: orders = [] } = useQuery<TransportRow[]>({
     queryKey: ["transportation"],
@@ -1268,7 +1268,6 @@ export default function TransportationList() {
     { key: "orders",   label: "الأوامر",  icon: Truck,      count: orders.length },
     { key: "teams",    label: "الفرق",    icon: Users,      count: teams.length },
     { key: "calendar", label: "التقويم",  icon: Calendar,   count: todayOrders > 0 ? todayOrders : undefined },
-    { key: "budget",   label: "الميزانية", icon: Wallet,    count: undefined },
   ] as const;
 
   return (
@@ -1281,7 +1280,7 @@ export default function TransportationList() {
             <div style={{ width: 4, height: 26, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
             <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>المركبات والنقل</h1>
           </div>
-          <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>الأسطول · أوامر النقل · الفرق · جدول المهام · الميزانية</p>
+          <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>الأسطول · أوامر النقل · الفرق · جدول المهام</p>
         </div>
         <a
           href="https://lightbug.cloud"
@@ -1314,7 +1313,6 @@ export default function TransportationList() {
       {activeTab === "orders"   && <OrdersTab   canEdit={canEdit} />}
       {activeTab === "teams"    && <TeamsTab    canEdit={canEdit} isAdmin={isAdmin} />}
       {activeTab === "calendar" && <CalendarTab />}
-      {activeTab === "budget"   && <BudgetTab   canEdit={canEdit} />}
 
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>

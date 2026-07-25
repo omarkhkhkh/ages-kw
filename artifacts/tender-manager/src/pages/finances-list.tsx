@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiFetch, maintenanceApi, purchaseOrdersApi, vehiclesApi } from "@/lib/api";
+import { apiFetch, maintenanceApi, purchaseOrdersApi, vehiclesApi, costCentersApi, type CostCenter } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import * as XLSX from "xlsx";
 import {
@@ -1174,18 +1174,130 @@ function SalesTab({ isAdmin }: { isAdmin: boolean }) {
 }
 
 /* ═══════════════════════════════════════════════════
+   BUDGETS TAB — الميزانيات الموحّدة لكل الأقسام (مركز واحد)
+═══════════════════════════════════════════════════ */
+const BMONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+function BudgetsTab() {
+  const qc = useQueryClient();
+  const [ccId, setCcId] = useState<number | null>(null);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [draft, setDraft] = useState<Record<number, string>>({});
+
+  const { data: centers = [] } = useQuery<CostCenter[]>({ queryKey: ["cost-centers"], queryFn: () => costCentersApi.list() });
+  const active = centers.filter(c => c.isActive);
+  const selected = ccId ?? active[0]?.id ?? null;
+  const selectedCenter = active.find(c => c.id === selected);
+  const { data: sum, isLoading } = useQuery({ queryKey: ["cc-budget-summary", selected, year], queryFn: () => costCentersApi.budgetSummary(selected!, year), enabled: !!selected });
+
+  const saveM = useMutation({
+    mutationFn: (v: { month: number; targetAmount: number }) => costCentersApi.setBudget(selected!, { year, month: v.month, targetAmount: v.targetAmount }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["cc-budget-summary"] }),
+  });
+
+  const fmt = (n: number) => (n || 0).toLocaleString("en-US", { maximumFractionDigits: 3 });
+  const nowY = new Date().getFullYear();
+  const years = [nowY - 2, nowY - 1, nowY, nowY + 1];
+  const sel: React.CSSProperties = { padding: "9px 12px", borderRadius: 10, border: "1.5px solid #e5dfc8", fontSize: 13, fontFamily: "inherit", background: "white", outline: "none", fontWeight: 700 };
+
+  const kpis = sum ? [
+    { label: "الميزانية السنوية", value: sum.annualBudget, color: "#6366f1" },
+    { label: "المصروف الفعلي", value: sum.annualSpent, color: "#dc2626" },
+    { label: "المتبقّي", value: sum.annualRemaining, color: sum.annualRemaining < 0 ? "#dc2626" : "#16a34a" },
+    { label: "الدخل", value: sum.annualIncome, color: "#16a34a" },
+    { label: "الصافي (دخل−مصروف)", value: sum.annualNet, color: sum.annualNet < 0 ? "#dc2626" : "#0f766e" },
+    { label: "الرأسمالي (استثمار)", value: sum.annualCapex, color: "#d97706" },
+  ] : [];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* الاختيار */}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 14 }}>
+        <span style={{ fontSize: 13, fontWeight: 800, color: GR }}>القسم:</span>
+        <select style={sel} value={selected ?? ""} onChange={e => { setCcId(Number(e.target.value)); setDraft({}); }}>
+          {active.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <span style={{ fontSize: 13, fontWeight: 800, color: GR, marginRight: 8 }}>السنة:</span>
+        <select style={sel} value={year} onChange={e => { setYear(Number(e.target.value)); setDraft({}); }}>
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <span style={{ fontSize: 12, color: "#9ca3af", marginRight: "auto" }}>
+          الأرقام كلها من دفتر الشؤون المالية عبر بُعد القسم — مصدر واحد موحّد.
+        </span>
+      </div>
+
+      {/* بطاقات KPI */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+        {kpis.map(k => (
+          <div key={k.label} style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 14, borderTop: `3px solid ${k.color}` }}>
+            <div style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, marginBottom: 6 }}>{k.label}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: k.color, fontFamily: "monospace" }}>{fmt(k.value)}</div>
+            <div style={{ fontSize: 10, color: "#9ca3af" }}>د.ك</div>
+          </div>
+        ))}
+      </div>
+
+      {/* الجدول الشهري */}
+      <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 16, overflowX: "auto" }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: GR, marginBottom: 4 }}>
+          الميزانية الشهرية — {selectedCenter?.name ?? ""} · {year}
+        </div>
+        <p style={{ fontSize: 11, color: "#9ca3af", margin: "0 0 12px" }}>
+          حرّر "الميزانية المستهدفة" مباشرةً؛ المصروف/الدخل/الصافي تُحسب تلقائيًا من الحركات المالية. الرأسمالي منفصل ولا يُخصم من المصروف التشغيلي.
+        </p>
+        {isLoading || !sum ? (
+          <div style={{ padding: 30, textAlign: "center", color: "#9ca3af" }}>جاري التحميل…</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "right", minWidth: 640 }}>
+            <thead style={{ background: "#faf8f2" }}>
+              <tr>{["الشهر", "الميزانية المستهدفة", "المصروف", "المتبقّي", "الدخل", "الصافي", "رأسمالي"].map(h => (
+                <th key={h} style={{ padding: "9px 12px", fontWeight: 800, fontSize: 11, color: "#6b7280", borderBottom: "1.5px solid #f0ead8", whiteSpace: "nowrap" }}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {sum.monthly.map(m => {
+                const remaining = m.budget - m.spent;
+                return (
+                  <tr key={m.month} style={{ borderBottom: "1px solid #f5f0e6" }}>
+                    <td style={{ padding: "8px 12px", fontWeight: 700, color: GR }}>{BMONTHS[m.month - 1]}</td>
+                    <td style={{ padding: "6px 12px" }}>
+                      <input
+                        type="number" step="0.001"
+                        value={draft[m.month] ?? String(m.budget)}
+                        onChange={e => setDraft(p => ({ ...p, [m.month]: e.target.value }))}
+                        onBlur={e => { const v = Number(e.target.value) || 0; if (v !== m.budget) saveM.mutate({ month: m.month, targetAmount: v }); }}
+                        style={{ width: 110, padding: "6px 8px", borderRadius: 8, border: "1.5px solid #e5dfc8", fontSize: 13, fontFamily: "monospace", textAlign: "right", outline: "none" }}
+                      />
+                    </td>
+                    <td style={{ padding: "8px 12px", fontFamily: "monospace", color: "#dc2626" }}>{fmt(m.spent)}</td>
+                    <td style={{ padding: "8px 12px", fontFamily: "monospace", fontWeight: 700, color: remaining < 0 ? "#dc2626" : "#16a34a" }}>{fmt(remaining)}</td>
+                    <td style={{ padding: "8px 12px", fontFamily: "monospace", color: "#16a34a" }}>{fmt(m.income)}</td>
+                    <td style={{ padding: "8px 12px", fontFamily: "monospace", fontWeight: 700, color: m.net < 0 ? "#dc2626" : "#0f766e" }}>{fmt(m.net)}</td>
+                    <td style={{ padding: "8px 12px", fontFamily: "monospace", color: "#d97706" }}>{fmt(m.capex)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
    MAIN PAGE
 ═══════════════════════════════════════════════════ */
 export default function FinancesList() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const [activeTab, setActiveTab] = useState<"summary"|"income"|"expenses"|"sales">("summary");
+  const [activeTab, setActiveTab] = useState<"summary"|"income"|"expenses"|"budgets"|"sales">("summary");
 
   type TabDef = { key: string; label: string; icon: React.ElementType; show: boolean };
   const TABS: TabDef[] = [
     { key: "summary",  label: "الرصيد",      icon: Scale,        show: isAdmin },
     { key: "income",   label: "الإيرادات",   icon: TrendingUp,   show: isAdmin },
     { key: "expenses", label: "المصروفات",   icon: TrendingDown, show: isAdmin },
+    { key: "budgets",  label: "الميزانيات",  icon: Wallet,       show: isAdmin },
     { key: "sales",    label: "المبيعات",    icon: UserCheck,    show: true },
   ].filter(t => t.show);
 
@@ -1220,6 +1332,7 @@ export default function FinancesList() {
       {currentTab === "summary"  && isAdmin && <SummaryTab />}
       {currentTab === "income"   && isAdmin && <IncomeTab isAdmin={isAdmin} />}
       {currentTab === "expenses" && isAdmin && <ExpensesTab isAdmin={isAdmin} />}
+      {currentTab === "budgets"  && isAdmin && <BudgetsTab />}
       {currentTab === "sales"    && <SalesTab isAdmin={isAdmin} />}
 
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>

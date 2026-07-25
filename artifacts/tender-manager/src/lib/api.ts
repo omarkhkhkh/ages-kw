@@ -95,11 +95,21 @@ export const suppliersApi = {
 
 // ── Cost Centers (مراكز التكلفة/الربح — النواة المالية الموحّدة) ──────────────
 export type CostCenter = { id: number; name: string; type: "profit" | "cost" | "allocatable"; evaluationMetric: string | null; isActive: boolean };
+export type AllocationRule = { id: number; costCenterId: number; costCenterName: string; costType: string | null; driver: string | null; shareRatio: string; notes: string | null };
+export type ProfitabilityRow = { costCenterId: number; name: string; directIncome: number; directExpense: number; directMargin: number; shareRatio: number; allocatedShare: number; afterAllocation: number };
+export type Profitability = { year: number; allocatablePool: number; totalShareRatio: number; centers: ProfitabilityRow[] };
 export const costCentersApi = {
   list: () => apiFetch<CostCenter[]>("/api/cost-centers"),
   create: (data: Partial<CostCenter>) => apiFetch<CostCenter>("/api/cost-centers", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: Partial<CostCenter>) => apiFetch<CostCenter>(`/api/cost-centers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id: number) => apiFetch<void>(`/api/cost-centers/${id}`, { method: "DELETE" }),
+  allocationRules: {
+    list: () => apiFetch<AllocationRule[]>("/api/cost-centers/allocation-rules"),
+    create: (data: { costCenterId: number; costType?: string | null; driver?: string | null; shareRatio: number; notes?: string | null }) =>
+      apiFetch<AllocationRule>("/api/cost-centers/allocation-rules", { method: "POST", body: JSON.stringify(data) }),
+    delete: (id: number) => apiFetch<void>(`/api/cost-centers/allocation-rules/${id}`, { method: "DELETE" }),
+  },
+  profitability: (year: number) => apiFetch<Profitability>(`/api/cost-centers/profitability?year=${year}`),
 };
 
 // ── RFQ Requests ───────────────────────────────────────────────────────────

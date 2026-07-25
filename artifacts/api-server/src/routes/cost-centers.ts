@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
-import { db, pool, costCentersTable, insertCostCenterSchema, updateCostCenterSchema } from "@workspace/db";
+import { db, pool, costCentersTable, insertCostCenterSchema, updateCostCenterSchema, costAllocationRulesTable, insertCostAllocationRuleSchema } from "@workspace/db";
 
 const router = Router();
 const isAdmin = (req: Request) => req.session.role === "admin";
@@ -53,6 +53,96 @@ router.get("/", async (req: Request, res: Response) => {
     return res.json(rows);
   } catch {
     return res.status(500).json({ error: "فشل في جلب الأقسام" });
+  }
+});
+
+/* ── قواعد توزيع التكاليف غير المباشرة (static قبل /:id) ── */
+router.get("/allocation-rules", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.id, r.cost_center_id AS "costCenterId", cc.name AS "costCenterName",
+              r.cost_type AS "costType", r.driver, r.share_ratio AS "shareRatio", r.notes
+       FROM cost_allocation_rules r JOIN cost_centers cc ON cc.id = r.cost_center_id
+       ORDER BY cc.name`
+    );
+    return res.json(rows);
+  } catch {
+    return res.status(500).json({ error: "فشل في جلب قواعد التوزيع" });
+  }
+});
+
+router.post("/allocation-rules", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    const data = insertCostAllocationRuleSchema.parse({
+      ...req.body,
+      shareRatio: req.body?.shareRatio != null ? String(req.body.shareRatio) : "0",
+    });
+    const [row] = await db.insert(costAllocationRulesTable).values(data).returning();
+    return res.status(201).json(row);
+  } catch (err: any) {
+    if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
+    return res.status(500).json({ error: "فشل في إضافة القاعدة" });
+  }
+});
+
+router.delete("/allocation-rules/:id", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    await db.delete(costAllocationRulesTable).where(eq(costAllocationRulesTable.id, Number(req.params.id)));
+    return res.status(204).send();
+  } catch {
+    return res.status(500).json({ error: "فشل في حذف القاعدة" });
+  }
+});
+
+/**
+ * الربحية بثلاث طبقات لكل مركز ربح:
+ *  ١) الهامش المباشر = الدخل المباشر − المصروف المباشر (ببُعد القسم)
+ *  ٢) بعد التحميل   = الهامش المباشر − نصيب القسم من مجمّع التكاليف المشتركة (allocatable × share_ratio)
+ * المجمّع المشترك = مصروفات الأقسام من نوع allocatable. مجموع النِّسب يُعرض للموازنة (يُفترض ≈ ١).
+ */
+router.get("/profitability", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const [{ rows: poolRows }, { rows: ratioRows }, { rows: centers }] = await Promise.all([
+      pool.query(
+        `SELECT COALESCE(SUM(fe.amount),0)::numeric AS pool FROM finance_expenses fe
+         JOIN cost_centers cc ON cc.id = fe.cost_center_id
+         WHERE cc.type = 'allocatable' AND EXTRACT(YEAR FROM COALESCE(fe.transaction_date, fe.created_at::date))::int = $1`,
+        [year]
+      ),
+      pool.query(`SELECT cost_center_id, COALESCE(SUM(share_ratio),0)::numeric AS ratio FROM cost_allocation_rules GROUP BY cost_center_id`),
+      pool.query(`SELECT id, name, type FROM cost_centers WHERE type = 'profit' AND is_active = true ORDER BY name`),
+    ]);
+    const pool_ = Number(poolRows[0]?.pool ?? 0);
+    const ratioBy: Record<number, number> = {};
+    for (const r of ratioRows) ratioBy[r.cost_center_id] = Number(r.ratio);
+    const totalShareRatio = ratioRows.reduce((s: number, r: any) => s + Number(r.ratio), 0);
+
+    const perCenter = await Promise.all((centers as any[]).map(async (c) => {
+      const { rows: inc } = await pool.query(
+        `SELECT COALESCE(SUM(amount),0)::numeric AS v FROM finance_income WHERE cost_center_id=$1 AND EXTRACT(YEAR FROM date)::int=$2`, [c.id, year]);
+      const { rows: exp } = await pool.query(
+        `SELECT COALESCE(SUM(amount),0)::numeric AS v FROM finance_expenses WHERE cost_center_id=$1 AND EXTRACT(YEAR FROM COALESCE(transaction_date, created_at::date))::int=$2`, [c.id, year]);
+      const directIncome = Number(inc[0].v);
+      const directExpense = Number(exp[0].v);
+      const directMargin = directIncome - directExpense;
+      const shareRatio = ratioBy[c.id] ?? 0;
+      const allocatedShare = pool_ * shareRatio;
+      return {
+        costCenterId: c.id, name: c.name,
+        directIncome, directExpense, directMargin,
+        shareRatio, allocatedShare,
+        afterAllocation: directMargin - allocatedShare,
+      };
+    }));
+    return res.json({ year, allocatablePool: pool_, totalShareRatio, centers: perCenter });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في حساب الربحية" });
   }
 });
 

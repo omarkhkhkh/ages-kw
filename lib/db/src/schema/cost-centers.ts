@@ -68,3 +68,21 @@ export const costCenterBudgetsTable = pgTable("cost_center_budgets", {
 
 export const insertCostCenterBudgetSchema = createInsertSchema(costCenterBudgetsTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type CostCenterBudget = typeof costCenterBudgetsTable.$inferSelect;
+
+/**
+ * قواعد توزيع التكاليف غير المباشرة (الإيجار/الإدارة/الكهرباء…) على مراكز الربح.
+ * كل قاعدة تُعطي مركز ربح نسبةً (share_ratio، كسر من ١) من مجمّع التكاليف المشتركة
+ * (= مصروفات الأقسام من نوع allocatable). cost_type/driver وصفيّان للشفافية والتدقيق.
+ */
+export const costAllocationRulesTable = pgTable("cost_allocation_rules", {
+  id:           serial("id").primaryKey(),
+  costCenterId: integer("cost_center_id").notNull().references(() => costCentersTable.id, { onDelete: "cascade" }),
+  costType:     text("cost_type"),                                  // نوع التكلفة (إيجار/كهرباء/إدارة)
+  driver:       text("driver"),                                    // قاعدة التوزيع (مساحة/عدد موظفين/أجهزة)
+  shareRatio:   numeric("share_ratio", { precision: 6, scale: 4 }).notNull().default("0"), // نسبة القسم (0–1)
+  notes:        text("notes"),
+  createdAt:    timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertCostAllocationRuleSchema = createInsertSchema(costAllocationRulesTable).omit({ id: true, createdAt: true });
+export type CostAllocationRule = typeof costAllocationRulesTable.$inferSelect;

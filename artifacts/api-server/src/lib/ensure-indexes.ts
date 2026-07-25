@@ -251,6 +251,12 @@ const MIGRATIONS = [
   `INSERT INTO cost_center_budgets (cost_center_id, year, month, target_amount)
      SELECT (SELECT id FROM cost_centers WHERE name='النقل'), year, month, amount FROM transportation_budgets
      ON CONFLICT (cost_center_id, year, month) DO UPDATE SET target_amount=EXCLUDED.target_amount, updated_at=now()`,
+
+  /* ═══ النظام المالي الموحّد — المرحلة ٤: قواعد توزيع التكاليف غير المباشرة ═══ */
+  `CREATE TABLE IF NOT EXISTS cost_allocation_rules (id serial PRIMARY KEY,
+     cost_center_id integer NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+     cost_type text, driver text, share_ratio numeric(6,4) NOT NULL DEFAULT 0, notes text,
+     created_at timestamp NOT NULL DEFAULT now())`,
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

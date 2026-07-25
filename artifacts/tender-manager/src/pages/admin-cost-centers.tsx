@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { costCentersApi, type CostCenter } from "@/lib/api";
+import { costCentersApi, type CostCenter, type AllocationRule } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Building2, Plus, Trash2, Check, X, Pencil } from "lucide-react";
@@ -52,6 +52,21 @@ export default function AdminCostCenters() {
     onSuccess: () => { inv(); toast({ title: "🗑 تم حذف القسم" }); },
     onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
+
+  // ── المرحلة ٤: قواعد التوزيع + الربحية بثلاث طبقات ──
+  const year = new Date().getFullYear();
+  const { data: rules = [] } = useQuery<AllocationRule[]>({ queryKey: ["allocation-rules"], queryFn: () => costCentersApi.allocationRules.list(), enabled: isAdmin });
+  const { data: prof } = useQuery({ queryKey: ["profitability", year], queryFn: () => costCentersApi.profitability(year), enabled: isAdmin });
+  const [ruleForm, setRuleForm] = useState({ costCenterId: "", costType: "", shareRatio: "" });
+  const invProf = () => { qc.invalidateQueries({ queryKey: ["allocation-rules"] }); qc.invalidateQueries({ queryKey: ["profitability"] }); };
+  const addRuleM = useMutation({
+    mutationFn: () => costCentersApi.allocationRules.create({ costCenterId: Number(ruleForm.costCenterId), costType: ruleForm.costType.trim() || null, shareRatio: Number(ruleForm.shareRatio) || 0 }),
+    onSuccess: () => { invProf(); setRuleForm({ costCenterId: "", costType: "", shareRatio: "" }); toast({ title: "✅ أُضيفت قاعدة التوزيع" }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
+  const delRuleM = useMutation({ mutationFn: (id: number) => costCentersApi.allocationRules.delete(id), onSuccess: invProf });
+  const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 3 });
+  const profitCenters = centers.filter((c) => c.type === "profit");
 
   if (!isAdmin) return <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>هذه الصفحة للمدير فقط.</div>;
 
@@ -161,6 +176,86 @@ export default function AdminCostCenters() {
           </table>
         )}
       </div>
+
+      {/* ── قواعد توزيع التكاليف المشتركة ── */}
+      <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 16, marginTop: 24 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: "#132a18", marginBottom: 4 }}>قواعد توزيع التكاليف المشتركة</div>
+        <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 12px" }}>
+          كل قاعدة تُعطي مركز ربح نسبة من مجمّع تكاليف الأقسام «القابلة للتحميل» (إيجار/إدارة/كهرباء). يُفضّل أن يكون مجموع النِّسب = 1.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr auto", gap: 10, alignItems: "end", marginBottom: 14 }}>
+          <div>
+            <label style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, display: "block", marginBottom: 4 }}>مركز الربح</label>
+            <select style={inp} value={ruleForm.costCenterId} onChange={e => setRuleForm(p => ({ ...p, costCenterId: e.target.value }))}>
+              <option value="">— اختر —</option>
+              {profitCenters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, display: "block", marginBottom: 4 }}>نوع التكلفة (اختياري)</label>
+            <input style={inp} value={ruleForm.costType} onChange={e => setRuleForm(p => ({ ...p, costType: e.target.value }))} placeholder="إيجار/إدارة…" />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, color: "#6b7280", fontWeight: 700, display: "block", marginBottom: 4 }}>النسبة (0–1)</label>
+            <input style={inp} type="number" step="0.05" min="0" max="1" value={ruleForm.shareRatio} onChange={e => setRuleForm(p => ({ ...p, shareRatio: e.target.value }))} placeholder="0.5" />
+          </div>
+          <button type="button" disabled={!ruleForm.costCenterId || addRuleM.isPending} onClick={() => addRuleM.mutate()}
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 8, border: "none", background: `linear-gradient(135deg, ${G}, ${GD})`, color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit", height: 38 }}>
+            <Plus size={14} /> إضافة
+          </button>
+        </div>
+        {rules.length === 0 ? (
+          <div style={{ fontSize: 13, color: "#9ca3af" }}>لا توجد قواعد توزيع بعد.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {rules.map(r => (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", background: "#faf8f2", border: "1px solid #f0ead8", borderRadius: 8 }}>
+                <span style={{ fontSize: 13, color: "#374151" }}>
+                  <b>{r.costCenterName}</b> — {r.costType || "عام"} · نسبة <b>{Number(r.shareRatio)}</b>
+                </span>
+                <button onClick={() => delRuleM.mutate(r.id)} style={{ background: "#fff1f2", border: "1px solid #fecaca", borderRadius: 6, padding: 4, cursor: "pointer", display: "flex" }}><Trash2 size={13} color="#dc2626" /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        {prof && (
+          <div style={{ marginTop: 10, fontSize: 12, fontWeight: 700, color: Math.abs(prof.totalShareRatio - 1) > 0.001 && prof.totalShareRatio > 0 ? "#d97706" : "#6b7280" }}>
+            مجموع النِّسب: {prof.totalShareRatio}{Math.abs(prof.totalShareRatio - 1) > 0.001 && prof.totalShareRatio > 0 ? " ⚠️ يُفضّل أن يساوي 1" : ""}
+          </div>
+        )}
+      </div>
+
+      {/* ── الربحية الحقيقية بثلاث طبقات ── */}
+      {prof && (
+        <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 16, marginTop: 24, overflowX: "auto" }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#132a18", marginBottom: 4 }}>الربحية الحقيقية بثلاث طبقات — {year}</div>
+          <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 12px" }}>
+            المجمّع المشترك القابل للتحميل: <b>{fmt(prof.allocatablePool)} د.ك</b> — يُوزَّع على مراكز الربح حسب النِّسب أعلاه.
+          </p>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "right", minWidth: 640 }}>
+            <thead style={{ background: "#faf8f2" }}>
+              <tr>{["القسم", "الدخل المباشر", "المصروف المباشر", "① الهامش المباشر", "نصيبه من المشترك", "② بعد التحميل"].map(h => (
+                <th key={h} style={{ padding: "9px 12px", fontWeight: 800, fontSize: 11, color: "#6b7280", borderBottom: "1.5px solid #f0ead8", whiteSpace: "nowrap" }}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {prof.centers.map(c => (
+                <tr key={c.costCenterId} style={{ borderBottom: "1px solid #f5f0e6" }}>
+                  <td style={{ padding: "9px 12px", fontWeight: 700, color: "#132a18" }}>{c.name}</td>
+                  <td style={{ padding: "9px 12px", fontFamily: "monospace", color: "#16a34a" }}>{fmt(c.directIncome)}</td>
+                  <td style={{ padding: "9px 12px", fontFamily: "monospace", color: "#dc2626" }}>{fmt(c.directExpense)}</td>
+                  <td style={{ padding: "9px 12px", fontFamily: "monospace", fontWeight: 700, color: c.directMargin < 0 ? "#dc2626" : "#0f766e" }}>{fmt(c.directMargin)}</td>
+                  <td style={{ padding: "9px 12px", fontFamily: "monospace", color: "#d97706" }}>{fmt(c.allocatedShare)}</td>
+                  <td style={{ padding: "9px 12px", fontFamily: "monospace", fontWeight: 800, color: c.afterAllocation < 0 ? "#dc2626" : "#166534" }}>{fmt(c.afterAllocation)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p style={{ fontSize: 11, color: "#9ca3af", margin: "10px 0 0" }}>
+            ① الهامش المباشر = الدخل − المصروف المباشر · ② بعد التحميل = الهامش المباشر − نصيب القسم من التكاليف المشتركة. قسم رابح مباشرةً قد يصير خاسرًا بعد التحميل العادل.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

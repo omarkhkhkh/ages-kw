@@ -29,6 +29,7 @@ import correspondenceRouter from "./correspondence";
 import correspondenceTemplatesRouter from "./correspondence-templates";
 import residencyRouter from "./residency";
 import maintenanceRouter from "./maintenance";
+import maintenanceServiceRouter from "./maintenance-service";
 import researchRouter from "./research";
 import pricingRouter from "./pricing";
 import opportunitiesRouter from "./opportunities";
@@ -131,6 +132,7 @@ router.use("/maintenance", (req, res, next) => {
   }
   return requireModule("accessMaintenance")(req, res, next);
 }, maintenanceRouter);
+router.use("/maintenance-service", requireModule("accessMaintenance"), maintenanceServiceRouter);
 router.use("/research", requireModule("accessResearch"), researchRouter);
 // التسعير: مسارات العمل على ورقة قائمة (أصناف، أسعار، اعتماد، إعدادات، نسخ، حذف)
 // تمرّ هنا بصلاحية العرض فقط، والمسارات نفسها تتحقق داخليًا من (مُنشئ الورقة ||

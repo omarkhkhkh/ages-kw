@@ -356,6 +356,52 @@ const MIGRATIONS = [
      عمود متوسط تكلفة متحرّك على مخزون الصيانة، يُعاد حسابه عند كل استلام. */
   `ALTER TABLE maintenance_inventory ADD COLUMN IF NOT EXISTS avg_cost numeric(15,3) NOT NULL DEFAULT 0`,
   `UPDATE maintenance_inventory SET avg_cost = COALESCE(unit_cost, 0) WHERE avg_cost = 0 AND unit_cost IS NOT NULL`,
+
+  /* ═══ صيانة العقود — المرحلة ١: كتالوج الأنواع + الهيكل التعليمي (منطقة ← مدرسة ← ورشة) ═══
+     توسيع نظام الصيانة نحو نموذج صيانة عقود الورش. إضافي/غير مدمّر، تشغيل متوازٍ. */
+  `CREATE TABLE IF NOT EXISTS maintenance_equipment_types (
+     id serial PRIMARY KEY,
+     code text NOT NULL UNIQUE,
+     name_ar text NOT NULL,
+     name_en text,
+     default_checklist jsonb NOT NULL DEFAULT '[]'::jsonb,
+     created_at timestamp NOT NULL DEFAULT now())`,
+  `ALTER TABLE maintenance_equipment ADD COLUMN IF NOT EXISTS type_id integer REFERENCES maintenance_equipment_types(id) ON DELETE SET NULL`,
+  `CREATE TABLE IF NOT EXISTS maintenance_districts (
+     id serial PRIMARY KEY,
+     name_ar text NOT NULL UNIQUE,
+     contact_name text, contact_phone text, payment_terms text,
+     is_active boolean NOT NULL DEFAULT true,
+     created_at timestamp NOT NULL DEFAULT now())`,
+  `CREATE TABLE IF NOT EXISTS maintenance_schools (
+     id serial PRIMARY KEY,
+     district_id integer NOT NULL REFERENCES maintenance_districts(id) ON DELETE CASCADE,
+     name_ar text NOT NULL, code text UNIQUE, address text, phone text,
+     is_active boolean NOT NULL DEFAULT true,
+     created_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_msch_district_name UNIQUE (district_id, name_ar))`,
+  `CREATE TABLE IF NOT EXISTS maintenance_workshops (
+     id serial PRIMARY KEY,
+     school_id integer NOT NULL REFERENCES maintenance_schools(id) ON DELETE CASCADE,
+     name_ar text NOT NULL DEFAULT 'ورشة الدراسات العملية',
+     supervisor_name text,
+     created_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_mwsh_school_name UNIQUE (school_id, name_ar))`,
+  // بذور من النموذج الورقي الفعلي (idempotent)
+  `INSERT INTO maintenance_equipment_types (code, name_ar, name_en) VALUES
+     ('CNC','مكينة CNC','CNC Machine'),
+     ('THICK','مكينة التخانة','Thickness Machine'),
+     ('BANDSAW','منشار شريطي','Band Saw'),
+     ('MORTIZE','مثقاب النقر','Mortize Drill'),
+     ('SANDER','مكينة الصنفرة','Sander'),
+     ('WALLSAW','منشار حائط','Wall Saw'),
+     ('PLANNER','الرابوة','Surface Planner'),
+     ('BORING','التثقيب المتعدد','Boring Machine')
+     ON CONFLICT (code) DO NOTHING`,
+  `INSERT INTO maintenance_districts (name_ar, contact_phone) VALUES ('حولي','51562637') ON CONFLICT (name_ar) DO NOTHING`,
+  `INSERT INTO maintenance_schools (district_id, name_ar)
+     SELECT id, 'مدرسة مشعان الخضير' FROM maintenance_districts WHERE name_ar='حولي'
+     ON CONFLICT (district_id, name_ar) DO NOTHING`,
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

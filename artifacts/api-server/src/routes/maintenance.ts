@@ -954,15 +954,15 @@ router.get("/budgets/summary", async (req: Request, res: Response) => {
     const year = Number(req.query.year) || new Date().getFullYear();
     const [monthly, income, capex, capexList, byEquipment, byType, byProject, byContract, byBranch, byWorkerCost, incomeBySource, expenseByCategory] = await Promise.all([
       pool.query(
+        // المرحلة ٥ (القطع النهائي): "المصروف" يُقرأ الآن من بُعد القسم الموحّد (cost_center_id = الصيانة)
+        // بدل الربط المباشر — مصدر حقيقة واحد متسق مع لوحة الشركة والربحية. التكافؤ السنوي مُثبَت.
+        // التبويب/التوزيعات/الميزانية تبقى كما هي. التجميع الشهري بتاريخ المعاملة (transaction_date).
         `SELECT gs.month, COALESCE(b.amount, 0)::numeric AS budget,
            COALESCE((
              SELECT SUM(fe.amount) FROM finance_expenses fe
-             LEFT JOIN workers w ON w.id = fe.worker_id
-             WHERE EXTRACT(YEAR FROM fe.created_at)::int = $1
-               AND EXTRACT(MONTH FROM fe.created_at)::int = gs.month
-               AND (fe.maintenance_work_order_id IS NOT NULL
-                    OR fe.source_module = 'maintenance'
-                    OR (fe.worker_id IS NOT NULL AND w.assigned_module = 'maintenance'))
+             WHERE fe.cost_center_id = (SELECT id FROM cost_centers WHERE name = 'الصيانة' LIMIT 1)
+               AND EXTRACT(YEAR  FROM COALESCE(fe.transaction_date, fe.created_at::date))::int = $1
+               AND EXTRACT(MONTH FROM COALESCE(fe.transaction_date, fe.created_at::date))::int = gs.month
            ), 0)::numeric AS spent
          FROM generate_series(1, 12) AS gs(month)
          LEFT JOIN maintenance_budgets b ON b.year = $1 AND b.month = gs.month

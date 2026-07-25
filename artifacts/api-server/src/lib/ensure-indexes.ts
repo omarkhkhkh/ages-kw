@@ -210,6 +210,38 @@ const MIGRATIONS = [
      WHERE fi.cost_center_id IS NULL AND (fi.transportation_order_id IS NOT NULL OR fi.source_module='transportation')`,
   `UPDATE finance_income SET cost_center_id = (SELECT id FROM cost_centers WHERE name='العقود') WHERE cost_center_id IS NULL AND contract_id IS NOT NULL`,
   `UPDATE finance_income SET cost_center_id = (SELECT id FROM cost_centers WHERE name='عام/غير موزّع') WHERE cost_center_id IS NULL`,
+  // المرحلة ٥: إسناد القسم لحظيًا عند الإدراج (نفس أولوية الترحيل الخلفي حرفيًا) — يجعل بُعد القسم دقيقًا
+  // فور الكتابة من أي مسار (لا يعتمد على إعادة تشغيل الخادم). BEFORE INSERT فقط، وعند cost_center_id NULL —
+  // فلا يمسّ أي إسناد يدوي. هذا شرط أمان القطع النهائي: الميزانيات الموحّدة تقرأ بُعدًا دقيقًا لحظيًا.
+  `CREATE OR REPLACE FUNCTION assign_expense_cost_center() RETURNS trigger AS $fn$
+   BEGIN
+     IF NEW.cost_center_id IS NULL THEN
+       NEW.cost_center_id := (SELECT id FROM cost_centers WHERE name = (CASE
+         WHEN NEW.maintenance_work_order_id IS NOT NULL OR NEW.source_module = 'maintenance'
+              OR EXISTS (SELECT 1 FROM workers w WHERE w.id = NEW.worker_id AND w.assigned_module = 'maintenance') THEN 'الصيانة'
+         WHEN NEW.transportation_order_id IS NOT NULL OR NEW.vehicle_id IS NOT NULL
+              OR EXISTS (SELECT 1 FROM workers w WHERE w.id = NEW.worker_id AND w.assigned_module = 'transportation') THEN 'النقل'
+         WHEN NEW.contract_id IS NOT NULL THEN 'العقود'
+         WHEN NEW.purchase_order_id IS NOT NULL THEN 'المشتريات'
+         ELSE 'عام/غير موزّع' END) LIMIT 1);
+     END IF;
+     RETURN NEW;
+   END; $fn$ LANGUAGE plpgsql`,
+  `DROP TRIGGER IF EXISTS trg_assign_expense_cc ON finance_expenses`,
+  `CREATE TRIGGER trg_assign_expense_cc BEFORE INSERT ON finance_expenses FOR EACH ROW EXECUTE FUNCTION assign_expense_cost_center()`,
+  `CREATE OR REPLACE FUNCTION assign_income_cost_center() RETURNS trigger AS $fn$
+   BEGIN
+     IF NEW.cost_center_id IS NULL THEN
+       NEW.cost_center_id := (SELECT id FROM cost_centers WHERE name = (CASE
+         WHEN NEW.maintenance_work_order_id IS NOT NULL OR NEW.source_module = 'maintenance' THEN 'الصيانة'
+         WHEN NEW.transportation_order_id IS NOT NULL OR NEW.source_module = 'transportation' THEN 'النقل'
+         WHEN NEW.contract_id IS NOT NULL THEN 'العقود'
+         ELSE 'عام/غير موزّع' END) LIMIT 1);
+     END IF;
+     RETURN NEW;
+   END; $fn$ LANGUAGE plpgsql`,
+  `DROP TRIGGER IF EXISTS trg_assign_income_cc ON finance_income`,
+  `CREATE TRIGGER trg_assign_income_cc BEFORE INSERT ON finance_income FOR EACH ROW EXECUTE FUNCTION assign_income_cost_center()`,
 
   /* ═══ النظام المالي الموحّد — المرحلة ٢: جدول أصول موحّد + ميزانية موحّدة (تشغيل متوازٍ) ═══ */
   // بُعد القسم على المعدات والمركبات

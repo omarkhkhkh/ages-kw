@@ -497,6 +497,64 @@ const MIGRATIONS = [
      END IF;
    EXCEPTION WHEN others THEN NULL;
    END $do$`,
+
+  /* ═══ صيانة العقود — المرحلة ٤: الزيارات (القلب) + بنودها + مكتبة العبارات ═══
+     الزيارة = وحدة العمل الحقيقية: زيارة لمدرسة واحدة تغطي عدة مكائن من عدة عقود. */
+  `CREATE TABLE IF NOT EXISTS maintenance_visits (
+     id serial PRIMARY KEY,
+     visit_number text NOT NULL UNIQUE,
+     school_id integer NOT NULL REFERENCES maintenance_schools(id),
+     workshop_id integer REFERENCES maintenance_workshops(id) ON DELETE SET NULL,
+     visit_date date NOT NULL,
+     maintenance_type text NOT NULL DEFAULT 'دورية' CHECK (maintenance_type IN ('دورية','طارئة')),
+     technician_id integer REFERENCES users(id) ON DELETE SET NULL,
+     arrived_at timestamp, departed_at timestamp,
+     status text NOT NULL DEFAULT 'مسودة'
+       CHECK (status IN ('مسودة','قيد التنفيذ','بانتظار الاعتماد','معتمدة','صادرة','ملغاة')),
+     receiver_name text, receiver_title text, received_at date, receiver_signature text,
+     approved_by integer REFERENCES users(id) ON DELETE SET NULL,
+     issued_at timestamp,
+     created_at timestamp NOT NULL DEFAULT now())`,
+  `CREATE INDEX IF NOT EXISTS idx_mvisits_school_date ON maintenance_visits (school_id, visit_date DESC)`,
+  `CREATE TABLE IF NOT EXISTS maintenance_visit_lines (
+     id serial PRIMARY KEY,
+     visit_id integer NOT NULL REFERENCES maintenance_visits(id) ON DELETE CASCADE,
+     equipment_id integer NOT NULL REFERENCES maintenance_equipment(id),
+     contract_id integer REFERENCES service_contracts(id) ON DELETE SET NULL,
+     line_no smallint NOT NULL,
+     is_included boolean NOT NULL DEFAULT true,
+     exclusion_reason text CHECK (exclusion_reason IN
+       ('تعذّر الوصول للورشة','المكينة غير موجودة بالموقع','المكينة خارج العقد','خُدمت في زيارة سابقة','بطلب من إدارة المدرسة')),
+     exclusion_approved_by integer REFERENCES users(id) ON DELETE SET NULL,
+     condition text CHECK (condition IN ('جيدة','تحتاج صيانة')),
+     works_done text, notes text,
+     work_order_id integer REFERENCES maintenance_work_orders(id) ON DELETE SET NULL,
+     coverage_decision jsonb, snapshot jsonb,
+     created_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_mvl_equip UNIQUE (visit_id, equipment_id),
+     CONSTRAINT uq_mvl_lineno UNIQUE (visit_id, line_no),
+     CONSTRAINT ck_mvl_incl CHECK (
+       (is_included AND condition IS NOT NULL AND exclusion_reason IS NULL)
+       OR (NOT is_included AND exclusion_reason IS NOT NULL)),
+     CONSTRAINT ck_mvl_wo CHECK (work_order_id IS NULL OR condition = 'تحتاج صيانة'))`,
+  `CREATE INDEX IF NOT EXISTS idx_mvl_equipment ON maintenance_visit_lines (equipment_id)`,
+  `CREATE TABLE IF NOT EXISTS maintenance_standard_phrases (
+     id serial PRIMARY KEY,
+     category text NOT NULL CHECK (category IN ('فحص','عطل','إجراء')),
+     text_ar text NOT NULL,
+     type_id integer REFERENCES maintenance_equipment_types(id) ON DELETE SET NULL,
+     usage_count int NOT NULL DEFAULT 0,
+     is_active boolean NOT NULL DEFAULT true)`,
+  // بذور العبارات الجاهزة من النموذج الورقي (idempotent عبر فحص عدم التكرار)
+  `INSERT INTO maintenance_standard_phrases (category, text_ar)
+     SELECT v.category, v.text_ar FROM (VALUES
+        ('فحص','تم فحص المكينة وتنظيفها وتجربتها وتعمل بشكل جيد'),
+        ('عطل','المكينة تحتاج إلى صيانة وتم عمل الآتي'),
+        ('إجراء','تم تغيير القطعة التالفة وتجربة المكينة وتعمل بشكل جيد'),
+        ('إجراء','تم التشحيم والضبط ومعايرة المكينة'),
+        ('عطل','المكينة متوقفة بانتظار وصول قطعة غيار من المورّد')
+     ) AS v(category, text_ar)
+     WHERE NOT EXISTS (SELECT 1 FROM maintenance_standard_phrases p WHERE p.text_ar = v.text_ar)`,
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

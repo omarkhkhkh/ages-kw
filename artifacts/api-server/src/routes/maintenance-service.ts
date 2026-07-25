@@ -192,44 +192,237 @@ crud({
  *   ٣) خارج العقد (يُسعَّر من قائمة أسعار الجهة)
  * قراءة فقط؛ في المرحلة ٤ يُستدعى عند إنشاء بند الزيارة ويُحفظ ناتجه كلقطة مجمّدة.
  */
+/** محرّك التغطية (قابل لإعادة الاستخدام): ضمان → عقد ساري (مع السقوف) → خارج العقد. null = المعدة غير موجودة. */
+async function resolveCoverage(equipmentId: number, date: string) {
+  const { rows: eq } = await pool.query(
+    `SELECT (warranty_expiry IS NOT NULL AND warranty_expiry >= $2::date) AS in_warranty FROM maintenance_equipment WHERE id = $1`,
+    [equipmentId, date]
+  );
+  if (!eq.length) return null;
+  if (eq[0].in_warranty) return { path: "ضمان", billable: false, contractId: null as number | null, note: "المعدة داخل فترة الضمان — التكلفة على المورّد", items: {} as Record<string, any> };
+  const { rows: asg } = await pool.query(
+    `SELECT contract_id FROM maintenance_equipment_assignments
+     WHERE equipment_id = $1 AND valid_from <= $2::date AND (valid_to IS NULL OR valid_to > $2::date) AND contract_id IS NOT NULL
+     ORDER BY valid_from DESC LIMIT 1`,
+    [equipmentId, date]
+  );
+  const contractId: number | null = asg[0]?.contract_id ?? null;
+  if (!contractId) return { path: "خارج العقد", billable: true, contractId: null, note: "لا عقد ساري — يُسعَّر من قائمة أسعار الجهة", items: {} as Record<string, any> };
+  const { rows: cov } = await pool.query(`SELECT item_code, coverage, annual_cap, consumed FROM service_contract_coverage WHERE contract_id = $1`, [contractId]);
+  const items: Record<string, any> = {};
+  for (const r of cov) {
+    const cap = r.annual_cap == null ? null : Number(r.annual_cap);
+    const consumed = Number(r.consumed);
+    items[r.item_code] = { coverage: r.coverage, cap, consumed, exceeded: r.coverage === "مشمول بسقف" && cap != null && consumed >= cap };
+  }
+  return { path: "ضمن العقد", billable: null as boolean | null, contractId, note: "ضمن اتفاقية سارية", items };
+}
+
 router.get("/coverage-resolve", async (req: Request, res: Response) => {
   const equipmentId = Number(req.query.equipmentId);
   const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
   if (!equipmentId) return res.status(400).json({ error: "المعدة مطلوبة" });
   try {
-    const { rows: eq } = await pool.query(
-      `SELECT (warranty_expiry IS NOT NULL AND warranty_expiry >= $2::date) AS in_warranty FROM maintenance_equipment WHERE id = $1`,
-      [equipmentId, date]
-    );
-    if (!eq.length) return res.status(404).json({ error: "المعدة غير موجودة" });
-    if (eq[0].in_warranty) {
-      return res.json({ path: "ضمان", billable: false, contractId: null, note: "المعدة داخل فترة الضمان — التكلفة على المورّد", items: {} });
-    }
-    const { rows: asg } = await pool.query(
-      `SELECT contract_id FROM maintenance_equipment_assignments
-       WHERE equipment_id = $1 AND valid_from <= $2::date AND (valid_to IS NULL OR valid_to > $2::date) AND contract_id IS NOT NULL
-       ORDER BY valid_from DESC LIMIT 1`,
-      [equipmentId, date]
-    );
-    const contractId: number | null = asg[0]?.contract_id ?? null;
-    if (!contractId) {
-      return res.json({ path: "خارج العقد", billable: true, contractId: null, note: "لا عقد ساري — يُسعَّر من قائمة أسعار الجهة", items: {} });
-    }
-    const { rows: cov } = await pool.query(
-      `SELECT item_code, coverage, annual_cap, consumed FROM service_contract_coverage WHERE contract_id = $1`,
-      [contractId]
-    );
-    const items: Record<string, { coverage: string; cap: number | null; consumed: number; exceeded: boolean }> = {};
-    for (const r of cov) {
-      const cap = r.annual_cap == null ? null : Number(r.annual_cap);
-      const consumed = Number(r.consumed);
-      items[r.item_code] = { coverage: r.coverage, cap, consumed, exceeded: r.coverage === "مشمول بسقف" && cap != null && consumed >= cap };
-    }
-    return res.json({ path: "ضمن العقد", billable: null, contractId, note: "ضمن اتفاقية سارية", items });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "فشل حساب التغطية" });
+    const result = await resolveCoverage(equipmentId, date);
+    if (!result) return res.status(404).json({ error: "المعدة غير موجودة" });
+    return res.json(result);
+  } catch (err) { console.error(err); return res.status(500).json({ error: "فشل حساب التغطية" }); }
+});
+
+/* ═══ المرحلة ٤: الزيارات + بنودها + العبارات الجاهزة ═══ */
+
+async function nextVisitNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const { rows } = await pool.query(`SELECT COUNT(*)::int AS c FROM maintenance_visits WHERE visit_number LIKE $1`, [`VIS-${year}-%`]);
+  return `VIS-${year}-${String((Number(rows[0]?.c) || 0) + 1).padStart(4, "0")}`;
+}
+async function nextWorkOrderNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const { rows } = await pool.query(`SELECT COUNT(*)::int AS c FROM maintenance_work_orders WHERE order_number LIKE $1`, [`WO-${year}-%`]);
+  return `WO-${year}-${String((Number(rows[0]?.c) || 0) + 1).padStart(4, "0")}`;
+}
+
+// قائمة الزيارات
+router.get("/visits", async (req: Request, res: Response) => {
+  try {
+    const params: any[] = []; const cond: string[] = [];
+    if (req.query.schoolId) { params.push(Number(req.query.schoolId)); cond.push(`v.school_id = $${params.length}`); }
+    if (req.query.status) { params.push(req.query.status); cond.push(`v.status = $${params.length}`); }
+    const where = cond.length ? `WHERE ${cond.join(" AND ")}` : "";
+    const { rows } = await pool.query(
+      `SELECT v.id, v.visit_number AS "visitNumber", v.school_id AS "schoolId", s.name_ar AS "schoolName",
+              v.visit_date AS "visitDate", v.maintenance_type AS "maintenanceType", v.technician_id AS "technicianId",
+              u.full_name AS "technicianName", v.status,
+              (SELECT COUNT(*)::int FROM maintenance_visit_lines l WHERE l.visit_id = v.id) AS "lineCount"
+       FROM maintenance_visits v
+       LEFT JOIN maintenance_schools s ON s.id = v.school_id
+       LEFT JOIN users u ON u.id = v.technician_id
+       ${where} ORDER BY v.visit_date DESC, v.id DESC`, params);
+    return res.json(rows);
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب الزيارات" }); }
+});
+
+// تفاصيل زيارة مع بنودها
+router.get("/visits/:id", async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { rows: vr } = await pool.query(
+      `SELECT v.id, v.visit_number AS "visitNumber", v.school_id AS "schoolId", s.name_ar AS "schoolName",
+              v.workshop_id AS "workshopId", v.visit_date AS "visitDate", v.maintenance_type AS "maintenanceType",
+              v.technician_id AS "technicianId", u.full_name AS "technicianName", v.status,
+              v.receiver_name AS "receiverName", v.receiver_title AS "receiverTitle", v.received_at AS "receivedAt",
+              v.approved_by AS "approvedBy", v.issued_at AS "issuedAt"
+       FROM maintenance_visits v LEFT JOIN maintenance_schools s ON s.id = v.school_id LEFT JOIN users u ON u.id = v.technician_id
+       WHERE v.id = $1`, [id]);
+    if (!vr.length) return res.status(404).json({ error: "الزيارة غير موجودة" });
+    const { rows: lines } = await pool.query(
+      `SELECT l.id, l.line_no AS "lineNo", l.equipment_id AS "equipmentId", e.asset_number AS "assetNumber", e.name AS "equipmentName",
+              l.contract_id AS "contractId", l.is_included AS "isIncluded", l.exclusion_reason AS "exclusionReason",
+              l.condition, l.works_done AS "worksDone", l.notes, l.work_order_id AS "workOrderId", l.coverage_decision AS "coverageDecision"
+       FROM maintenance_visit_lines l LEFT JOIN maintenance_equipment e ON e.id = l.equipment_id
+       WHERE l.visit_id = $1 ORDER BY l.line_no`, [id]);
+    return res.json({ ...vr[0], lines });
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب الزيارة" }); }
+});
+
+// إنشاء زيارة (رقم تلقائي إن لم يُرسل)
+router.post("/visits", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  const b = req.body ?? {};
+  if (!b.schoolId || !b.visitDate) return res.status(400).json({ error: "المدرسة وتاريخ الزيارة مطلوبان" });
+  try {
+    const visitNumber = (b.visitNumber?.trim && b.visitNumber.trim()) || await nextVisitNumber();
+    const { rows } = await pool.query(
+      `INSERT INTO maintenance_visits (visit_number, school_id, workshop_id, visit_date, maintenance_type, technician_id, status)
+       VALUES ($1,$2,$3,$4,COALESCE($5,'دورية'),$6,COALESCE($7,'مسودة'))
+       RETURNING id, visit_number AS "visitNumber", status`,
+      [visitNumber, Number(b.schoolId), b.workshopId ? Number(b.workshopId) : null, b.visitDate,
+       b.maintenanceType || null, b.technicianId ? Number(b.technicianId) : null, b.status || null]);
+    return res.status(201).json(rows[0]);
+  } catch (e: any) {
+    if (e?.code === "23505") return res.status(409).json({ error: "رقم الزيارة مستخدم" });
+    if (e?.code === "23514") return res.status(400).json({ error: "قيمة غير مسموحة (النوع/الحالة)" });
+    console.error(e); return res.status(500).json({ error: "فشل إنشاء الزيارة" });
   }
+});
+
+// تعديل زيارة (الحالة/المستلِم/التواريخ…)
+router.patch("/visits/:id", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  const b = req.body ?? {};
+  const map: Record<string, [string, "num" | undefined]> = {
+    status: ["status", undefined], maintenanceType: ["maintenance_type", undefined], technicianId: ["technician_id", "num"],
+    workshopId: ["workshop_id", "num"], visitDate: ["visit_date", undefined], receiverName: ["receiver_name", undefined],
+    receiverTitle: ["receiver_title", undefined], receivedAt: ["received_at", undefined], receiverSignature: ["receiver_signature", undefined],
+    approvedBy: ["approved_by", "num"], arrivedAt: ["arrived_at", undefined], departedAt: ["departed_at", undefined], issuedAt: ["issued_at", undefined],
+  };
+  const sets: string[] = [], vals: any[] = [];
+  for (const [k, [col, kind]] of Object.entries(map)) {
+    if (b[k] !== undefined) { vals.push(kind === "num" ? (b[k] === "" || b[k] == null ? null : Number(b[k])) : (b[k] === "" ? null : b[k])); sets.push(`${col} = $${vals.length}`); }
+  }
+  if (!sets.length) return res.status(400).json({ error: "لا تغييرات" });
+  vals.push(Number(req.params.id));
+  try {
+    const { rows } = await pool.query(`UPDATE maintenance_visits SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING id`, vals);
+    if (!rows.length) return res.status(404).json({ error: "الزيارة غير موجودة" });
+    return res.json({ ok: true });
+  } catch (e: any) {
+    if (e?.code === "23514") return res.status(400).json({ error: "قيمة غير مسموحة" });
+    console.error(e); return res.status(500).json({ error: "فشل التحديث" });
+  }
+});
+
+router.delete("/visits/:id", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try { await pool.query(`DELETE FROM maintenance_visits WHERE id = $1`, [Number(req.params.id)]); return res.status(204).send(); }
+  catch { return res.status(500).json({ error: "فشل الحذف" }); }
+});
+
+// إضافة بند لزيارة — يحسب لقطة التغطية المجمّدة تلقائيًا حسب تاريخ الزيارة
+router.post("/visits/:id/lines", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  const visitId = Number(req.params.id);
+  const b = req.body ?? {};
+  if (!b.equipmentId) return res.status(400).json({ error: "المعدة مطلوبة" });
+  try {
+    const { rows: vr } = await pool.query(`SELECT to_char(visit_date,'YYYY-MM-DD') AS d FROM maintenance_visits WHERE id = $1`, [visitId]);
+    if (!vr.length) return res.status(404).json({ error: "الزيارة غير موجودة" });
+    const date = vr[0].d as string;
+    const { rows: ln } = await pool.query(`SELECT COALESCE(MAX(line_no),0)+1 AS n FROM maintenance_visit_lines WHERE visit_id = $1`, [visitId]);
+    const lineNo = Number(ln[0].n);
+    const coverage = await resolveCoverage(Number(b.equipmentId), date);
+    const contractId = coverage?.contractId ?? null;
+    const isIncluded = b.isIncluded !== false;
+    const condition = isIncluded ? (b.condition || "جيدة") : null;
+    const exclusionReason = isIncluded ? null : (b.exclusionReason || null);
+    if (!isIncluded && !exclusionReason) return res.status(400).json({ error: "سبب الاستبعاد مطلوب لبند مستبعَد" });
+    const { rows } = await pool.query(
+      `INSERT INTO maintenance_visit_lines (visit_id, equipment_id, contract_id, line_no, is_included, exclusion_reason, condition, works_done, notes, coverage_decision)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id, line_no AS "lineNo"`,
+      [visitId, Number(b.equipmentId), contractId, lineNo, isIncluded, exclusionReason, condition, b.worksDone || null, b.notes || null, coverage ? JSON.stringify(coverage) : null]);
+    return res.status(201).json({ ...rows[0], coverageDecision: coverage });
+  } catch (e: any) {
+    if (e?.code === "23505") return res.status(409).json({ error: "المكينة مضافة في هذه الزيارة بالفعل" });
+    if (e?.code === "23514") return res.status(400).json({ error: "بيانات البند غير متوافقة (تضمين يتطلب حالة، استبعاد يتطلب سببًا)" });
+    console.error(e); return res.status(500).json({ error: "فشل إضافة البند" });
+  }
+});
+
+router.patch("/lines/:id", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  const b = req.body ?? {};
+  const map: Record<string, string> = { condition: "condition", worksDone: "works_done", notes: "notes", isIncluded: "is_included", exclusionReason: "exclusion_reason" };
+  const sets: string[] = [], vals: any[] = [];
+  for (const [k, col] of Object.entries(map)) {
+    if (b[k] !== undefined) { vals.push(b[k] === "" ? null : b[k]); sets.push(`${col} = $${vals.length}`); }
+  }
+  if (!sets.length) return res.status(400).json({ error: "لا تغييرات" });
+  vals.push(Number(req.params.id));
+  try {
+    const { rows } = await pool.query(`UPDATE maintenance_visit_lines SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING id`, vals);
+    if (!rows.length) return res.status(404).json({ error: "البند غير موجود" });
+    return res.json({ ok: true });
+  } catch (e: any) {
+    if (e?.code === "23514") return res.status(400).json({ error: "بيانات البند غير متوافقة" });
+    console.error(e); return res.status(500).json({ error: "فشل التحديث" });
+  }
+});
+
+router.delete("/lines/:id", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try { await pool.query(`DELETE FROM maintenance_visit_lines WHERE id = $1`, [Number(req.params.id)]); return res.status(204).send(); }
+  catch { return res.status(500).json({ error: "فشل الحذف" }); }
+});
+
+// توليد أمر صيانة من بند "تحتاج صيانة" — يُنشئ أمرًا في نظام الصيانة الحالي ويربطه بالبند
+router.post("/lines/:id/generate-work-order", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  const lineId = Number(req.params.id);
+  try {
+    const { rows: lr } = await pool.query(`SELECT * FROM maintenance_visit_lines WHERE id = $1`, [lineId]);
+    if (!lr.length) return res.status(404).json({ error: "البند غير موجود" });
+    const line = lr[0];
+    if (line.condition !== "تحتاج صيانة") return res.status(400).json({ error: "يُولَّد الأمر فقط من بند حالته «تحتاج صيانة»" });
+    if (line.work_order_id) return res.status(409).json({ error: "للبند أمر صيانة مرتبط بالفعل" });
+    const orderNumber = await nextWorkOrderNumber();
+    const reason = line.works_done || line.notes || "من زيارة صيانة";
+    const { rows: wo } = await pool.query(
+      `INSERT INTO maintenance_work_orders (order_number, equipment_id, maintenance_type, report_reason, priority, stage)
+       VALUES ($1,$2,'corrective',$3,'medium','reported') RETURNING id, order_number AS "orderNumber"`,
+      [orderNumber, line.equipment_id, reason]);
+    const woId = wo[0].id;
+    try { await pool.query(`INSERT INTO maintenance_stage_history (work_order_id, stage, changed_by_user_id) VALUES ($1,'reported',$2)`, [woId, req.session.userId || null]); } catch { /* سجل المراحل ليس حرجًا */ }
+    await pool.query(`UPDATE maintenance_visit_lines SET work_order_id = $1 WHERE id = $2`, [woId, lineId]);
+    return res.status(201).json({ workOrderId: woId, orderNumber: wo[0].orderNumber });
+  } catch (e: any) { console.error(e); return res.status(500).json({ error: "فشل توليد أمر الصيانة" }); }
+});
+
+// مكتبة العبارات الجاهزة (بديل الأسطر المنقّطة بخط اليد)
+crud({
+  base: "/standard-phrases", table: "maintenance_standard_phrases",
+  select: `id, category, text_ar AS "textAr", type_id AS "typeId", usage_count AS "usageCount", is_active AS "isActive"`,
+  writable: [["category", "category"], ["textAr", "text_ar"], ["typeId", "type_id", "num"], ["usageCount", "usage_count", "num"], ["isActive", "is_active"]],
+  required: ["category", "textAr"], order: "category, id", filter: ["typeId", "type_id"],
 });
 
 export default router;

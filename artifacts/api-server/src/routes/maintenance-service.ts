@@ -425,4 +425,120 @@ crud({
   required: ["category", "textAr"], order: "category, id", filter: ["typeId", "type_id"],
 });
 
+/* ═══ المرحلة ٥: التقارير الرسمية + السجلات + الترقيم + مطالبات الضمان ═══ */
+
+// ترقيم رسمي متسلسل آمن عند التزامن (upsert ذرّي على سلسلة النوع/السنة)
+async function nextDocNumber(docType: string): Promise<string> {
+  const prefixMap: Record<string, string> = { "تقرير زيارة": "RPT", "مطالبة مالية": "INV", "عرض سعر": "QUO", "محضر استلام": "RCV", "كتاب رسمي": "LTR" };
+  const prefix = prefixMap[docType] || "DOC";
+  const year = new Date().getFullYear();
+  const { rows } = await pool.query(
+    `INSERT INTO maintenance_document_sequences (doc_type, year, last_number) VALUES ($1,$2,1)
+     ON CONFLICT (doc_type, year) DO UPDATE SET last_number = maintenance_document_sequences.last_number + 1
+     RETURNING last_number`,
+    [docType, year]
+  );
+  return `${prefix}-${year}-${String(rows[0].last_number).padStart(4, "0")}`;
+}
+
+// سجل الصادر — رقم رسمي تلقائي إن لم يُرسل
+router.get("/outgoing-register", async (req: Request, res: Response) => {
+  try {
+    const params: any[] = []; const cond: string[] = [];
+    for (const [q, col] of [["docType", "doc_type"], ["visitId", "visit_id"], ["districtId", "district_id"], ["status", "status"]] as const) {
+      if (req.query[q]) { params.push(q === "docType" || q === "status" ? req.query[q] : Number(req.query[q])); cond.push(`${col} = $${params.length}`); }
+    }
+    const where = cond.length ? `WHERE ${cond.join(" AND ")}` : "";
+    const { rows } = await pool.query(
+      `SELECT id, doc_number AS "docNumber", version, doc_type AS "docType", visit_id AS "visitId", district_id AS "districtId",
+              subject, file_path AS "filePath", delivery_method AS "deliveryMethod", delivered_at AS "deliveredAt",
+              receiver_name AS "receiverName", receiver_ref AS "receiverRef", status, issued_at AS "issuedAt"
+       FROM maintenance_outgoing_register ${where} ORDER BY issued_at DESC, id DESC`, params);
+    return res.json(rows);
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب سجل الصادر" }); }
+});
+
+router.post("/outgoing-register", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  const b = req.body ?? {};
+  if (!b.docType) return res.status(400).json({ error: "نوع المستند مطلوب" });
+  try {
+    const docNumber = (typeof b.docNumber === "string" && b.docNumber.trim()) || await nextDocNumber(b.docType);
+    const { rows } = await pool.query(
+      `INSERT INTO maintenance_outgoing_register (doc_number, doc_type, visit_id, district_id, subject, file_path, delivery_method, delivered_at, receiver_name, receiver_title, receiver_ref, status, issued_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12,'أُرسل'),$13)
+       RETURNING id, doc_number AS "docNumber", version, status`,
+      [docNumber, b.docType, b.visitId ? Number(b.visitId) : null, b.districtId ? Number(b.districtId) : null,
+       b.subject || null, b.filePath || null, b.deliveryMethod || null, b.deliveredAt || null,
+       b.receiverName || null, b.receiverTitle || null, b.receiverRef || null, b.status || null, req.session.userId || null]);
+    return res.status(201).json(rows[0]);
+  } catch (e: any) {
+    if (e?.code === "23505") return res.status(409).json({ error: "رقم/إصدار المستند مستخدم" });
+    if (e?.code === "23514") return res.status(400).json({ error: "قيمة غير مسموحة (النوع/طريقة التسليم/الحالة)" });
+    console.error(e); return res.status(500).json({ error: "فشل تسجيل الصادر" });
+  }
+});
+
+router.patch("/outgoing-register/:id", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  const b = req.body ?? {};
+  const map: Record<string, string> = { status: "status", deliveryMethod: "delivery_method", deliveredAt: "delivered_at", receiverName: "receiver_name", receiverTitle: "receiver_title", receiverRef: "receiver_ref", revisionReason: "revision_reason", subject: "subject", filePath: "file_path" };
+  const sets: string[] = [], vals: any[] = [];
+  for (const [k, col] of Object.entries(map)) if (b[k] !== undefined) { vals.push(b[k] === "" ? null : b[k]); sets.push(`${col} = $${vals.length}`); }
+  if (!sets.length) return res.status(400).json({ error: "لا تغييرات" });
+  vals.push(Number(req.params.id));
+  try {
+    const { rows } = await pool.query(`UPDATE maintenance_outgoing_register SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING id`, vals);
+    if (!rows.length) return res.status(404).json({ error: "غير موجود" });
+    return res.json({ ok: true });
+  } catch (e: any) {
+    if (e?.code === "23514") return res.status(400).json({ error: "قيمة غير مسموحة" });
+    console.error(e); return res.status(500).json({ error: "فشل التحديث" });
+  }
+});
+
+router.delete("/outgoing-register/:id", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try { await pool.query(`DELETE FROM maintenance_outgoing_register WHERE id = $1`, [Number(req.params.id)]); return res.status(204).send(); }
+  catch { return res.status(500).json({ error: "فشل الحذف" }); }
+});
+
+// ملفات العرض (تخطيطات التقرير + تسميات الحقول لكل جهة)
+crud({
+  base: "/presentation-profiles", table: "maintenance_presentation_profiles",
+  select: `id, name, district_id AS "districtId", contract_id AS "contractId", base_layout AS "baseLayout",
+           raw_template_path AS "rawTemplatePath", show_costs AS "showCosts", show_parts AS "showParts",
+           logo_path AS "logoPath", signature_blocks AS "signatureBlocks", is_default AS "isDefault"`,
+  writable: [["name", "name"], ["districtId", "district_id", "num"], ["contractId", "contract_id", "num"],
+    ["baseLayout", "base_layout"], ["rawTemplatePath", "raw_template_path"], ["showCosts", "show_costs"],
+    ["showParts", "show_parts"], ["logoPath", "logo_path"], ["signatureBlocks", "signature_blocks", "json"], ["isDefault", "is_default"]],
+  required: ["name", "baseLayout"], order: "name",
+});
+crud({
+  base: "/field-labels", table: "maintenance_field_labels",
+  select: `id, profile_id AS "profileId", field_key AS "fieldKey", label_ar AS "labelAr", label_en AS "labelEn", is_visible AS "isVisible", sort_order AS "sortOrder"`,
+  writable: [["profileId", "profile_id", "num"], ["fieldKey", "field_key"], ["labelAr", "label_ar"], ["labelEn", "label_en"], ["isVisible", "is_visible"], ["sortOrder", "sort_order", "num"]],
+  required: ["profileId", "fieldKey", "labelAr"], order: "sort_order, field_key", filter: ["profileId", "profile_id"],
+});
+
+// سجل الوارد
+crud({
+  base: "/incoming-register", table: "maintenance_incoming_register",
+  select: `id, ref_number AS "refNumber", received_at AS "receivedAt", district_id AS "districtId", school_id AS "schoolId",
+           subject, file_path AS "filePath", generated_visit_id AS "generatedVisitId", generated_wo_id AS "generatedWoId"`,
+  writable: [["refNumber", "ref_number"], ["receivedAt", "received_at"], ["districtId", "district_id", "num"], ["schoolId", "school_id", "num"],
+    ["subject", "subject"], ["filePath", "file_path"], ["generatedVisitId", "generated_visit_id", "num"], ["generatedWoId", "generated_wo_id", "num"]],
+  required: ["receivedAt", "subject"], order: "received_at DESC", filter: ["districtId", "district_id"],
+});
+
+// مطالبات الضمان (لأمر صيانة، على مورّد)
+crud({
+  base: "/warranty-claims", table: "maintenance_warranty_claims",
+  select: `id, work_order_id AS "workOrderId", supplier_id AS "supplierId", claim_number AS "claimNumber",
+           requested_parts AS "requestedParts", requested_at AS "requestedAt", received_at AS "receivedAt", status, notes`,
+  writable: [["workOrderId", "work_order_id", "num"], ["supplierId", "supplier_id", "num"], ["claimNumber", "claim_number"],
+    ["requestedParts", "requested_parts"], ["requestedAt", "requested_at"], ["receivedAt", "received_at"], ["status", "status"], ["notes", "notes"]],
+  required: ["workOrderId", "supplierId"], order: "requested_at DESC", filter: ["workOrderId", "work_order_id"],
+});
+
 export default router;

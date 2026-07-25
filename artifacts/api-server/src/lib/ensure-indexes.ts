@@ -555,6 +555,74 @@ const MIGRATIONS = [
         ('عطل','المكينة متوقفة بانتظار وصول قطعة غيار من المورّد')
      ) AS v(category, text_ar)
      WHERE NOT EXISTS (SELECT 1 FROM maintenance_standard_phrases p WHERE p.text_ar = v.text_ar)`,
+
+  /* ═══ صيانة العقود — المرحلة ٥: التقارير الرسمية + السجلات + الترقيم + مطالبات الضمان ═══
+     بديل ٣٠ قالب Word: ٣ تخطيطات + تسميات حقول لكل جهة. سجل صادر/وارد بترقيم رسمي متسلسل. */
+  `CREATE TABLE IF NOT EXISTS maintenance_presentation_profiles (
+     id serial PRIMARY KEY,
+     name text NOT NULL,
+     district_id integer REFERENCES maintenance_districts(id) ON DELETE SET NULL,
+     contract_id integer REFERENCES service_contracts(id) ON DELETE SET NULL,
+     base_layout text NOT NULL CHECK (base_layout IN ('جدولي متعدد المكائن','مبسّط','مفصّل','ملف Word مرفوع')),
+     raw_template_path text,
+     show_costs boolean NOT NULL DEFAULT false,
+     show_parts boolean NOT NULL DEFAULT true,
+     logo_path text,
+     signature_blocks jsonb NOT NULL DEFAULT '[]'::jsonb,
+     is_default boolean NOT NULL DEFAULT false,
+     created_at timestamp NOT NULL DEFAULT now())`,
+  `CREATE TABLE IF NOT EXISTS maintenance_field_labels (
+     id serial PRIMARY KEY,
+     profile_id integer NOT NULL REFERENCES maintenance_presentation_profiles(id) ON DELETE CASCADE,
+     field_key text NOT NULL,
+     label_ar text NOT NULL,
+     label_en text,
+     is_visible boolean NOT NULL DEFAULT true,
+     sort_order smallint NOT NULL DEFAULT 0,
+     CONSTRAINT uq_mfl UNIQUE (profile_id, field_key))`,
+  // الترقيم الرسمي المتسلسل الآمن عند التزامن
+  `CREATE TABLE IF NOT EXISTS maintenance_document_sequences (
+     doc_type text NOT NULL, year smallint NOT NULL, last_number int NOT NULL DEFAULT 0,
+     PRIMARY KEY (doc_type, year))`,
+  `CREATE TABLE IF NOT EXISTS maintenance_outgoing_register (
+     id serial PRIMARY KEY,
+     doc_number text NOT NULL,
+     version smallint NOT NULL DEFAULT 1,
+     doc_type text NOT NULL CHECK (doc_type IN ('تقرير زيارة','مطالبة مالية','عرض سعر','محضر استلام','كتاب رسمي')),
+     visit_id integer REFERENCES maintenance_visits(id) ON DELETE SET NULL,
+     district_id integer REFERENCES maintenance_districts(id) ON DELETE SET NULL,
+     subject text, file_path text,
+     delivery_method text CHECK (delivery_method IN ('تسليم باليد','بريد','نظام الجهة')),
+     delivered_at date, receiver_name text, receiver_title text, receiver_ref text,
+     status text NOT NULL DEFAULT 'أُرسل' CHECK (status IN ('أُرسل','استُلم','قُبل','أُعيد للتعديل')),
+     revision_reason text,
+     issued_by integer REFERENCES users(id) ON DELETE SET NULL,
+     issued_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_mout UNIQUE (doc_number, version))`,
+  `CREATE TABLE IF NOT EXISTS maintenance_incoming_register (
+     id serial PRIMARY KEY,
+     ref_number text,
+     received_at date NOT NULL,
+     district_id integer REFERENCES maintenance_districts(id) ON DELETE SET NULL,
+     school_id integer REFERENCES maintenance_schools(id) ON DELETE SET NULL,
+     subject text NOT NULL, file_path text,
+     generated_visit_id integer REFERENCES maintenance_visits(id) ON DELETE SET NULL,
+     generated_wo_id integer REFERENCES maintenance_work_orders(id) ON DELETE SET NULL,
+     created_at timestamp NOT NULL DEFAULT now())`,
+  `CREATE TABLE IF NOT EXISTS maintenance_warranty_claims (
+     id serial PRIMARY KEY,
+     work_order_id integer NOT NULL REFERENCES maintenance_work_orders(id) ON DELETE CASCADE,
+     supplier_id integer NOT NULL REFERENCES suppliers(id),
+     claim_number text, requested_parts text,
+     requested_at date NOT NULL DEFAULT CURRENT_DATE, received_at date,
+     status text NOT NULL DEFAULT 'مقدّمة' CHECK (status IN ('مقدّمة','مقبولة','مرفوضة','وصلت القطع')),
+     notes text)`,
+  // ملف عرض افتراضي مطابق للنموذج الورقي (idempotent: يُدرج فقط إن لم يوجد ملف افتراضي)
+  `INSERT INTO maintenance_presentation_profiles (name, district_id, base_layout, show_costs, is_default, signature_blocks)
+     SELECT 'نموذج وزارة التربية — جدولي', d.id, 'جدولي متعدد المكائن', false, true,
+        '[{"label":"توقيع مسؤول الورشة أو من ينوب عنه"},{"label":"توقيع وختم إدارة المدرسة","require_name":true,"require_date":true}]'::jsonb
+     FROM maintenance_districts d
+     WHERE d.name_ar='حولي' AND NOT EXISTS (SELECT 1 FROM maintenance_presentation_profiles p WHERE p.is_default = true)`,
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

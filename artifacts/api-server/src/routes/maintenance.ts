@@ -540,13 +540,19 @@ router.post("/inventory/:id/receive", async (req: Request, res: Response) => {
   try {
     const { quantity, unitCost, recordExpense } = req.body as { quantity?: number; unitCost?: number; recordExpense?: boolean };
     if (!quantity || quantity <= 0) return res.status(400).json({ error: "الكمية مطلوبة" });
+    // المرحلة ٨: متوسط التكلفة المرجّح المتحرّك — عند الاستلام بسعر جديد يُعاد الحساب:
+    // avg = (رصيد×متوسط_قديم + كمية_مستلمة×سعر_مستلم) ÷ (رصيد + كمية). القيم على يمين SET = ما قبل التحديث.
     const { rows } = await pool.query(
       `UPDATE maintenance_inventory
        SET quantity_on_hand = quantity_on_hand + $1,
            unit_cost = COALESCE($2, unit_cost),
+           avg_cost = CASE
+             WHEN $2 IS NULL OR (quantity_on_hand + $1) = 0 THEN avg_cost
+             ELSE ((quantity_on_hand * COALESCE(avg_cost, 0)) + ($1 * $2)) / (quantity_on_hand + $1)
+           END,
            updated_at = now()
        WHERE id = $3
-       RETURNING id, part_number AS "partNumber", part_name AS "partName", quantity_on_hand AS "quantityOnHand", unit_cost AS "unitCost"`,
+       RETURNING id, part_number AS "partNumber", part_name AS "partName", quantity_on_hand AS "quantityOnHand", unit_cost AS "unitCost", avg_cost AS "avgCost"`,
       [quantity, unitCost ?? null, id]
     );
     if (!rows.length) return res.status(404).json({ error: "الصنف غير موجود" });

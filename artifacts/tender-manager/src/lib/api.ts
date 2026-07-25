@@ -119,6 +119,20 @@ export const costCentersApi = {
   },
   profitability: (year: number) => apiFetch<Profitability>(`/api/cost-centers/profitability?year=${year}`),
   companyDashboard: (year: number) => apiFetch<CompanyDashboard>(`/api/cost-centers/company-dashboard?year=${year}`),
+  financialEvents: (year: number, type?: string) => apiFetch<FinancialEvent[]>(`/api/cost-centers/financial-events?year=${year}${type ? `&type=${type}` : ""}`),
+  reverseEvent: (id: number, reason?: string) => apiFetch<FinancialEvent>(`/api/cost-centers/financial-events/${id}/reverse`, { method: "POST", body: JSON.stringify({ reason }) }),
+  ledgerIntegrity: () => apiFetch<LedgerIntegrity>(`/api/cost-centers/ledger-integrity`),
+};
+
+// ── Financial events (المرحلة ٦/٩/١٠) + Pricing book (المرحلة ٧) ──
+export type FinancialEvent = { id: number; eventType: "income" | "expense" | "reversal"; sourceLedger: string | null; sourceId: number | null; amount: string; costCenterId: number | null; costCenterName: string | null; transactionDate: string | null; description: string | null; reversesEventId: number | null; createdAt: string; isReversed: boolean };
+export type LedgerIntegrity = { eventsExpense: string; ledgerExpense: string; eventsIncome: string; ledgerIncome: string; reversalTotal: string; eventsCount: number; reversalsCount: number; expenseMatch: boolean; incomeMatch: boolean; inSync: boolean };
+export type PricingBookItem = { id: number; itemCode: string; itemName: string; category: string | null; unit: string | null; standardCost: string; standardPrice: string; currency: string; notes: string | null; isActive: boolean; createdAt: string; updatedAt: string };
+export const pricingBookApi = {
+  list: (search?: string) => apiFetch<PricingBookItem[]>(`/api/pricing-book${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+  create: (d: Partial<PricingBookItem>) => apiFetch<PricingBookItem>("/api/pricing-book", { method: "POST", body: JSON.stringify(d) }),
+  update: (id: number, d: Partial<PricingBookItem>) => apiFetch<PricingBookItem>(`/api/pricing-book/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
+  delete: (id: number) => apiFetch<void>(`/api/pricing-book/${id}`, { method: "DELETE" }),
 };
 
 // ── RFQ Requests ───────────────────────────────────────────────────────────

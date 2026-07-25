@@ -289,6 +289,73 @@ const MIGRATIONS = [
      cost_center_id integer NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
      cost_type text, driver text, share_ratio numeric(6,4) NOT NULL DEFAULT 0, notes text,
      created_at timestamp NOT NULL DEFAULT now())`,
+
+  /* ═══ المرحلة ٦: دفتر الأحداث المالية (append-only، غير قابل للحذف) ═══
+     مرآة موحّدة لكل حركة مالية كحدث ثابت. تشغيل متوازٍ: دفترا الدخل/المصروف يبقيان مصدر
+     الحقيقة التشغيلي، وهذا الدفتر ينعكس منهما تلقائيًا (trigger) + ترحيل خلفي. التصحيح يتم
+     بحدث عكسي (reverses_event_id) لا بحذف. UNIQUE(source_ledger, source_id) يضمن idempotency. */
+  `CREATE TABLE IF NOT EXISTS financial_events (
+     id serial PRIMARY KEY,
+     event_type text NOT NULL,                 -- income | expense | reversal
+     source_ledger text,                       -- finance_income | finance_expenses | manual
+     source_id integer,
+     amount numeric(15,3) NOT NULL DEFAULT 0,
+     cost_center_id integer REFERENCES cost_centers(id) ON DELETE SET NULL,
+     transaction_date date,
+     description text,
+     reverses_event_id integer REFERENCES financial_events(id) ON DELETE SET NULL,
+     created_by integer,
+     created_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_fin_event_source UNIQUE (source_ledger, source_id))`,
+  `CREATE INDEX IF NOT EXISTS idx_fin_events_txn ON financial_events (transaction_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_fin_events_cc ON financial_events (cost_center_id)`,
+  // مرآة لحظية عند إدراج مصروف/دخل (AFTER INSERT — بعد أن يضبط trigger القسم cost_center_id)
+  `CREATE OR REPLACE FUNCTION mirror_expense_event() RETURNS trigger AS $fn$
+   BEGIN
+     INSERT INTO financial_events (event_type, source_ledger, source_id, amount, cost_center_id, transaction_date, description, created_at)
+     VALUES ('expense', 'finance_expenses', NEW.id, NEW.amount, NEW.cost_center_id, COALESCE(NEW.transaction_date, NEW.created_at::date), NEW.description, NEW.created_at)
+     ON CONFLICT (source_ledger, source_id) DO NOTHING;
+     RETURN NEW;
+   END; $fn$ LANGUAGE plpgsql`,
+  `DROP TRIGGER IF EXISTS trg_mirror_expense_event ON finance_expenses`,
+  `CREATE TRIGGER trg_mirror_expense_event AFTER INSERT ON finance_expenses FOR EACH ROW EXECUTE FUNCTION mirror_expense_event()`,
+  `CREATE OR REPLACE FUNCTION mirror_income_event() RETURNS trigger AS $fn$
+   BEGIN
+     INSERT INTO financial_events (event_type, source_ledger, source_id, amount, cost_center_id, transaction_date, description, created_at)
+     VALUES ('income', 'finance_income', NEW.id, NEW.amount, NEW.cost_center_id, NEW.date, NEW.description, NEW.created_at)
+     ON CONFLICT (source_ledger, source_id) DO NOTHING;
+     RETURN NEW;
+   END; $fn$ LANGUAGE plpgsql`,
+  `DROP TRIGGER IF EXISTS trg_mirror_income_event ON finance_income`,
+  `CREATE TRIGGER trg_mirror_income_event AFTER INSERT ON finance_income FOR EACH ROW EXECUTE FUNCTION mirror_income_event()`,
+  // ترحيل خلفي — انعكاس كل السجلات الموجودة (idempotent عبر ON CONFLICT)
+  `INSERT INTO financial_events (event_type, source_ledger, source_id, amount, cost_center_id, transaction_date, description, created_at)
+     SELECT 'expense', 'finance_expenses', id, amount, cost_center_id, COALESCE(transaction_date, created_at::date), description, created_at FROM finance_expenses
+     ON CONFLICT (source_ledger, source_id) DO NOTHING`,
+  `INSERT INTO financial_events (event_type, source_ledger, source_id, amount, cost_center_id, transaction_date, description, created_at)
+     SELECT 'income', 'finance_income', id, amount, cost_center_id, date, description, created_at FROM finance_income
+     ON CONFLICT (source_ledger, source_id) DO NOTHING`,
+
+  /* ═══ المرحلة ٧: دفتر التسعير المرجعي (pricing_book) ═══
+     كتالوج مركزي للأصناف بأسعار تكلفة/بيع قياسية. اسم متعمّد (ليس pricing — محجوز لأداة الاستيراد). */
+  `CREATE TABLE IF NOT EXISTS pricing_book (
+     id serial PRIMARY KEY,
+     item_code text NOT NULL UNIQUE,
+     item_name text NOT NULL,
+     category text,
+     unit text,
+     standard_cost numeric(15,3) NOT NULL DEFAULT 0,
+     standard_price numeric(15,3) NOT NULL DEFAULT 0,
+     currency text NOT NULL DEFAULT 'KWD',
+     notes text,
+     is_active boolean NOT NULL DEFAULT true,
+     created_at timestamp NOT NULL DEFAULT now(),
+     updated_at timestamp NOT NULL DEFAULT now())`,
+
+  /* ═══ المرحلة ٨: تكلفة المخزون بالمتوسط المرجّح ═══
+     عمود متوسط تكلفة متحرّك على مخزون الصيانة، يُعاد حسابه عند كل استلام. */
+  `ALTER TABLE maintenance_inventory ADD COLUMN IF NOT EXISTS avg_cost numeric(15,3) NOT NULL DEFAULT 0`,
+  `UPDATE maintenance_inventory SET avg_cost = COALESCE(unit_cost, 0) WHERE avg_cost = 0 AND unit_cost IS NOT NULL`,
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

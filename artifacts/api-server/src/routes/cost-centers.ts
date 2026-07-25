@@ -146,6 +146,84 @@ router.get("/profitability", async (req: Request, res: Response) => {
   }
 });
 
+/* ═══ المرحلة ٦/٩/١٠: دفتر الأحداث المالية (append-only) + التصحيح بالعكس + فحص التطابق ═══ */
+
+/* قائمة الأحداث المالية — static قبل /:id */
+router.get("/financial-events", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const type = req.query.type as string | undefined; // income | expense | reversal
+    const limit = Math.min(Number(req.query.limit) || 300, 1000);
+    const params: any[] = [year];
+    let typeClause = "";
+    if (type) { params.push(type); typeClause = `AND e.event_type = $${params.length}`; }
+    const { rows } = await pool.query(
+      `SELECT e.id, e.event_type AS "eventType", e.source_ledger AS "sourceLedger", e.source_id AS "sourceId",
+              e.amount, e.cost_center_id AS "costCenterId", cc.name AS "costCenterName",
+              e.transaction_date AS "transactionDate", e.description, e.reverses_event_id AS "reversesEventId",
+              e.created_at AS "createdAt",
+              EXISTS (SELECT 1 FROM financial_events r WHERE r.reverses_event_id = e.id) AS "isReversed"
+       FROM financial_events e LEFT JOIN cost_centers cc ON cc.id = e.cost_center_id
+       WHERE EXTRACT(YEAR FROM COALESCE(e.transaction_date, e.created_at::date))::int = $1 ${typeClause}
+       ORDER BY e.id DESC LIMIT ${limit}`,
+      params
+    );
+    return res.json(rows);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في جلب الأحداث المالية" });
+  }
+});
+
+/* التصحيح بالعكس (لا بالحذف) — يُنشئ حدثًا عكسيًا يشير للأصل */
+router.post("/financial-events/:id/reverse", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    const id = Number(req.params.id);
+    const { rows: origRows } = await pool.query(`SELECT * FROM financial_events WHERE id = $1`, [id]);
+    const orig = origRows[0];
+    if (!orig) return res.status(404).json({ error: "الحدث غير موجود" });
+    if (orig.event_type === "reversal") return res.status(400).json({ error: "لا يمكن عكس حدث عكسي" });
+    const { rows: existing } = await pool.query(`SELECT id FROM financial_events WHERE reverses_event_id = $1`, [id]);
+    if (existing.length) return res.status(409).json({ error: "هذا الحدث مُصحَّح بالعكس مسبقًا" });
+    const reason = (req.body?.reason as string | undefined)?.trim();
+    const { rows } = await pool.query(
+      `INSERT INTO financial_events (event_type, source_ledger, source_id, amount, cost_center_id, transaction_date, description, reverses_event_id, created_by)
+       VALUES ('reversal', 'reversal', NULL, $1, $2, CURRENT_DATE, $3, $4, $5) RETURNING *`,
+      [-Number(orig.amount), orig.cost_center_id, `عكس #${id}${reason ? " — " + reason : ""}: ${orig.description ?? ""}`.slice(0, 500), id, req.session.userId ?? null]
+    );
+    return res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في تصحيح الحدث" });
+  }
+});
+
+/* فحص تطابق التشغيل المتوازي — دفتر الأحداث مقابل دفترَي الدخل/المصروف */
+router.get("/ledger-integrity", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         (SELECT COALESCE(SUM(amount),0) FROM financial_events WHERE event_type='expense')::numeric AS "eventsExpense",
+         (SELECT COALESCE(SUM(amount),0) FROM finance_expenses)::numeric                            AS "ledgerExpense",
+         (SELECT COALESCE(SUM(amount),0) FROM financial_events WHERE event_type='income')::numeric  AS "eventsIncome",
+         (SELECT COALESCE(SUM(amount),0) FROM finance_income)::numeric                              AS "ledgerIncome",
+         (SELECT COALESCE(SUM(amount),0) FROM financial_events WHERE event_type='reversal')::numeric AS "reversalTotal",
+         (SELECT COUNT(*) FROM financial_events)::int                                               AS "eventsCount",
+         (SELECT COUNT(*) FROM financial_events WHERE event_type='reversal')::int                   AS "reversalsCount"`
+    );
+    const r = rows[0];
+    const expenseMatch = Number(r.eventsExpense) === Number(r.ledgerExpense);
+    const incomeMatch = Number(r.eventsIncome) === Number(r.ledgerIncome);
+    return res.json({ ...r, expenseMatch, incomeMatch, inSync: expenseMatch && incomeMatch });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في فحص التطابق" });
+  }
+});
+
 /**
  * لوحة الشركة الموحّدة — نظرة تنفيذية واحدة على كل الأقسام من الدفتر العام (بُعد القسم المخزّن):
  *  · إجماليات الدخل/المصروف/الصافي + الرأسمالي، وتفصيل المصروف حسب نوع المركز.

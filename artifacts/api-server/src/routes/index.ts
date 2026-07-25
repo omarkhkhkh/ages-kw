@@ -33,6 +33,7 @@ import researchRouter from "./research";
 import pricingRouter from "./pricing";
 import opportunitiesRouter from "./opportunities";
 import costCentersRouter from "./cost-centers";
+import pricingBookRouter from "./pricing-book";
 import { requireAuth, requireEdit, requireModule, hasModuleAction } from "../middleware/auth";
 import { activityLogger } from "../middleware/activity-logger";
 
@@ -107,6 +108,7 @@ router.use("/transportation", requireModule("accessTransportation"), transportat
 router.use("/vehicles", requireModule("accessTransportation"), vehiclesRouter);
 router.use("/finance", requireModule("accessFinance"), financeRouter);
 router.use("/cost-centers", requireModule("accessFinance"), costCentersRouter);
+router.use("/pricing-book", requireModule("accessFinance"), pricingBookRouter);
 router.use("/company-documents", requireModule("accessTenders"), companyDocumentsRouter);
 router.use("/government-registrations", requireModule("accessTenders"), governmentRegistrationsRouter);
 router.use("/competitors", requireModule("accessTenders"), competitorsRouter);

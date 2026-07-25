@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { costCentersApi, type CostCenter, type AllocationRule } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, Trash2, Check, X, Pencil, TrendingUp, TrendingDown, Wallet, Layers } from "lucide-react";
+import { Building2, Plus, Trash2, Check, X, Pencil, TrendingUp, TrendingDown, Wallet, Layers, ShieldCheck, ShieldAlert, Undo2 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
 
 const MONTHS_AR = ["ينا", "فبر", "مار", "أبر", "ماي", "يون", "يول", "أغس", "سبت", "أكت", "نوف", "ديس"];
@@ -62,6 +62,14 @@ export default function AdminCostCenters() {
   const { data: rules = [] } = useQuery<AllocationRule[]>({ queryKey: ["allocation-rules"], queryFn: () => costCentersApi.allocationRules.list(), enabled: isAdmin });
   const { data: prof } = useQuery({ queryKey: ["profitability", year], queryFn: () => costCentersApi.profitability(year), enabled: isAdmin });
   const { data: dash } = useQuery({ queryKey: ["cc-dashboard", year], queryFn: () => costCentersApi.companyDashboard(year), enabled: isAdmin });
+  // ── المرحلة ٦/٩/١٠: دفتر الأحداث المالية + التصحيح بالعكس + فحص التطابق ──
+  const { data: events = [] } = useQuery({ queryKey: ["financial-events", year], queryFn: () => costCentersApi.financialEvents(year), enabled: isAdmin });
+  const { data: integrity } = useQuery({ queryKey: ["ledger-integrity"], queryFn: () => costCentersApi.ledgerIntegrity(), enabled: isAdmin });
+  const reverseM = useMutation({
+    mutationFn: (id: number) => costCentersApi.reverseEvent(id),
+    onSuccess: () => { ["financial-events", "ledger-integrity", "cc-dashboard"].forEach((k) => qc.invalidateQueries({ queryKey: [k] })); toast({ title: "↩︎ تم إنشاء حدث عكسي للتصحيح" }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
   const [ruleForm, setRuleForm] = useState({ costCenterId: "", costType: "", shareRatio: "" });
   const invProf = () => { qc.invalidateQueries({ queryKey: ["allocation-rules"] }); qc.invalidateQueries({ queryKey: ["profitability"] }); };
   const addRuleM = useMutation({
@@ -359,6 +367,65 @@ export default function AdminCostCenters() {
           </p>
         </div>
       )}
+
+      {/* ── دفتر الأحداث المالية (المرحلة ٦/٩/١٠) ── */}
+      <div style={{ ...cardS, marginTop: 24, overflowX: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#132a18" }}>دفتر الأحداث المالية — {year}</div>
+          {integrity && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+              background: integrity.inSync ? "#dcfce7" : "#fee2e2", color: integrity.inSync ? "#166534" : "#991b1b" }}>
+              {integrity.inSync ? <ShieldCheck size={13} /> : <ShieldAlert size={13} />}
+              {integrity.inSync ? "الدفتر متطابق مع القيود" : "عدم تطابق — يلزم مراجعة"}
+              {` · ${integrity.eventsCount} حدث${integrity.reversalsCount ? ` · ${integrity.reversalsCount} عكسي` : ""}`}
+            </span>
+          )}
+        </div>
+        <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 12px" }}>
+          سجلّ ثابت (append-only) لكل حركة مالية كحدث. التصحيح يتم بحدث <b>عكسي</b> لا بالحذف — فيبقى الأثر كاملًا للتدقيق.
+        </p>
+        {events.length === 0 ? (
+          <div style={{ fontSize: 13, color: "#9ca3af", padding: "16px 0" }}>لا توجد أحداث لهذه السنة.</div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "right", minWidth: 680 }}>
+            <thead style={{ background: "#faf8f2" }}>
+              <tr>{["النوع", "الوصف", "القسم", "المبلغ", "التاريخ", ""].map((h) => (
+                <th key={h} style={{ padding: "9px 12px", fontWeight: 800, fontSize: 11, color: "#6b7280", borderBottom: "1.5px solid #f0ead8", whiteSpace: "nowrap" }}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {events.map((e) => {
+                const meta = e.eventType === "income" ? { label: "دخل", bg: "#dcfce7", text: "#166534" }
+                  : e.eventType === "expense" ? { label: "مصروف", bg: "#fee2e2", text: "#991b1b" }
+                  : { label: "عكس/تصحيح", bg: "#fef3c7", text: "#92400e" };
+                const amt = Number(e.amount);
+                return (
+                  <tr key={e.id} style={{ borderBottom: "1px solid #f5f0e6", opacity: e.isReversed ? 0.55 : 1 }}>
+                    <td style={{ padding: "8px 12px" }}>
+                      <span style={{ padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: meta.bg, color: meta.text, whiteSpace: "nowrap" }}>{meta.label}</span>
+                    </td>
+                    <td style={{ padding: "8px 12px", color: "#374151", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {e.description || "—"}{e.isReversed && <span style={{ color: "#9ca3af", fontSize: 11 }}> (مُصحَّح)</span>}
+                    </td>
+                    <td style={{ padding: "8px 12px", color: "#6b7280" }}>{e.costCenterName || "—"}</td>
+                    <td style={{ padding: "8px 12px", fontFamily: "monospace", fontWeight: 700, color: amt < 0 ? "#d97706" : meta.text }}>{fmt(amt)}</td>
+                    <td style={{ padding: "8px 12px", color: "#6b7280", fontFamily: "monospace", direction: "ltr", textAlign: "right", whiteSpace: "nowrap" }}>{e.transactionDate || "—"}</td>
+                    <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>
+                      {e.eventType !== "reversal" && !e.isReversed && (
+                        <button onClick={() => { if (confirm(`إنشاء حدث عكسي لتصحيح "${e.description || "هذا الحدث"}"؟\n(لن يُحذف الأصل — يُضاف قيد معاكس بقيمة ${fmt(-amt)}).`)) reverseM.mutate(e.id); }}
+                          disabled={reverseM.isPending}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: "4px 9px", cursor: "pointer", fontSize: 11, fontWeight: 700, color: "#92400e", fontFamily: "inherit" }}>
+                          <Undo2 size={12} /> عكس
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

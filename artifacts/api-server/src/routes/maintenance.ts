@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { eq } from "drizzle-orm";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
+import { upsertAssetFromEquipment, deleteAssetByLegacy } from "../lib/asset-sync";
 import {
   db,
   pool,
@@ -167,6 +168,7 @@ router.post("/equipment", async (req: Request, res: Response) => {
   try {
     const data = insertMaintenanceEquipmentSchema.parse(req.body);
     const [row] = await db.insert(maintenanceEquipmentTable).values(data).returning();
+    await upsertAssetFromEquipment(row); // مزامنة لحظية للأصول الموحّدة
     return res.status(201).json(row);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
@@ -185,6 +187,7 @@ router.patch("/equipment/:id", async (req: Request, res: Response) => {
     }
     const [row] = await db.update(maintenanceEquipmentTable).set({ ...data, updatedAt: new Date() }).where(eq(maintenanceEquipmentTable.id, id)).returning();
     if (!row) return res.status(404).json({ error: "المعدة غير موجودة" });
+    await upsertAssetFromEquipment(row); // مزامنة لحظية
     return res.json(row);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
@@ -198,6 +201,7 @@ router.delete("/equipment/:id", async (req: Request, res: Response) => {
   if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
   try {
     await db.delete(maintenanceEquipmentTable).where(eq(maintenanceEquipmentTable.id, id));
+    await deleteAssetByLegacy("maintenance_equipment", id); // مزامنة لحظية
     return res.status(204).send();
   } catch {
     return res.status(500).json({ error: "فشل في حذف المعدة" });

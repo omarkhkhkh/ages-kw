@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { upsertAssetFromVehicle, deleteAssetByLegacy } from "../lib/asset-sync";
 import {
   db,
   pool,
@@ -274,6 +275,7 @@ router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertVehicleSchema.parse(req.body);
     const [row] = await db.insert(vehiclesTable).values(data).returning();
+    await upsertAssetFromVehicle(row); // مزامنة لحظية للأصول الموحّدة
     return res.status(201).json(row);
   } catch (err: any) {
     return res.status(400).json({ error: err?.message ?? "بيانات غير صالحة" });
@@ -290,6 +292,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
       .where(eq(vehiclesTable.id, id))
       .returning();
     if (!row) return res.status(404).json({ error: "المركبة غير موجودة" });
+    await upsertAssetFromVehicle(row); // مزامنة لحظية
     return res.json(row);
   } catch (err: any) {
     return res.status(400).json({ error: err?.message ?? "بيانات غير صالحة" });
@@ -301,6 +304,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     await db.delete(vehiclesTable).where(eq(vehiclesTable.id, id));
+    await deleteAssetByLegacy("fleet_vehicles", id); // مزامنة لحظية
     return res.status(204).send();
   } catch {
     return res.status(500).json({ error: "فشل في حذف المركبة" });

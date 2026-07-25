@@ -56,7 +56,7 @@ export default function ContractMaintenance() {
 }
 
 /* ─────────── الزيارات ─────────── */
-function VisitsTab() {
+export function VisitsTab() {
   const qc = useQueryClient(); const { toast } = useToast();
   const [selected, setSelected] = useState<number | null>(null);
   const [form, setForm] = useState({ schoolId: "", visitDate: "", maintenanceType: "دورية" });
@@ -176,7 +176,7 @@ function VisitDetail({ visitId, onBack }: { visitId: number; onBack: () => void 
 }
 
 /* ─────────── العقود ─────────── */
-function ContractsTab() {
+export function ContractsTab() {
   const qc = useQueryClient(); const { toast } = useToast();
   const [selected, setSelected] = useState<number | null>(null);
   const [form, setForm] = useState({ contractNumber: "", districtId: "", contractType: "شامل", billingModel: "مختلط", startDate: "", endDate: "", pmVisitsPerYear: "" });
@@ -281,7 +281,7 @@ function MiniCrud({ title, api, cols, fields, extraOptions }: { title: string; a
   );
 }
 
-function HierarchyTab() {
+export function HierarchyTab() {
   const { data: districts = [] } = useQuery({ queryKey: ["ms-districts"], queryFn: () => ms.districts.list() });
   return (
     <>
@@ -299,7 +299,7 @@ function HierarchyTab() {
 }
 
 /* ─────────── السجلات ─────────── */
-function RegistersTab() {
+export function RegistersTab() {
   const qc = useQueryClient(); const { toast } = useToast();
   const [out, setOut] = useState({ docType: "تقرير زيارة", subject: "" });
   const { data: outgoing = [] } = useQuery({ queryKey: ["ms-outgoing"], queryFn: () => ms.outgoingRegister.list() });
@@ -330,7 +330,7 @@ function RegistersTab() {
 }
 
 /* ─────────── التحليلات ─────────── */
-function AnalyticsTab() {
+export function AnalyticsTab() {
   const { data: balance = [] } = useQuery({ queryKey: ["ms-balance"], queryFn: () => ms.analytics.contractVisitBalance() });
   const { data: pending = [] } = useQuery({ queryKey: ["ms-pending"], queryFn: () => ms.analytics.pendingReschedule() });
   return (

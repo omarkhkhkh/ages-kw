@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { entitiesApi, companiesApi } from "@/lib/api";
+import { entitiesApi } from "@/lib/api";
 import {
   Building2, Plus, Pencil, Trash2, X, Check, Download, Search,
   Phone, Mail, MapPin, User, Globe, LayoutGrid, List,
@@ -11,7 +11,6 @@ import { useAuth } from "@/contexts/auth";
 import { exportEntitiesToExcel } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 import CorrespondenceSheet from "@/components/correspondence/correspondence-sheet";
-import { CompanyChips } from "@/components/company-switcher";
 
 const G  = "#D4A534";
 const GL = "#E8BE55";
@@ -183,19 +182,9 @@ export default function EntitiesList() {
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const [filterType, setFilterType] = useState("");
   const [correspondenceFor, setCorrespondenceFor] = useState<{ id: number; label: string } | null>(null);
-  const [activeCompanyId, setActiveCompanyId] = useState<number | null>(null);
-
-  const { data: companies = [] } = useQuery<any[]>({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
-
-  useEffect(() => {
-    if (activeCompanyId === null && companies.length > 0) setActiveCompanyId(companies[0].id);
-    if (activeCompanyId !== null && !companies.some((c: any) => c.id === activeCompanyId)) setActiveCompanyId(companies[0]?.id ?? null);
-  }, [companies, activeCompanyId]);
-
   const { data: entities = [], isLoading } = useQuery({
-    queryKey: ["government-entities", activeCompanyId],
-    queryFn: () => entitiesApi.list(activeCompanyId),
-    enabled: !!activeCompanyId,
+    queryKey: ["government-entities"],
+    queryFn: () => entitiesApi.list(),
   });
 
   const isAdmin = user?.role === "admin";
@@ -226,8 +215,8 @@ export default function EntitiesList() {
   };
   const handleSubmit = (ev: React.FormEvent) => {
     ev.preventDefault();
-    if (!form.name.trim() || !activeCompanyId) return;
-    const data = { ...form, companyId: activeCompanyId, codePrefix: form.codePrefix.trim() ? form.codePrefix.trim().toUpperCase() : null };
+    if (!form.name.trim()) return;
+    const data = { ...form, codePrefix: form.codePrefix.trim() ? form.codePrefix.trim().toUpperCase() : null };
     editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data);
   };
 
@@ -270,7 +259,7 @@ export default function EntitiesList() {
               <Download size={15} /> تصدير
             </button>
           )}
-          {canEdit && activeCompanyId && (
+          {canEdit && (
             <button style={{ display: "flex", alignItems: "center", gap: 6, background: `linear-gradient(135deg,${GL},${GD})`, color: "white", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: `0 4px 14px ${G}44`, fontFamily: "inherit" }} onClick={() => { closeForm(); setShowForm(true); }}>
               <Plus size={15} /> إضافة جهة
             </button>
@@ -278,20 +267,6 @@ export default function EntitiesList() {
         </div>
       </div>
 
-      {/* ── Companies ── */}
-      <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "14px 16px", marginBottom: 20, boxShadow: "0 2px 10px rgba(0,0,0,0.04)" }}>
-        <div style={{ fontSize: 11, fontWeight: 800, color: "#9ca3af", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>الشركات</div>
-        <CompanyChips activeId={activeCompanyId} onSelect={setActiveCompanyId} canEdit={canEdit} isAdmin={isAdmin} showDocCount={false} hideAddButton />
-      </div>
-
-      {companies.length === 0 ? (
-        <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", boxShadow: "0 2px 16px rgba(0,0,0,0.05)", padding: 60, textAlign: "center" }}>
-          <Building2 size={40} style={{ margin: "0 auto 12px", display: "block", opacity: 0.25 }} />
-          <p style={{ color: "#6b7280", fontSize: 14, fontWeight: 700, margin: "0 0 4px" }}>لا توجد شركات مضافة بعد</p>
-          <p style={{ color: "#9ca3af", fontSize: 12.5, margin: 0 }}>أضف شركة من الأعلى لتبدأ بإدارة جهاتها الحكومية</p>
-        </div>
-      ) : (
-      <>
       {/* ── Stats strip ── */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" as const }}>
         {[
@@ -455,8 +430,6 @@ export default function EntitiesList() {
             </table>
           </div>
         </div>
-      )}
-      </>
       )}
 
       {/* ══════════════ DRAWER ══════════════ */}

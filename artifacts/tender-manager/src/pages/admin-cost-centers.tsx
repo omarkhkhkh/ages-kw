@@ -3,7 +3,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { costCentersApi, type CostCenter, type AllocationRule } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, Trash2, Check, X, Pencil } from "lucide-react";
+import { Building2, Plus, Trash2, Check, X, Pencil, TrendingUp, TrendingDown, Wallet, Layers } from "lucide-react";
+import { ResponsiveContainer, BarChart, Bar, CartesianGrid, XAxis, YAxis, Tooltip } from "recharts";
+
+const MONTHS_AR = ["ينا", "فبر", "مار", "أبر", "ماي", "يون", "يول", "أغس", "سبت", "أكت", "نوف", "ديس"];
 
 const G = "#D4A534", GL = "#E8BE55", GD = "#A87C20";
 
@@ -19,6 +22,7 @@ const TYPE_COLOR: Record<string, { bg: string; text: string }> = {
 };
 
 const inp: React.CSSProperties = { padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5dfc8", fontSize: 13, fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box" };
+const cardS: React.CSSProperties = { background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 16 };
 
 export default function AdminCostCenters() {
   const { user } = useAuth();
@@ -57,6 +61,7 @@ export default function AdminCostCenters() {
   const year = new Date().getFullYear();
   const { data: rules = [] } = useQuery<AllocationRule[]>({ queryKey: ["allocation-rules"], queryFn: () => costCentersApi.allocationRules.list(), enabled: isAdmin });
   const { data: prof } = useQuery({ queryKey: ["profitability", year], queryFn: () => costCentersApi.profitability(year), enabled: isAdmin });
+  const { data: dash } = useQuery({ queryKey: ["cc-dashboard", year], queryFn: () => costCentersApi.companyDashboard(year), enabled: isAdmin });
   const [ruleForm, setRuleForm] = useState({ costCenterId: "", costType: "", shareRatio: "" });
   const invProf = () => { qc.invalidateQueries({ queryKey: ["allocation-rules"] }); qc.invalidateQueries({ queryKey: ["profitability"] }); };
   const addRuleM = useMutation({
@@ -82,6 +87,104 @@ export default function AdminCostCenters() {
       <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 20px 14px" }}>
         النواة الموحّدة للنظام المالي. كل حركة (دخل/مصروف) تُنسب لقسم، ويُقاس كل قسم بحسب نوعه.
       </p>
+
+      {/* ── لوحة الشركة الموحّدة (المرحلة ٥) ── */}
+      {dash && (
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <Layers size={17} color={GD} />
+            <h2 style={{ fontSize: 15, fontWeight: 800, color: "#132a18", margin: 0 }}>لوحة الشركة المالية الموحّدة — {dash.year}</h2>
+          </div>
+
+          {/* بطاقات المؤشرات */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 16 }}>
+            {[
+              { label: "الدخل الكلي", value: dash.totals.income, color: "#16a34a", icon: <TrendingUp size={16} color="#16a34a" /> },
+              { label: "المصروف الكلي", value: dash.totals.expense, color: "#dc2626", icon: <TrendingDown size={16} color="#dc2626" /> },
+              { label: "صافي الربح", value: dash.totals.net, color: dash.totals.net < 0 ? "#dc2626" : "#0f766e", icon: <Wallet size={16} color={dash.totals.net < 0 ? "#dc2626" : "#0f766e"} /> },
+              { label: "الاستثمار الرأسمالي", value: dash.totals.capex, color: "#d97706", icon: <Building2 size={16} color="#d97706" /> },
+            ].map((k) => (
+              <div key={k.label} style={{ ...cardS, padding: 14, borderTop: `3px solid ${k.color}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#6b7280", fontWeight: 700, marginBottom: 6 }}>{k.icon}{k.label}</div>
+                <div style={{ fontSize: 19, fontWeight: 800, color: k.color, fontFamily: "monospace", direction: "ltr", textAlign: "right" }}>{fmt(k.value)}</div>
+                <div style={{ fontSize: 10, color: "#9ca3af" }}>د.ك</div>
+              </div>
+            ))}
+          </div>
+
+          {/* شلال الربح + التنبؤ */}
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1fr)", gap: 16, marginBottom: 16 }}>
+            {/* شلال الربح */}
+            <div style={cardS}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#132a18", marginBottom: 2 }}>شلال الربح</div>
+              <p style={{ fontSize: 11, color: "#9ca3af", margin: "0 0 14px" }}>من الدخل الكلي، تُطرح مصروفات كل نوع قسم للوصول إلى صافي الربح.</p>
+              {(() => {
+                const H = 150;
+                const maxV = Math.max(dash.totals.income, 1);
+                let running = 0;
+                return (
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: H + 44, direction: "ltr" }}>
+                    {dash.waterfall.map((w, i) => {
+                      let bottomVal: number, topVal: number, color: string;
+                      if (w.kind === "start") { bottomVal = 0; topVal = w.value; running = w.value; color = "#16a34a"; }
+                      else if (w.kind === "total") { bottomVal = 0; topVal = w.value; running = w.value; color = w.value < 0 ? "#dc2626" : "#0f766e"; }
+                      else { const before = running; running += w.value; topVal = Math.max(before, running); bottomVal = Math.min(before, running); color = "#f59e0b"; }
+                      const heightPx = Math.max((Math.abs(topVal - bottomVal) / maxV) * H, 2);
+                      const bottomPx = (bottomVal / maxV) * H;
+                      return (
+                        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: H + 44 }}>
+                          <div style={{ fontSize: 9.5, fontWeight: 700, color, fontFamily: "monospace", marginBottom: 2, whiteSpace: "nowrap" }}>{w.kind === "down" ? "−" : ""}{fmt(Math.abs(w.value))}</div>
+                          <div style={{ position: "relative", width: "100%", height: H }}>
+                            <div style={{ position: "absolute", bottom: bottomPx, left: "12%", right: "12%", height: heightPx, background: color, borderRadius: 4, opacity: w.kind === "down" ? 0.85 : 1 }} />
+                          </div>
+                          <div style={{ fontSize: 9.5, color: "#6b7280", fontWeight: 700, marginTop: 5, textAlign: "center", lineHeight: 1.2, height: 26, overflow: "hidden" }}>{w.label}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* التنبؤ بنهاية السنة */}
+            <div style={cardS}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#132a18", marginBottom: 2 }}>تنبؤ نهاية السنة</div>
+              <p style={{ fontSize: 11, color: "#9ca3af", margin: "0 0 12px" }}>
+                {dash.forecast.isComplete
+                  ? "السنة مكتملة — الأرقام فعلية لا متوقّعة."
+                  : `بمعدّل الجريان: ما تحقق خلال ${dash.forecast.monthsElapsed} شهرًا ÷ عليها × 12.`}
+              </p>
+              {[
+                { label: "الدخل المتوقّع", value: dash.forecast.projectedIncome, color: "#16a34a" },
+                { label: "المصروف المتوقّع", value: dash.forecast.projectedExpense, color: "#dc2626" },
+                { label: "صافي الربح المتوقّع", value: dash.forecast.projectedNet, color: dash.forecast.projectedNet < 0 ? "#dc2626" : "#0f766e" },
+              ].map((f) => (
+                <div key={f.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #f5f0e6" }}>
+                  <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 700 }}>{f.label}</span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: f.color, fontFamily: "monospace" }}>{fmt(f.value)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* الاتجاه الشهري */}
+          <div style={cardS}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#132a18", marginBottom: 12 }}>الدخل مقابل المصروف شهريًا</div>
+            <div style={{ width: "100%", height: 230, direction: "ltr" }}>
+              <ResponsiveContainer>
+                <BarChart data={dash.monthly.map((m) => ({ name: MONTHS_AR[m.month - 1], income: m.income, expense: m.expense }))} margin={{ top: 6, right: 8, left: 8, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0ead8" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fontFamily: "inherit" }} />
+                  <YAxis tick={{ fontSize: 10, fontFamily: "inherit" }} width={54} />
+                  <Tooltip formatter={(v: any, n: any) => [fmt(Number(v)) + " د.ك", n === "income" ? "الدخل" : "المصروف"]} labelStyle={{ fontFamily: "inherit" }} contentStyle={{ fontFamily: "inherit", fontSize: 12, direction: "rtl" }} />
+                  <Bar dataKey="income" name="income" fill="#16a34a" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="expense" name="expense" fill="#dc2626" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add form */}
       <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 16, marginBottom: 20, boxShadow: "0 2px 10px rgba(0,0,0,0.04)" }}>

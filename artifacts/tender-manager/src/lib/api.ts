@@ -98,6 +98,14 @@ export type CostCenter = { id: number; name: string; type: "profit" | "cost" | "
 export type AllocationRule = { id: number; costCenterId: number; costCenterName: string; costType: string | null; driver: string | null; shareRatio: string; notes: string | null };
 export type ProfitabilityRow = { costCenterId: number; name: string; directIncome: number; directExpense: number; directMargin: number; shareRatio: number; allocatedShare: number; afterAllocation: number };
 export type Profitability = { year: number; allocatablePool: number; totalShareRatio: number; centers: ProfitabilityRow[] };
+export type CompanyDashboard = {
+  year: number;
+  totals: { income: number; expense: number; net: number; profitExpense: number; costExpense: number; allocatableExpense: number; capex: number };
+  byCenter: { id: number; name: string; type: "profit" | "cost" | "allocatable"; income: number; expense: number; margin: number }[];
+  monthly: { month: number; income: number; expense: number; net: number }[];
+  waterfall: { label: string; value: number; kind: "start" | "down" | "total" }[];
+  forecast: { monthsElapsed: number; isComplete: boolean; projectedIncome: number; projectedExpense: number; projectedNet: number };
+};
 export const costCentersApi = {
   list: () => apiFetch<CostCenter[]>("/api/cost-centers"),
   create: (data: Partial<CostCenter>) => apiFetch<CostCenter>("/api/cost-centers", { method: "POST", body: JSON.stringify(data) }),
@@ -110,6 +118,7 @@ export const costCentersApi = {
     delete: (id: number) => apiFetch<void>(`/api/cost-centers/allocation-rules/${id}`, { method: "DELETE" }),
   },
   profitability: (year: number) => apiFetch<Profitability>(`/api/cost-centers/profitability?year=${year}`),
+  companyDashboard: (year: number) => apiFetch<CompanyDashboard>(`/api/cost-centers/company-dashboard?year=${year}`),
 };
 
 // ── RFQ Requests ───────────────────────────────────────────────────────────

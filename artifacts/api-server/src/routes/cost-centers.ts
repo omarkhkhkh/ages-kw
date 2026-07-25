@@ -147,6 +147,95 @@ router.get("/profitability", async (req: Request, res: Response) => {
 });
 
 /**
+ * لوحة الشركة الموحّدة — نظرة تنفيذية واحدة على كل الأقسام من الدفتر العام (بُعد القسم المخزّن):
+ *  · إجماليات الدخل/المصروف/الصافي + الرأسمالي، وتفصيل المصروف حسب نوع المركز.
+ *  · شلال الربح: الدخل الكلي − مصروف مراكز الربح − مراكز التكلفة − التكاليف المشتركة = صافي الربح.
+ *  · اتجاه شهري (١٢ شهرًا) + تنبؤ نهاية السنة بمعدّل الجريان (YTD ÷ الأشهر المنقضية × ١٢).
+ * قراءة فقط، إضافية — لا تلمس أي مسار تشغيلي.
+ */
+router.get("/company-dashboard", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const [{ rows: centerRows }, { rows: monthRows }, { rows: capexRows }] = await Promise.all([
+      pool.query(
+        `SELECT cc.id, cc.name, cc.type,
+            COALESCE((SELECT SUM(fi.amount) FROM finance_income fi
+               WHERE fi.cost_center_id = cc.id AND EXTRACT(YEAR FROM fi.date)::int = $1), 0)::numeric AS income,
+            COALESCE((SELECT SUM(fe.amount) FROM finance_expenses fe
+               WHERE fe.cost_center_id = cc.id
+                 AND EXTRACT(YEAR FROM COALESCE(fe.transaction_date, fe.created_at::date))::int = $1), 0)::numeric AS expense
+         FROM cost_centers cc WHERE cc.is_active = true ORDER BY cc.name`,
+        [year]
+      ),
+      pool.query(
+        `SELECT gs.month,
+            COALESCE((SELECT SUM(fi.amount) FROM finance_income fi
+               WHERE EXTRACT(YEAR FROM fi.date)::int = $1 AND EXTRACT(MONTH FROM fi.date)::int = gs.month), 0)::numeric AS income,
+            COALESCE((SELECT SUM(fe.amount) FROM finance_expenses fe
+               WHERE EXTRACT(YEAR  FROM COALESCE(fe.transaction_date, fe.created_at::date))::int = $1
+                 AND EXTRACT(MONTH FROM COALESCE(fe.transaction_date, fe.created_at::date))::int = gs.month), 0)::numeric AS expense
+         FROM generate_series(1,12) AS gs(month) ORDER BY gs.month`,
+        [year]
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(purchase_value),0)::numeric AS capex FROM assets
+         WHERE purchase_date IS NOT NULL AND EXTRACT(YEAR FROM purchase_date)::int = $1`,
+        [year]
+      ),
+    ]);
+
+    const byCenter = (centerRows as any[]).map((c) => {
+      const income = Number(c.income), expense = Number(c.expense);
+      return { id: c.id, name: c.name, type: c.type, income, expense, margin: income - expense };
+    });
+    const sumExpByType = (t: string) => byCenter.filter((c) => c.type === t).reduce((s, c) => s + c.expense, 0);
+    const income = byCenter.reduce((s, c) => s + c.income, 0);
+    const expense = byCenter.reduce((s, c) => s + c.expense, 0);
+    const profitExpense = sumExpByType("profit");
+    const costExpense = sumExpByType("cost");
+    const allocatableExpense = sumExpByType("allocatable");
+    const capex = Number(capexRows[0]?.capex ?? 0);
+    const net = income - expense;
+
+    const monthly = (monthRows as any[]).map((m) => {
+      const inc = Number(m.income), exp = Number(m.expense);
+      return { month: m.month, income: inc, expense: exp, net: inc - exp };
+    });
+
+    const waterfall = [
+      { label: "الدخل الكلي", value: income, kind: "start" as const },
+      { label: "مصروف مراكز الربح", value: -profitExpense, kind: "down" as const },
+      { label: "مراكز التكلفة", value: -costExpense, kind: "down" as const },
+      { label: "التكاليف المشتركة", value: -allocatableExpense, kind: "down" as const },
+      { label: "صافي الربح", value: net, kind: "total" as const },
+    ];
+
+    // تنبؤ بمعدّل الجريان
+    const now = new Date();
+    const curYear = now.getFullYear(), curMonth = now.getMonth() + 1;
+    const monthsElapsed = year < curYear ? 12 : year > curYear ? 0 : curMonth;
+    const isComplete = monthsElapsed >= 12;
+    const project = (v: number) => (monthsElapsed > 0 && !isComplete ? (v / monthsElapsed) * 12 : v);
+    const forecast = {
+      monthsElapsed, isComplete,
+      projectedIncome: project(income),
+      projectedExpense: project(expense),
+      projectedNet: project(income) - project(expense),
+    };
+
+    return res.json({
+      year,
+      totals: { income, expense, net, profitExpense, costExpense, allocatableExpense, capex },
+      byCenter, monthly, waterfall, forecast,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في جلب لوحة الشركة" });
+  }
+});
+
+/**
  * محرّك الميزانية الموحّد — تقرير قياسي واحد لأي قسم يعتمد فقط على بُعد القسم المخزّن:
  *   المصروف/الدخل من الدفتر (cost_center_id) · الميزانية من cost_center_budgets · الرأسمالي من assets.
  * يُعمّم استعلامَي ميزانية الصيانة/النقل في محرّك واحد. تشغيل متوازٍ — لا يستبدلهما بعد.

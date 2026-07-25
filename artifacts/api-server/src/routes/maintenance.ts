@@ -452,6 +452,20 @@ router.patch("/work-orders/:id/parts/:partId", async (req: Request, res: Respons
       );
     }
 
+    // وصل الفجوات: إن كان أمر الصيانة ناتجًا عن بند زيارة تحت عقد صيانة، يُخصم استهلاك القطعة من
+    // سقف تغطية «قطع الغيار» لذلك العقد (فيصبح كشف تجاوز السقف حقيقيًا). try/catch — لا يكسر عملية القطعة.
+    if (data.status === "issued" && existing.status !== "issued") {
+      try {
+        await pool.query(
+          `UPDATE service_contract_coverage SET consumed = consumed + ($1 * COALESCE($2, 0))
+           WHERE item_code = 'parts'
+             AND contract_id = (SELECT vl.contract_id FROM maintenance_visit_lines vl
+                                WHERE vl.work_order_id = $3 AND vl.contract_id IS NOT NULL LIMIT 1)`,
+          [existing.quantity, existing.unitPrice, Number(req.params.id)]
+        );
+      } catch { /* عقود الصيانة اختيارية — لا يؤثر فشلها على صرف القطعة */ }
+    }
+
     return res.json(row);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });

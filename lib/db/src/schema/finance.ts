@@ -6,10 +6,13 @@ import { maintenanceWorkOrdersTable, maintenanceInventoryTable } from "./mainten
 import { transportationTable } from "./transportation";
 import { vehiclesTable } from "./vehicles";
 import { workersTable } from "./residency";
+import { costCentersTable } from "./cost-centers";
 
 export const financeIncomeTable = pgTable("finance_income", {
   id:          serial("id").primaryKey(),
   contractId:  integer("contract_id").references(() => contractsTable.id, { onDelete: "set null" }),
+  // بُعد القسم المخزّن مباشرة — النواة الموحّدة (يُملأ لحظة الإنشاء لا يُحسب لاحقًا)
+  costCenterId: integer("cost_center_id").references(() => costCentersTable.id, { onDelete: "set null" }),
   employeeId:  integer("employee_id").references(() => usersTable.id, { onDelete: "set null" }),
   maintenanceWorkOrderId: integer("maintenance_work_order_id").references(() => maintenanceWorkOrdersTable.id, { onDelete: "set null" }),
   transportationOrderId: integer("transportation_order_id").references(() => transportationTable.id, { onDelete: "set null" }),
@@ -37,6 +40,9 @@ export const financeExpensesTable = pgTable("finance_expenses", {
   vehicleId:   integer("vehicle_id").references(() => vehiclesTable.id, { onDelete: "set null" }),
   workerId:    integer("worker_id").references(() => workersTable.id, { onDelete: "set null" }),
   sourceModule: text("source_module"), // مصروف موسوم بوحدة دون ربط بأمر محدد
+  // بُعد القسم + تاريخ المعاملة الصريح (الدخل عنده date؛ المصروف كان يعتمد على created_at)
+  costCenterId: integer("cost_center_id").references(() => costCentersTable.id, { onDelete: "set null" }),
+  transactionDate: date("transaction_date"),
   description: text("description").notNull(),
   amount:      numeric("amount", { precision: 15, scale: 3 }).notNull(),
   dueDate:     date("due_date"),

@@ -190,6 +190,7 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
         { href: "/admin/activity-log",  label: t("nav.activityLog"),  show: isAdmin },
         { href: "/admin/service-types", label: t("nav.serviceTypes"), show: isAdmin },
         { href: "/admin/task-types",    label: t("nav.taskTypes"),    show: isAdmin },
+        { href: "/admin/cost-centers",  label: "مراكز التكلفة/الربح", show: isAdmin },
       ].filter(i => i.show),
     },
   ].filter(g => g.show);
@@ -519,7 +520,7 @@ function TopHeader({ user, navigate, location, isMobile, onOpenMenu }:
     "/transportation", "/finance", "/tasks", "/calendar", "/correspondence", "/residency",
     "/maintenance/report-templates", "/maintenance", "/research", "/pricing",
     "/competitor-intelligence", "/admin/users", "/admin/activity-log",
-    "/admin/service-types", "/admin/task-types", "/guide",
+    "/admin/service-types", "/admin/task-types", "/admin/cost-centers", "/guide",
   ];
   const pageKey = location === "/"
     ? "page./"

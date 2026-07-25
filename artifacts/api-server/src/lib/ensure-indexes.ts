@@ -178,6 +178,38 @@ const MIGRATIONS = [
   // قائمة تصنيفات الموردين المركزية القابلة للتوسّع + زرع الأنواع الافتراضية
   `CREATE TABLE IF NOT EXISTS supplier_types (id serial PRIMARY KEY, name text NOT NULL UNIQUE, created_at timestamp NOT NULL DEFAULT now())`,
   `INSERT INTO supplier_types (name) VALUES ('مقاول'), ('مورد'), ('استشاري'), ('مصنّع') ON CONFLICT (name) DO NOTHING`,
+
+  /* ═══ النظام المالي الموحّد — المرحلة ١: الأساس (إضافي وغير كاسر) ═══ */
+  // جدول مراكز التكلفة/الربح (أقسام الشركة الداخلية) + زرع الأقسام الأساسية
+  `CREATE TABLE IF NOT EXISTS cost_centers (id serial PRIMARY KEY, name text NOT NULL UNIQUE,
+     type text NOT NULL DEFAULT 'profit', evaluation_metric text,
+     is_active boolean NOT NULL DEFAULT true, created_at timestamp NOT NULL DEFAULT now(),
+     updated_at timestamp NOT NULL DEFAULT now())`,
+  `INSERT INTO cost_centers (name, type) VALUES
+     ('الصيانة','profit'), ('النقل','profit'), ('العقود','profit'),
+     ('المشتريات','cost'), ('عام/غير موزّع','allocatable') ON CONFLICT (name) DO NOTHING`,
+  // بُعد القسم على الدخل والمصروف + تاريخ المعاملة الصريح على المصروف
+  `ALTER TABLE finance_income   ADD COLUMN IF NOT EXISTS cost_center_id integer REFERENCES cost_centers(id) ON DELETE SET NULL`,
+  `ALTER TABLE finance_expenses ADD COLUMN IF NOT EXISTS cost_center_id integer REFERENCES cost_centers(id) ON DELETE SET NULL`,
+  `ALTER TABLE finance_expenses ADD COLUMN IF NOT EXISTS transaction_date date`,
+  // ترحيل خلفي — تاريخ المعاملة من التاريخ الموجود
+  `UPDATE finance_expenses SET transaction_date = COALESCE(paid_date, due_date, created_at::date) WHERE transaction_date IS NULL`,
+  // ترحيل خلفي — القسم بنفس أولوية "حسب الوحدة" (أول شرط ينطبق يفوز؛ IS NULL يضمن idempotency ويلتقط أي سجل جديد لاحقًا)
+  `UPDATE finance_expenses fe SET cost_center_id = (SELECT id FROM cost_centers WHERE name='الصيانة')
+     WHERE fe.cost_center_id IS NULL AND (fe.maintenance_work_order_id IS NOT NULL OR fe.source_module='maintenance'
+       OR EXISTS (SELECT 1 FROM workers w WHERE w.id = fe.worker_id AND w.assigned_module='maintenance'))`,
+  `UPDATE finance_expenses fe SET cost_center_id = (SELECT id FROM cost_centers WHERE name='النقل')
+     WHERE fe.cost_center_id IS NULL AND (fe.transportation_order_id IS NOT NULL OR fe.vehicle_id IS NOT NULL
+       OR EXISTS (SELECT 1 FROM workers w WHERE w.id = fe.worker_id AND w.assigned_module='transportation'))`,
+  `UPDATE finance_expenses SET cost_center_id = (SELECT id FROM cost_centers WHERE name='العقود') WHERE cost_center_id IS NULL AND contract_id IS NOT NULL`,
+  `UPDATE finance_expenses SET cost_center_id = (SELECT id FROM cost_centers WHERE name='المشتريات') WHERE cost_center_id IS NULL AND purchase_order_id IS NOT NULL`,
+  `UPDATE finance_expenses SET cost_center_id = (SELECT id FROM cost_centers WHERE name='عام/غير موزّع') WHERE cost_center_id IS NULL`,
+  `UPDATE finance_income fi SET cost_center_id = (SELECT id FROM cost_centers WHERE name='الصيانة')
+     WHERE fi.cost_center_id IS NULL AND (fi.maintenance_work_order_id IS NOT NULL OR fi.source_module='maintenance')`,
+  `UPDATE finance_income fi SET cost_center_id = (SELECT id FROM cost_centers WHERE name='النقل')
+     WHERE fi.cost_center_id IS NULL AND (fi.transportation_order_id IS NOT NULL OR fi.source_module='transportation')`,
+  `UPDATE finance_income SET cost_center_id = (SELECT id FROM cost_centers WHERE name='العقود') WHERE cost_center_id IS NULL AND contract_id IS NOT NULL`,
+  `UPDATE finance_income SET cost_center_id = (SELECT id FROM cost_centers WHERE name='عام/غير موزّع') WHERE cost_center_id IS NULL`,
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

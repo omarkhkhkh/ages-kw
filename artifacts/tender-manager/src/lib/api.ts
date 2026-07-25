@@ -93,6 +93,15 @@ export const suppliersApi = {
   },
 };
 
+// ── Cost Centers (مراكز التكلفة/الربح — النواة المالية الموحّدة) ──────────────
+export type CostCenter = { id: number; name: string; type: "profit" | "cost" | "allocatable"; evaluationMetric: string | null; isActive: boolean };
+export const costCentersApi = {
+  list: () => apiFetch<CostCenter[]>("/api/cost-centers"),
+  create: (data: Partial<CostCenter>) => apiFetch<CostCenter>("/api/cost-centers", { method: "POST", body: JSON.stringify(data) }),
+  update: (id: number, data: Partial<CostCenter>) => apiFetch<CostCenter>(`/api/cost-centers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  delete: (id: number) => apiFetch<void>(`/api/cost-centers/${id}`, { method: "DELETE" }),
+};
+
 // ── RFQ Requests ───────────────────────────────────────────────────────────
 export const rfqApi = {
   list: (tenderId?: number) => apiFetch<any[]>(tenderId ? `/api/rfq-requests?tenderId=${tenderId}` : "/api/rfq-requests"),

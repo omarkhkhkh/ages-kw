@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, timestamp, integer, numeric, date, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -26,3 +26,45 @@ export const updateCostCenterSchema = insertCostCenterSchema.partial();
 export type InsertCostCenter = z.infer<typeof insertCostCenterSchema>;
 export type UpdateCostCenter = z.infer<typeof updateCostCenterSchema>;
 export type CostCenter = typeof costCentersTable.$inferSelect;
+
+/**
+ * جدول الأصول الموحّد — يدمج المعدات (maintenance_equipment) والمركبات (fleet_vehicles)
+ * في جدول واحد للتقارير الرأسمالية العابرة للأقسام. مرحلة انتقالية آمنة:
+ * الجدولان التشغيليان يبقيان مصدر الحقيقة، وهذا الجدول مرآة موحّدة تُزامَن منهما
+ * (legacy_source/legacy_id يربطان كل أصل بمصدره). القطع النهائي في مرحلة التنظيف.
+ */
+export const assetsTable = pgTable("assets", {
+  id:           serial("id").primaryKey(),
+  costCenterId: integer("cost_center_id").references(() => costCentersTable.id, { onDelete: "set null" }),
+  assetType:    text("asset_type").notNull().default("other"), // equipment | vehicle | other
+  name:         text("name").notNull(),
+  code:         text("code"),      // رقم الأصل / رقم اللوحة
+  category:     text("category"),
+  status:       text("status"),
+  location:     text("location"),
+  branch:       text("branch"),
+  purchaseValue: numeric("purchase_value", { precision: 15, scale: 3 }),
+  purchaseDate: date("purchase_date"),
+  legacySource: text("legacy_source"), // maintenance_equipment | fleet_vehicles | null (يدوي)
+  legacyId:     integer("legacy_id"),
+  notes:        text("notes"),
+  createdAt:    timestamp("created_at").notNull().defaultNow(),
+  updatedAt:    timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({ uqLegacy: unique("uq_assets_legacy").on(t.legacySource, t.legacyId) }));
+
+export const insertAssetSchema = createInsertSchema(assetsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export type Asset = typeof assetsTable.$inferSelect;
+
+/** جدول الميزانيات الموحّد — يستبدل maintenance_budgets + transportation_budgets */
+export const costCenterBudgetsTable = pgTable("cost_center_budgets", {
+  id:           serial("id").primaryKey(),
+  costCenterId: integer("cost_center_id").notNull().references(() => costCentersTable.id, { onDelete: "cascade" }),
+  year:         integer("year").notNull(),
+  month:        integer("month").notNull(),
+  targetAmount: numeric("target_amount", { precision: 15, scale: 3 }).notNull().default("0"),
+  createdAt:    timestamp("created_at").notNull().defaultNow(),
+  updatedAt:    timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({ uqYm: unique("uq_ccb_ym").on(t.costCenterId, t.year, t.month) }));
+
+export const insertCostCenterBudgetSchema = createInsertSchema(costCenterBudgetsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export type CostCenterBudget = typeof costCenterBudgetsTable.$inferSelect;

@@ -210,6 +210,47 @@ const MIGRATIONS = [
      WHERE fi.cost_center_id IS NULL AND (fi.transportation_order_id IS NOT NULL OR fi.source_module='transportation')`,
   `UPDATE finance_income SET cost_center_id = (SELECT id FROM cost_centers WHERE name='العقود') WHERE cost_center_id IS NULL AND contract_id IS NOT NULL`,
   `UPDATE finance_income SET cost_center_id = (SELECT id FROM cost_centers WHERE name='عام/غير موزّع') WHERE cost_center_id IS NULL`,
+
+  /* ═══ النظام المالي الموحّد — المرحلة ٢: جدول أصول موحّد + ميزانية موحّدة (تشغيل متوازٍ) ═══ */
+  // بُعد القسم على المعدات والمركبات
+  `ALTER TABLE maintenance_equipment ADD COLUMN IF NOT EXISTS cost_center_id integer REFERENCES cost_centers(id) ON DELETE SET NULL`,
+  `ALTER TABLE fleet_vehicles        ADD COLUMN IF NOT EXISTS cost_center_id integer REFERENCES cost_centers(id) ON DELETE SET NULL`,
+  `UPDATE maintenance_equipment SET cost_center_id = (SELECT id FROM cost_centers WHERE name='الصيانة') WHERE cost_center_id IS NULL`,
+  `UPDATE fleet_vehicles        SET cost_center_id = (SELECT id FROM cost_centers WHERE name='النقل')   WHERE cost_center_id IS NULL`,
+  // جدول الأصول الموحّد
+  `CREATE TABLE IF NOT EXISTS assets (id serial PRIMARY KEY,
+     cost_center_id integer REFERENCES cost_centers(id) ON DELETE SET NULL,
+     asset_type text NOT NULL DEFAULT 'other', name text NOT NULL, code text, category text, status text,
+     location text, branch text, purchase_value numeric(15,3), purchase_date date,
+     legacy_source text, legacy_id integer, notes text,
+     created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_assets_legacy UNIQUE (legacy_source, legacy_id))`,
+  // مزامنة المعدات → assets (idempotent: يُعاد كل إقلاع فيلتقط أي تغيير)
+  `INSERT INTO assets (cost_center_id, asset_type, name, code, category, status, location, branch, purchase_value, purchase_date, legacy_source, legacy_id, notes)
+     SELECT cost_center_id, 'equipment', name, asset_number, category, status, location, branch, purchase_value, purchase_date, 'maintenance_equipment', id, notes FROM maintenance_equipment
+     ON CONFLICT (legacy_source, legacy_id) DO UPDATE SET cost_center_id=EXCLUDED.cost_center_id, name=EXCLUDED.name, code=EXCLUDED.code,
+       category=EXCLUDED.category, status=EXCLUDED.status, location=EXCLUDED.location, branch=EXCLUDED.branch,
+       purchase_value=EXCLUDED.purchase_value, purchase_date=EXCLUDED.purchase_date, notes=EXCLUDED.notes, updated_at=now()`,
+  // مزامنة المركبات → assets
+  `INSERT INTO assets (cost_center_id, asset_type, name, code, category, status, purchase_value, purchase_date, legacy_source, legacy_id, notes)
+     SELECT cost_center_id, 'vehicle', COALESCE(NULLIF(make_model,''), plate_number), plate_number, vehicle_type, status, purchase_value, purchase_date, 'fleet_vehicles', id, notes FROM fleet_vehicles
+     ON CONFLICT (legacy_source, legacy_id) DO UPDATE SET cost_center_id=EXCLUDED.cost_center_id, name=EXCLUDED.name, code=EXCLUDED.code,
+       category=EXCLUDED.category, status=EXCLUDED.status, purchase_value=EXCLUDED.purchase_value, purchase_date=EXCLUDED.purchase_date, notes=EXCLUDED.notes, updated_at=now()`,
+  // تنظيف الأصول اليتيمة (المصدر حُذف)
+  `DELETE FROM assets WHERE legacy_source='maintenance_equipment' AND legacy_id NOT IN (SELECT id FROM maintenance_equipment)`,
+  `DELETE FROM assets WHERE legacy_source='fleet_vehicles' AND legacy_id NOT IN (SELECT id FROM fleet_vehicles)`,
+  // جدول الميزانية الموحّد + ترحيل ميزانيات الصيانة والنقل
+  `CREATE TABLE IF NOT EXISTS cost_center_budgets (id serial PRIMARY KEY,
+     cost_center_id integer NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+     year integer NOT NULL, month integer NOT NULL, target_amount numeric(15,3) NOT NULL DEFAULT 0,
+     created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_ccb_ym UNIQUE (cost_center_id, year, month))`,
+  `INSERT INTO cost_center_budgets (cost_center_id, year, month, target_amount)
+     SELECT (SELECT id FROM cost_centers WHERE name='الصيانة'), year, month, amount FROM maintenance_budgets
+     ON CONFLICT (cost_center_id, year, month) DO UPDATE SET target_amount=EXCLUDED.target_amount, updated_at=now()`,
+  `INSERT INTO cost_center_budgets (cost_center_id, year, month, target_amount)
+     SELECT (SELECT id FROM cost_centers WHERE name='النقل'), year, month, amount FROM transportation_budgets
+     ON CONFLICT (cost_center_id, year, month) DO UPDATE SET target_amount=EXCLUDED.target_amount, updated_at=now()`,
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

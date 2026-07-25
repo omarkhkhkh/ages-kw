@@ -56,6 +56,55 @@ router.get("/", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * محرّك الميزانية الموحّد — تقرير قياسي واحد لأي قسم يعتمد فقط على بُعد القسم المخزّن:
+ *   المصروف/الدخل من الدفتر (cost_center_id) · الميزانية من cost_center_budgets · الرأسمالي من assets.
+ * يُعمّم استعلامَي ميزانية الصيانة/النقل في محرّك واحد. تشغيل متوازٍ — لا يستبدلهما بعد.
+ */
+router.get("/:id/budget-summary", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  const cc = Number(req.params.id);
+  if (!cc) return res.status(400).json({ error: "معرّف غير صالح" });
+  try {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const { rows } = await pool.query(
+      `SELECT gs.month,
+         COALESCE(b.target_amount, 0)::numeric AS budget,
+         COALESCE((SELECT SUM(fe.amount) FROM finance_expenses fe
+            WHERE fe.cost_center_id = $1
+              AND EXTRACT(YEAR  FROM COALESCE(fe.transaction_date, fe.created_at::date))::int = $2
+              AND EXTRACT(MONTH FROM COALESCE(fe.transaction_date, fe.created_at::date))::int = gs.month), 0)::numeric AS spent,
+         COALESCE((SELECT SUM(fi.amount) FROM finance_income fi
+            WHERE fi.cost_center_id = $1
+              AND EXTRACT(YEAR FROM fi.date)::int = $2 AND EXTRACT(MONTH FROM fi.date)::int = gs.month), 0)::numeric AS income,
+         COALESCE((SELECT SUM(a.purchase_value) FROM assets a
+            WHERE a.cost_center_id = $1 AND a.purchase_date IS NOT NULL
+              AND EXTRACT(YEAR FROM a.purchase_date)::int = $2 AND EXTRACT(MONTH FROM a.purchase_date)::int = gs.month), 0)::numeric AS capex
+       FROM generate_series(1,12) AS gs(month)
+       LEFT JOIN cost_center_budgets b ON b.cost_center_id = $1 AND b.year = $2 AND b.month = gs.month
+       ORDER BY gs.month`,
+      [cc, year]
+    );
+    const monthly = rows.map((r: any) => ({
+      month: r.month, budget: Number(r.budget), spent: Number(r.spent),
+      income: Number(r.income), capex: Number(r.capex), net: Number(r.income) - Number(r.spent),
+    }));
+    const annualBudget = monthly.reduce((s, r) => s + r.budget, 0);
+    const annualSpent  = monthly.reduce((s, r) => s + r.spent, 0);
+    const annualIncome = monthly.reduce((s, r) => s + r.income, 0);
+    const annualCapex  = monthly.reduce((s, r) => s + r.capex, 0);
+    return res.json({
+      costCenterId: cc, year,
+      annualBudget, annualSpent, annualRemaining: annualBudget - annualSpent,
+      annualIncome, annualCapex, annualNet: annualIncome - annualSpent,
+      monthly,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في جلب ملخص ميزانية القسم" });
+  }
+});
+
 router.post("/", async (req: Request, res: Response) => {
   if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
   try {

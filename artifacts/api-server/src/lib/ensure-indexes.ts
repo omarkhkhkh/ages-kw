@@ -473,6 +473,30 @@ const MIGRATIONS = [
           ('misuse','أعطال سوء الاستخدام','غير مشمول',NULL)
        ) AS x(code,label,cov,cap)
      WHERE c.contract_number='127' ON CONFLICT (contract_id, item_code) DO NOTHING`,
+
+  /* ═══ صيانة العقود — المرحلة ٣: الإسناد الزمني للمكائن (منع تداخل الفترات) ═══
+     المكينة تُنقل بين المدارس وعقدها يتغيّر؛ قيد EXCLUDE يمنع تداخل فترتين لنفس المكينة. */
+  `CREATE EXTENSION IF NOT EXISTS btree_gist`,
+  `CREATE TABLE IF NOT EXISTS maintenance_equipment_assignments (
+     id serial PRIMARY KEY,
+     equipment_id integer NOT NULL REFERENCES maintenance_equipment(id) ON DELETE CASCADE,
+     school_id integer NOT NULL REFERENCES maintenance_schools(id),
+     workshop_id integer REFERENCES maintenance_workshops(id) ON DELETE SET NULL,
+     contract_id integer REFERENCES service_contracts(id) ON DELETE SET NULL,
+     valid_from date NOT NULL,
+     valid_to date,
+     reason text,
+     created_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT ck_mea_dates CHECK (valid_to IS NULL OR valid_to > valid_from))`,
+  `CREATE INDEX IF NOT EXISTS idx_mea_lookup ON maintenance_equipment_assignments (equipment_id, valid_from)`,
+  // قيد منع التداخل — يُضاف دفاعيًا (لو btree_gist غير متاح في بيئة مقيّدة، يُعتمد على فحص التطبيق)
+  `DO $do$ BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='excl_mea_overlap') THEN
+       ALTER TABLE maintenance_equipment_assignments ADD CONSTRAINT excl_mea_overlap
+         EXCLUDE USING gist (equipment_id WITH =, daterange(valid_from, COALESCE(valid_to, 'infinity'::date), '[)') WITH &&);
+     END IF;
+   EXCEPTION WHEN others THEN NULL;
+   END $do$`,
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

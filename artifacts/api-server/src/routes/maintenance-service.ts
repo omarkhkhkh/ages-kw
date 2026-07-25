@@ -44,6 +44,7 @@ function crud(cfg: {
       if (e?.code === "23505") return res.status(409).json({ error: "قيمة مكرّرة (مستخدمة بالفعل)" });
       if (e?.code === "23503") return res.status(400).json({ error: "مرجع غير صالح" });
       if (e?.code === "23514") return res.status(400).json({ error: "قيمة تخالف قيود العقد (السقف/التواريخ/القيم المسموحة)" });
+      if (e?.code === "23P01") return res.status(409).json({ error: "تداخل فترة إسناد لنفس المكينة في نفس المدة" });
       return res.status(500).json({ error: "فشل الإضافة" });
     }
   });
@@ -63,6 +64,7 @@ function crud(cfg: {
     } catch (e: any) {
       if (e?.code === "23505") return res.status(409).json({ error: "قيمة مكرّرة" });
       if (e?.code === "23514") return res.status(400).json({ error: "قيمة تخالف قيود العقد (السقف/التواريخ/القيم المسموحة)" });
+      if (e?.code === "23P01") return res.status(409).json({ error: "تداخل فترة إسناد لنفس المكينة في نفس المدة" });
       return res.status(500).json({ error: "فشل التحديث" });
     }
   });
@@ -166,6 +168,68 @@ crud({
   ],
   required: ["contractId", "priority", "responseHours", "resolutionHours"],
   order: "priority", filter: ["contractId", "contract_id"],
+});
+
+/* ═══ المرحلة ٣: الإسناد الزمني + محرّك التغطية ═══ */
+
+// إسناد المكينة (فترة زمنية لمدرسة/ورشة/عقد) — قيد منع التداخل يُترجَم لـ409
+crud({
+  base: "/assignments", table: "maintenance_equipment_assignments",
+  select: `id, equipment_id AS "equipmentId", school_id AS "schoolId", workshop_id AS "workshopId",
+           contract_id AS "contractId", valid_from AS "validFrom", valid_to AS "validTo", reason`,
+  writable: [
+    ["equipmentId", "equipment_id", "num"], ["schoolId", "school_id", "num"], ["workshopId", "workshop_id", "num"],
+    ["contractId", "contract_id", "num"], ["validFrom", "valid_from"], ["validTo", "valid_to"], ["reason", "reason"],
+  ],
+  required: ["equipmentId", "schoolId", "validFrom"],
+  order: "valid_from DESC", filter: ["equipmentId", "equipment_id"],
+});
+
+/**
+ * محرّك التغطية — يحدّد من يتحمّل تكلفة صيانة مكينة في تاريخ معيّن:
+ *   ١) الضمان أولًا (على المورّد)
+ *   ٢) العقد الساري وقتها (من الإسناد الزمني) — مصفوفة التغطية بنودًا مع كشف تجاوز السقف
+ *   ٣) خارج العقد (يُسعَّر من قائمة أسعار الجهة)
+ * قراءة فقط؛ في المرحلة ٤ يُستدعى عند إنشاء بند الزيارة ويُحفظ ناتجه كلقطة مجمّدة.
+ */
+router.get("/coverage-resolve", async (req: Request, res: Response) => {
+  const equipmentId = Number(req.query.equipmentId);
+  const date = (req.query.date as string) || new Date().toISOString().slice(0, 10);
+  if (!equipmentId) return res.status(400).json({ error: "المعدة مطلوبة" });
+  try {
+    const { rows: eq } = await pool.query(
+      `SELECT (warranty_expiry IS NOT NULL AND warranty_expiry >= $2::date) AS in_warranty FROM maintenance_equipment WHERE id = $1`,
+      [equipmentId, date]
+    );
+    if (!eq.length) return res.status(404).json({ error: "المعدة غير موجودة" });
+    if (eq[0].in_warranty) {
+      return res.json({ path: "ضمان", billable: false, contractId: null, note: "المعدة داخل فترة الضمان — التكلفة على المورّد", items: {} });
+    }
+    const { rows: asg } = await pool.query(
+      `SELECT contract_id FROM maintenance_equipment_assignments
+       WHERE equipment_id = $1 AND valid_from <= $2::date AND (valid_to IS NULL OR valid_to > $2::date) AND contract_id IS NOT NULL
+       ORDER BY valid_from DESC LIMIT 1`,
+      [equipmentId, date]
+    );
+    const contractId: number | null = asg[0]?.contract_id ?? null;
+    if (!contractId) {
+      return res.json({ path: "خارج العقد", billable: true, contractId: null, note: "لا عقد ساري — يُسعَّر من قائمة أسعار الجهة", items: {} });
+    }
+    const { rows: cov } = await pool.query(
+      `SELECT item_code, coverage, annual_cap, consumed FROM service_contract_coverage WHERE contract_id = $1`,
+      [contractId]
+    );
+    const items: Record<string, { coverage: string; cap: number | null; consumed: number; exceeded: boolean }> = {};
+    for (const r of cov) {
+      const cap = r.annual_cap == null ? null : Number(r.annual_cap);
+      const consumed = Number(r.consumed);
+      items[r.item_code] = { coverage: r.coverage, cap, consumed, exceeded: r.coverage === "مشمول بسقف" && cap != null && consumed >= cap };
+    }
+    return res.json({ path: "ضمن العقد", billable: null, contractId, note: "ضمن اتفاقية سارية", items });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل حساب التغطية" });
+  }
 });
 
 export default router;

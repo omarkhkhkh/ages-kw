@@ -541,4 +541,59 @@ crud({
   required: ["workOrderId", "supplierId"], order: "requested_at DESC", filter: ["workOrderId", "work_order_id"],
 });
 
+/* ═══ المرحلة ٦: التقارير التحليلية ═══ */
+
+// السجل الزمني لخدمة مكينة معيّنة عبر كل الزيارات
+router.get("/analytics/equipment-history", async (req: Request, res: Response) => {
+  const equipmentId = Number(req.query.equipmentId);
+  if (!equipmentId) return res.status(400).json({ error: "المعدة مطلوبة" });
+  try {
+    const { rows } = await pool.query(
+      `SELECT v.visit_date AS "visitDate", v.visit_number AS "visitNumber", s.name_ar AS "school",
+              l.condition, l.works_done AS "worksDone", l.work_order_id AS "workOrderId", u.full_name AS "technician"
+       FROM maintenance_visit_lines l
+       JOIN maintenance_visits v ON v.id = l.visit_id
+       JOIN maintenance_schools s ON s.id = v.school_id
+       LEFT JOIN users u ON u.id = v.technician_id
+       WHERE l.equipment_id = $1 AND l.is_included = true
+       ORDER BY v.visit_date DESC`, [equipmentId]);
+    return res.json(rows);
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب السجل" }); }
+});
+
+// رصيد الزيارات الوقائية لكل عقد نشط (مستحق/منفَّذ/متبقٍّ) — خطر إخلال تعاقدي إن سالب
+router.get("/analytics/contract-visit-balance", async (_req: Request, res: Response) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.contract_number AS "contractNumber", d.name_ar AS "district",
+              c.pm_visits_per_year AS "due", COUNT(DISTINCT v.id)::int AS "executed",
+              (COALESCE(c.pm_visits_per_year,0) - COUNT(DISTINCT v.id))::int AS "remaining"
+       FROM service_contracts c
+       LEFT JOIN maintenance_districts d ON d.id = c.district_id
+       LEFT JOIN maintenance_visit_lines vl ON vl.contract_id = c.id AND vl.is_included = true
+       LEFT JOIN maintenance_visits v ON v.id = vl.visit_id AND v.status = 'صادرة' AND v.visit_date BETWEEN c.start_date AND c.end_date
+       WHERE c.status = 'نشط'
+       GROUP BY c.id, c.contract_number, d.name_ar, c.pm_visits_per_year
+       ORDER BY "remaining" DESC`);
+    return res.json(rows);
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب الرصيد" }); }
+});
+
+// بنود استُبعدت لتعذّر الوصول/عدم وجود المكينة — التزام قائم يحتاج إعادة جدولة
+router.get("/analytics/pending-reschedule", async (_req: Request, res: Response) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT s.name_ar AS "school", e.asset_number AS "assetNumber", et.name_ar AS "equipmentType",
+              v.visit_date AS "visitDate", v.visit_number AS "visitNumber", l.exclusion_reason AS "exclusionReason"
+       FROM maintenance_visit_lines l
+       JOIN maintenance_visits v ON v.id = l.visit_id
+       JOIN maintenance_schools s ON s.id = v.school_id
+       JOIN maintenance_equipment e ON e.id = l.equipment_id
+       LEFT JOIN maintenance_equipment_types et ON et.id = e.type_id
+       WHERE l.is_included = false AND l.exclusion_reason IN ('تعذّر الوصول للورشة','المكينة غير موجودة بالموقع')
+       ORDER BY v.visit_date DESC`);
+    return res.json(rows);
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب البنود" }); }
+});
+
 export default router;

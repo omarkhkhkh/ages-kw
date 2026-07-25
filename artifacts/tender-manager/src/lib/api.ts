@@ -142,6 +142,57 @@ export const pricingBookApi = {
   delete: (id: number) => apiFetch<void>(`/api/pricing-book/${id}`, { method: "DELETE" }),
 };
 
+// ── Contract Maintenance (صيانة العقود) ──────────────────────────────────────
+const MS = "/api/maintenance-service";
+const msq = (o: Record<string, any>) => { const p = Object.entries(o).filter(([, v]) => v != null && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&"); return p ? `?${p}` : ""; };
+function msCrud<T = any>(base: string) {
+  return {
+    list: (filter?: Record<string, any>) => apiFetch<T[]>(`${MS}/${base}${filter ? msq(filter) : ""}`),
+    create: (d: any) => apiFetch<T>(`${MS}/${base}`, { method: "POST", body: JSON.stringify(d) }),
+    update: (id: number, d: any) => apiFetch<T>(`${MS}/${base}/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
+    delete: (id: number) => apiFetch<void>(`${MS}/${base}/${id}`, { method: "DELETE" }),
+  };
+}
+export const maintenanceServiceApi = {
+  equipmentTypes: msCrud("equipment-types"),
+  districts: msCrud("districts"),
+  schools: msCrud("schools"),
+  workshops: msCrud("workshops"),
+  serviceContracts: msCrud("service-contracts"),
+  coverage: msCrud("coverage"),
+  priceList: msCrud("price-list"),
+  sla: msCrud("sla"),
+  assignments: msCrud("assignments"),
+  standardPhrases: msCrud("standard-phrases"),
+  incomingRegister: msCrud("incoming-register"),
+  warrantyClaims: msCrud("warranty-claims"),
+  presentationProfiles: msCrud("presentation-profiles"),
+  fieldLabels: msCrud("field-labels"),
+  coverageResolve: (equipmentId: number, date?: string) => apiFetch<any>(`${MS}/coverage-resolve${msq({ equipmentId, date })}`),
+  visits: {
+    list: (filter?: Record<string, any>) => apiFetch<any[]>(`${MS}/visits${filter ? msq(filter) : ""}`),
+    get: (id: number) => apiFetch<any>(`${MS}/visits/${id}`),
+    create: (d: any) => apiFetch<any>(`${MS}/visits`, { method: "POST", body: JSON.stringify(d) }),
+    update: (id: number, d: any) => apiFetch<any>(`${MS}/visits/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
+    delete: (id: number) => apiFetch<void>(`${MS}/visits/${id}`, { method: "DELETE" }),
+    addLine: (visitId: number, d: any) => apiFetch<any>(`${MS}/visits/${visitId}/lines`, { method: "POST", body: JSON.stringify(d) }),
+    updateLine: (lineId: number, d: any) => apiFetch<any>(`${MS}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(d) }),
+    deleteLine: (lineId: number) => apiFetch<void>(`${MS}/lines/${lineId}`, { method: "DELETE" }),
+    generateWorkOrder: (lineId: number) => apiFetch<any>(`${MS}/lines/${lineId}/generate-work-order`, { method: "POST", body: "{}" }),
+  },
+  outgoingRegister: {
+    list: (filter?: Record<string, any>) => apiFetch<any[]>(`${MS}/outgoing-register${filter ? msq(filter) : ""}`),
+    create: (d: any) => apiFetch<any>(`${MS}/outgoing-register`, { method: "POST", body: JSON.stringify(d) }),
+    update: (id: number, d: any) => apiFetch<any>(`${MS}/outgoing-register/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
+    delete: (id: number) => apiFetch<void>(`${MS}/outgoing-register/${id}`, { method: "DELETE" }),
+  },
+  analytics: {
+    equipmentHistory: (equipmentId: number) => apiFetch<any[]>(`${MS}/analytics/equipment-history${msq({ equipmentId })}`),
+    contractVisitBalance: () => apiFetch<any[]>(`${MS}/analytics/contract-visit-balance`),
+    pendingReschedule: () => apiFetch<any[]>(`${MS}/analytics/pending-reschedule`),
+  },
+};
+
 // ── RFQ Requests ───────────────────────────────────────────────────────────
 export const rfqApi = {
   list: (tenderId?: number) => apiFetch<any[]>(tenderId ? `/api/rfq-requests?tenderId=${tenderId}` : "/api/rfq-requests"),

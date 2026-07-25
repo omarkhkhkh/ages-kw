@@ -49,6 +49,7 @@ import MaintenanceIndex from '@/pages/maintenance/index';
 import EquipmentDetail from '@/pages/maintenance/equipment-detail';
 import WorkOrderDetail from '@/pages/maintenance/work-order-detail';
 import MaintenanceReportTemplates from '@/pages/maintenance/report-templates';
+import ContractMaintenance from '@/pages/contract-maintenance';
 import ResearchIndex from '@/pages/research/index';
 import PricingList from '@/pages/pricing/index';
 import PricingSheetDetail from '@/pages/pricing/sheet-detail';
@@ -210,6 +211,9 @@ function AppRouter() {
         </Route>
         <Route path="/maintenance/work-orders/:id">
           <ModuleGuard access={isAdmin || user.accessMaintenance}><WorkOrderDetail /></ModuleGuard>
+        </Route>
+        <Route path="/contract-maintenance">
+          <ModuleGuard access={isAdmin || user.accessMaintenance}><ContractMaintenance /></ModuleGuard>
         </Route>
         <Route path="/research">
           <ModuleGuard access={isAdmin || user.accessResearch}><ResearchIndex /></ModuleGuard>

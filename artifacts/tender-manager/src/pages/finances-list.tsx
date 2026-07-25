@@ -68,7 +68,7 @@ interface SaleRow {
   employeeName: string | null; contractNumber: string | null;
 }
 interface Summary {
-  totalIncome: string; totalPaid: string; totalPending: string; totalOverdue: string; balance: string;
+  totalIncome: string; totalPaid: string; totalPending: string; totalOverdue: string; balance: string; accrualBalance: string;
 }
 interface UserDir { id: number; fullName: string; username: string; }
 interface ContractDir { id: number; contractNumber: string; }
@@ -103,7 +103,8 @@ function SummaryTab() {
     { label: "إجمالي المدفوع",       value: summary.totalPaid,    color: "#2563eb", bg: "#eff6ff", border: "#bfdbfe", icon: CheckCircle2  },
     { label: "المستحق للدفع",        value: summary.totalPending, color: "#d97706", bg: "#fffbeb", border: "#fde68a", icon: Clock         },
     { label: "الفواتير المتأخرة",    value: summary.totalOverdue, color: "#dc2626", bg: "#fff1f2", border: "#fecaca", icon: AlertCircle   },
-    { label: "الرصيد الحالي",        value: summary.balance,      color: G,         bg: "#fdf8ec", border: "#f0ead8", icon: Scale         },
+    { label: "الرصيد النقدي (سيولة فعلية)",  value: summary.balance,        color: G,          bg: "#fdf8ec", border: "#f0ead8", icon: Scale },
+    { label: "الرصيد الاستحقاقي (بعد الالتزامات)", value: summary.accrualBalance, color: Number(summary.accrualBalance) < 0 ? "#dc2626" : "#0f766e", bg: Number(summary.accrualBalance) < 0 ? "#fff1f2" : "#f0fdfa", border: Number(summary.accrualBalance) < 0 ? "#fecaca" : "#99f6e4", icon: Scale },
   ] : [];
 
   if (isLoading) return (

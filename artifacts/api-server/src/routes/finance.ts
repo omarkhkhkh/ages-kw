@@ -31,8 +31,12 @@ router.get("/summary", async (req: Request, res: Response) => {
         (SELECT COALESCE(SUM(amount),0) FROM finance_expenses WHERE status='paid')::numeric        AS "totalPaid",
         (SELECT COALESCE(SUM(amount),0) FROM finance_expenses WHERE status='pending')::numeric     AS "totalPending",
         (SELECT COALESCE(SUM(amount),0) FROM finance_expenses WHERE status='overdue')::numeric     AS "totalOverdue",
+        -- الرصيد النقدي: الدخل − المصروف المدفوع فقط (سيولة فعلية)
         (SELECT COALESCE(SUM(amount),0) FROM finance_income)
-          - (SELECT COALESCE(SUM(amount),0) FROM finance_expenses WHERE status='paid')             AS "balance"
+          - (SELECT COALESCE(SUM(amount),0) FROM finance_expenses WHERE status='paid')             AS "balance",
+        -- الرصيد الاستحقاقي: الدخل − كل الالتزامات (مدفوع + انتظار + متأخر)
+        (SELECT COALESCE(SUM(amount),0) FROM finance_income)
+          - (SELECT COALESCE(SUM(amount),0) FROM finance_expenses)                                 AS "accrualBalance"
     `);
     return res.json(rows[0]);
   } catch {

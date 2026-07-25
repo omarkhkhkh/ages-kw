@@ -402,6 +402,77 @@ const MIGRATIONS = [
   `INSERT INTO maintenance_schools (district_id, name_ar)
      SELECT id, 'مدرسة مشعان الخضير' FROM maintenance_districts WHERE name_ar='حولي'
      ON CONFLICT (district_id, name_ar) DO NOTHING`,
+
+  /* ═══ صيانة العقود — المرحلة ٢: عقود الصيانة + مصفوفة التغطية + قائمة الأسعار + SLA ═══
+     اسم service_contracts متعمّد (ليس contracts المحجوز لعقود المناقصات). */
+  `CREATE TABLE IF NOT EXISTS service_contracts (
+     id serial PRIMARY KEY,
+     contract_number text NOT NULL UNIQUE,
+     district_id integer NOT NULL REFERENCES maintenance_districts(id),
+     title text,
+     contract_type text NOT NULL DEFAULT 'شامل'
+       CHECK (contract_type IN ('شامل','وقائي فقط','تحت الطلب','ضمان ممتد')),
+     billing_model text NOT NULL DEFAULT 'مقطوع سنوي'
+       CHECK (billing_model IN ('مقطوع سنوي','لكل زيارة','قطع وأجرة','مختلط')),
+     start_date date NOT NULL,
+     end_date date NOT NULL,
+     contract_value numeric(14,3),
+     currency char(3) NOT NULL DEFAULT 'KWD',
+     pm_visits_per_year smallint,
+     auto_renew boolean NOT NULL DEFAULT false,
+     status text NOT NULL DEFAULT 'مسودة'
+       CHECK (status IN ('مسودة','نشط','منتهٍ','ملغى','معلّق لعدم السداد')),
+     created_at timestamp NOT NULL DEFAULT now(),
+     updated_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT ck_sc_dates CHECK (end_date > start_date))`,
+  // مصفوفة التغطية: ثلاث حالات لكل بند + سقف إلزامي مع "مشمول بسقف" فقط
+  `CREATE TABLE IF NOT EXISTS service_contract_coverage (
+     id serial PRIMARY KEY,
+     contract_id integer NOT NULL REFERENCES service_contracts(id) ON DELETE CASCADE,
+     item_code text NOT NULL,
+     item_label_ar text NOT NULL,
+     coverage text NOT NULL CHECK (coverage IN ('مشمول','مشمول بسقف','غير مشمول')),
+     annual_cap numeric(14,3),
+     consumed numeric(14,3) NOT NULL DEFAULT 0,
+     CONSTRAINT uq_scc UNIQUE (contract_id, item_code),
+     CONSTRAINT ck_scc_cap CHECK ((coverage = 'مشمول بسقف') = (annual_cap IS NOT NULL)))`,
+  // قائمة أسعار العقد — تجعل نموذج "مختلط" قابلًا للتنفيذ
+  `CREATE TABLE IF NOT EXISTS service_contract_price_list (
+     id serial PRIMARY KEY,
+     contract_id integer NOT NULL REFERENCES service_contracts(id) ON DELETE CASCADE,
+     item_code text NOT NULL,
+     unit text NOT NULL,
+     unit_price numeric(12,3),
+     markup_pct numeric(5,2),
+     CONSTRAINT uq_scpl UNIQUE (contract_id, item_code))`,
+  // اتفاقية مستوى الخدمة (SLA) لكل أولوية — أضفنا id سطحيًا ليوافق نمط CRUD الموحّد
+  `CREATE TABLE IF NOT EXISTS service_contract_sla (
+     id serial PRIMARY KEY,
+     contract_id integer NOT NULL REFERENCES service_contracts(id) ON DELETE CASCADE,
+     priority text NOT NULL CHECK (priority IN ('طارئ','عالي','عادي')),
+     response_hours smallint NOT NULL,
+     resolution_hours smallint NOT NULL,
+     CONSTRAINT uq_scsla UNIQUE (contract_id, priority))`,
+  // بذور العقدين ١٢٧ و١٤٣ (حولي) + مصفوفة تغطية العقد ١٢٧ من النموذج الفعلي
+  `INSERT INTO service_contracts (contract_number, district_id, title, contract_type, billing_model, start_date, end_date, pm_visits_per_year, status)
+     SELECT '127', id, 'تطوير وتحديث ورش ومختبرات الدراسات العملية', 'شامل', 'مختلط', DATE '2026-01-01', DATE '2026-12-31', 4, 'نشط'
+     FROM maintenance_districts WHERE name_ar='حولي' ON CONFLICT (contract_number) DO NOTHING`,
+  `INSERT INTO service_contracts (contract_number, district_id, title, contract_type, billing_model, start_date, end_date, pm_visits_per_year, status)
+     SELECT '143', id, 'تطوير وتحديث ورش ومختبرات الدراسات العملية', 'شامل', 'مختلط', DATE '2026-01-01', DATE '2026-12-31', 4, 'نشط'
+     FROM maintenance_districts WHERE name_ar='حولي' ON CONFLICT (contract_number) DO NOTHING`,
+  `INSERT INTO service_contract_coverage (contract_id, item_code, item_label_ar, coverage, annual_cap)
+     SELECT c.id, x.code, x.label, x.cov, x.cap
+     FROM service_contracts c,
+       (VALUES
+          ('labor_pm','أجرة عمل — صيانة وقائية','مشمول',NULL::numeric),
+          ('labor_cm','أجرة عمل — صيانة تصحيحية','مشمول',NULL),
+          ('labor_ot','أجرة عمل — خارج الدوام','غير مشمول',NULL),
+          ('parts','قطع الغيار','مشمول بسقف',500.000),
+          ('consumables','المستهلكات','مشمول',NULL),
+          ('transport','النقل والانتقال','مشمول',NULL),
+          ('misuse','أعطال سوء الاستخدام','غير مشمول',NULL)
+       ) AS x(code,label,cov,cap)
+     WHERE c.contract_number='127' ON CONFLICT (contract_id, item_code) DO NOTHING`,
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

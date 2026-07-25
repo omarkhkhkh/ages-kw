@@ -43,6 +43,7 @@ function crud(cfg: {
     } catch (e: any) {
       if (e?.code === "23505") return res.status(409).json({ error: "قيمة مكرّرة (مستخدمة بالفعل)" });
       if (e?.code === "23503") return res.status(400).json({ error: "مرجع غير صالح" });
+      if (e?.code === "23514") return res.status(400).json({ error: "قيمة تخالف قيود العقد (السقف/التواريخ/القيم المسموحة)" });
       return res.status(500).json({ error: "فشل الإضافة" });
     }
   });
@@ -61,6 +62,7 @@ function crud(cfg: {
       return res.json(rows[0]);
     } catch (e: any) {
       if (e?.code === "23505") return res.status(409).json({ error: "قيمة مكرّرة" });
+      if (e?.code === "23514") return res.status(400).json({ error: "قيمة تخالف قيود العقد (السقف/التواريخ/القيم المسموحة)" });
       return res.status(500).json({ error: "فشل التحديث" });
     }
   });
@@ -107,6 +109,63 @@ crud({
   select: `id, school_id AS "schoolId", name_ar AS "nameAr", supervisor_name AS "supervisorName"`,
   writable: [["schoolId", "school_id", "num"], ["nameAr", "name_ar"], ["supervisorName", "supervisor_name"]],
   required: ["schoolId", "nameAr"], order: "name_ar", filter: ["schoolId", "school_id"],
+});
+
+/* ═══ المرحلة ٢: عقود الصيانة + التغطية + الأسعار + SLA ═══ */
+
+// عقود الصيانة
+crud({
+  base: "/service-contracts", table: "service_contracts",
+  select: `id, contract_number AS "contractNumber", district_id AS "districtId", title,
+           contract_type AS "contractType", billing_model AS "billingModel",
+           start_date AS "startDate", end_date AS "endDate", contract_value AS "contractValue",
+           currency, pm_visits_per_year AS "pmVisitsPerYear", auto_renew AS "autoRenew", status`,
+  writable: [
+    ["contractNumber", "contract_number"], ["districtId", "district_id", "num"], ["title", "title"],
+    ["contractType", "contract_type"], ["billingModel", "billing_model"],
+    ["startDate", "start_date"], ["endDate", "end_date"], ["contractValue", "contract_value", "num"],
+    ["currency", "currency"], ["pmVisitsPerYear", "pm_visits_per_year", "num"],
+    ["autoRenew", "auto_renew"], ["status", "status"],
+  ],
+  required: ["contractNumber", "districtId", "contractType", "billingModel", "startDate", "endDate"],
+  order: "contract_number", filter: ["districtId", "district_id"],
+});
+
+// مصفوفة التغطية (بنود العقد الثلاثية الحالات)
+crud({
+  base: "/coverage", table: "service_contract_coverage",
+  select: `id, contract_id AS "contractId", item_code AS "itemCode", item_label_ar AS "itemLabelAr",
+           coverage, annual_cap AS "annualCap", consumed`,
+  writable: [
+    ["contractId", "contract_id", "num"], ["itemCode", "item_code"], ["itemLabelAr", "item_label_ar"],
+    ["coverage", "coverage"], ["annualCap", "annual_cap", "num"], ["consumed", "consumed", "num"],
+  ],
+  required: ["contractId", "itemCode", "itemLabelAr", "coverage"],
+  order: "item_code", filter: ["contractId", "contract_id"],
+});
+
+// قائمة أسعار العقد
+crud({
+  base: "/price-list", table: "service_contract_price_list",
+  select: `id, contract_id AS "contractId", item_code AS "itemCode", unit, unit_price AS "unitPrice", markup_pct AS "markupPct"`,
+  writable: [
+    ["contractId", "contract_id", "num"], ["itemCode", "item_code"], ["unit", "unit"],
+    ["unitPrice", "unit_price", "num"], ["markupPct", "markup_pct", "num"],
+  ],
+  required: ["contractId", "itemCode", "unit"],
+  order: "item_code", filter: ["contractId", "contract_id"],
+});
+
+// اتفاقية مستوى الخدمة
+crud({
+  base: "/sla", table: "service_contract_sla",
+  select: `id, contract_id AS "contractId", priority, response_hours AS "responseHours", resolution_hours AS "resolutionHours"`,
+  writable: [
+    ["contractId", "contract_id", "num"], ["priority", "priority"],
+    ["responseHours", "response_hours", "num"], ["resolutionHours", "resolution_hours", "num"],
+  ],
+  required: ["contractId", "priority", "responseHours", "resolutionHours"],
+  order: "priority", filter: ["contractId", "contract_id"],
 });
 
 export default router;

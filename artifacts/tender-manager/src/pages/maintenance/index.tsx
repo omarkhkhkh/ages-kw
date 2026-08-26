@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { maintenanceApi, apiFetch, projectsApi, contractsApi } from "@/lib/api";
+import { maintenanceApi, maintenanceServiceApi, apiFetch, projectsApi, contractsApi } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -10,8 +10,8 @@ import {
   TrendingUp, TrendingDown, Boxes, PlayCircle,
 } from "lucide-react";
 import { ResponsiveContainer, BarChart, Bar, Cell, CartesianGrid, XAxis, YAxis, Tooltip, PieChart, Pie } from "recharts";
-import { CalendarCheck, FileText, MapPin, ScrollText, BarChart3 } from "lucide-react";
-import { VisitsTab, ContractsTab, HierarchyTab, RegistersTab, AnalyticsTab } from "@/pages/contract-maintenance";
+import { CalendarCheck, FileText, MapPin, ScrollText, BarChart3, Receipt } from "lucide-react";
+import { VisitsTab, ContractsTab, HierarchyTab, RegistersTab, BillingTab, AnalyticsTab } from "@/pages/contract-maintenance";
 
 const G = "#D4A534";
 const GD = "#A87C20";
@@ -456,7 +456,7 @@ function WorkOrdersTab({ canEdit }: { canEdit: boolean }) {
 /* ═══════════════════════════════════════════════════════
    PREVENTIVE TAB
 ═══════════════════════════════════════════════════════ */
-const emptyPlanForm = { equipmentId: "", planName: "", frequencyType: "monthly", intervalValue: "1", meterIntervalValue: "", nextDueDate: "", checklistText: "", active: true };
+const emptyPlanForm = { equipmentId: "", contractId: "", planName: "", frequencyType: "monthly", intervalValue: "1", meterIntervalValue: "", nextDueDate: "", checklistText: "", active: true };
 
 function dueBadge(dateStr: string | null): { label: string; color: string; bg: string } {
   if (!dateStr) return { label: "—", color: "#6b7280", bg: "#f3f4f6" };
@@ -473,6 +473,8 @@ function PreventiveTab({ canEdit }: { canEdit: boolean }) {
 
   const { data: plans = [], isLoading } = useQuery<any[]>({ queryKey: ["maintenance-preventive-plans"], queryFn: () => maintenanceApi.preventivePlans.list() });
   const { data: equipment = [] } = useQuery<any[]>({ queryKey: ["maintenance-equipment"], queryFn: () => maintenanceApi.equipment.list() });
+  // خطة الصيانة الوقائية تُنفَّذ تحت عقد صيانة — الربط يُدخَل هنا أو يُشتق تلقائيًا من إسناد المكينة
+  const { data: serviceContracts = [] } = useQuery<any[]>({ queryKey: ["ms-service-contracts"], queryFn: () => maintenanceServiceApi.serviceContracts.list() });
 
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -486,6 +488,7 @@ function PreventiveTab({ canEdit }: { canEdit: boolean }) {
     if (!form.equipmentId || !form.planName.trim()) return;
     createMut.mutate({
       equipmentId: Number(form.equipmentId),
+      contractId: form.contractId ? Number(form.contractId) : null,
       planName: form.planName.trim(),
       frequencyType: form.frequencyType,
       intervalValue: Number(form.intervalValue) || 1,
@@ -519,7 +522,7 @@ function PreventiveTab({ canEdit }: { canEdit: boolean }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead style={{ background: "#f9f6ee", borderBottom: "1.5px solid #f0ead8" }}>
                 <tr>
-                  {["الخطة", "المعدة", "التكرار", "الاستحقاق القادم", ""].map((h) => (
+                  {["الخطة", "المعدة", "العقد", "التكرار", "الاستحقاق القادم", ""].map((h) => (
                     <th key={h} style={{ padding: "12px 14px", textAlign: "right", fontWeight: 700, color: "#4a3f1a", fontSize: 12 }}>{h}</th>
                   ))}
                 </tr>
@@ -531,6 +534,7 @@ function PreventiveTab({ canEdit }: { canEdit: boolean }) {
                     <tr key={p.id} style={{ borderBottom: "1px solid #f5f0e6" }}>
                       <td style={{ padding: "10px 14px", fontWeight: 700, color: GR }}>{p.planName}</td>
                       <td style={{ padding: "10px 14px", color: "#4b5563" }}>{p.equipmentName} ({p.assetNumber})</td>
+                      <td style={{ padding: "10px 14px", color: p.contractNumber ? "#4b5563" : "#cbd5e1" }}>{p.contractNumber ?? "بلا عقد"}</td>
                       <td style={{ padding: "10px 14px", color: "#4b5563" }}>{FREQ_LABELS[p.frequencyType] ?? p.frequencyType}</td>
                       <td style={{ padding: "10px 14px" }}><span style={{ padding: "3px 10px", borderRadius: 20, background: badge.bg, color: badge.color, fontSize: 11, fontWeight: 700 }}>{badge.label}</span></td>
                       <td style={{ padding: "10px 14px", display: "flex", gap: 8 }}>
@@ -558,6 +562,7 @@ function PreventiveTab({ canEdit }: { canEdit: boolean }) {
           </button>
         </>}>
         <div><label style={lbl}>المعدة *</label><select value={form.equipmentId} onChange={(e) => set("equipmentId", e.target.value)} style={inp}><option value="">— اختر —</option>{equipment.map((eq: any) => <option key={eq.id} value={eq.id}>{eq.name} ({eq.assetNumber})</option>)}</select></div>
+        <div><label style={lbl}>عقد الصيانة</label><select value={form.contractId} onChange={(e) => set("contractId", e.target.value)} style={inp}><option value="">— بلا عقد (يمكن ربطها لاحقًا تلقائيًا من التحليلات) —</option>{serviceContracts.map((c: any) => <option key={c.id} value={c.id}>{c.contractNumber}{c.title ? ` — ${c.title}` : ""}</option>)}</select></div>
         <div><label style={lbl}>اسم الخطة *</label><input value={form.planName} onChange={(e) => set("planName", e.target.value)} placeholder="مثال: تغيير زيت وفلتر" style={inp} /></div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div><label style={lbl}>التكرار</label><select value={form.frequencyType} onChange={(e) => set("frequencyType", e.target.value)} style={inp}>{Object.entries(FREQ_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
@@ -1171,7 +1176,7 @@ export default function MaintenanceIndex() {
   const { user } = useAuth();
   const canEdit = user?.role === "admin" || !!user?.canEdit;
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "equipment" | "workOrders" | "preventive" | "inventory" | "visits" | "contracts" | "hierarchy" | "registers" | "analytics">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "equipment" | "workOrders" | "preventive" | "inventory" | "visits" | "contracts" | "hierarchy" | "registers" | "billing" | "analytics">("dashboard");
 
   const TABS = [
     { key: "dashboard", label: "لوحة التحكم", icon: LayoutDashboard },
@@ -1183,6 +1188,7 @@ export default function MaintenanceIndex() {
     { key: "contracts", label: "عقود الصيانة", icon: FileText },
     { key: "hierarchy", label: "الهيكل والكتالوج", icon: MapPin },
     { key: "registers", label: "السجلات", icon: ScrollText },
+    { key: "billing", label: "الفوترة", icon: Receipt },
     { key: "analytics", label: "التحليلات", icon: BarChart3 },
   ] as const;
 
@@ -1214,6 +1220,7 @@ export default function MaintenanceIndex() {
       {activeTab === "contracts" && <ContractsTab />}
       {activeTab === "hierarchy" && <HierarchyTab />}
       {activeTab === "registers" && <RegistersTab />}
+      {activeTab === "billing" && <BillingTab />}
       {activeTab === "analytics" && <AnalyticsTab />}
     </div>
   );

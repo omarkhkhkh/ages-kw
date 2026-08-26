@@ -623,6 +623,41 @@ const MIGRATIONS = [
         '[{"label":"توقيع مسؤول الورشة أو من ينوب عنه"},{"label":"توقيع وختم إدارة المدرسة","require_name":true,"require_date":true}]'::jsonb
      FROM maintenance_districts d
      WHERE d.name_ar='حولي' AND NOT EXISTS (SELECT 1 FROM maintenance_presentation_profiles p WHERE p.is_default = true)`,
+
+  /* ═══ صيانة العقود — وصل الفجوات الثلاث (بعد اكتمال المراحل ١-٦) ═══
+     (١) فوترة العمل غير المشمول/المتجاوز للسقف كإيراد، (٢) ربط الخطة الوقائية بعقد الصيانة،
+     (٣) توحيد نظامَي التقارير: محرّك قوالب واحد + سجل صادر واحد بترقيم رسمي. كله إضافي وغير كاسر. */
+
+  // (١) الفوترة — بند الزيارة يحمل مرجع سجل الإيراد المولَّد منه (income_id يمنع الفوترة مرتين)
+  `ALTER TABLE maintenance_visit_lines ADD COLUMN IF NOT EXISTS income_id integer REFERENCES finance_income(id) ON DELETE SET NULL`,
+  `ALTER TABLE maintenance_visit_lines ADD COLUMN IF NOT EXISTS billed_amount numeric(15,3)`,
+  `ALTER TABLE maintenance_visit_lines ADD COLUMN IF NOT EXISTS billed_at timestamp`,
+  `ALTER TABLE maintenance_visit_lines ADD COLUMN IF NOT EXISTS billing_note text`,
+  `CREATE INDEX IF NOT EXISTS idx_mvl_income ON maintenance_visit_lines (income_id)`,
+
+  // (٢) الخطة الوقائية ← عقد الصيانة (يُملأ يدويًا أو بالربط التلقائي من إسناد المكينة)
+  `ALTER TABLE maintenance_preventive_plans ADD COLUMN IF NOT EXISTS contract_id integer REFERENCES service_contracts(id) ON DELETE SET NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_mpp_contract ON maintenance_preventive_plans (contract_id)`,
+
+  // (٣) توحيد التقارير — سجل الصادر يستوعب مستندات أوامر الصيانة، ويعرف القالب/ملف العرض المستخدم
+  `ALTER TABLE maintenance_outgoing_register ADD COLUMN IF NOT EXISTS work_order_id integer REFERENCES maintenance_work_orders(id) ON DELETE SET NULL`,
+  `ALTER TABLE maintenance_outgoing_register ADD COLUMN IF NOT EXISTS template_id integer REFERENCES maintenance_report_templates(id) ON DELETE SET NULL`,
+  `ALTER TABLE maintenance_outgoing_register ADD COLUMN IF NOT EXISTS profile_id integer REFERENCES maintenance_presentation_profiles(id) ON DELETE SET NULL`,
+  // سجل التقارير المولّدة القديم يستوعب تقرير زيارة (بلا أمر صيانة) ويربط بقيده في سجل الصادر
+  `ALTER TABLE maintenance_generated_reports ADD COLUMN IF NOT EXISTS visit_id integer REFERENCES maintenance_visits(id) ON DELETE SET NULL`,
+  `ALTER TABLE maintenance_generated_reports ADD COLUMN IF NOT EXISTS outgoing_register_id integer REFERENCES maintenance_outgoing_register(id) ON DELETE SET NULL`,
+  `ALTER TABLE maintenance_generated_reports ALTER COLUMN work_order_id DROP NOT NULL`,
+  // توحيد الترقيم: السلسلة الرسمية تبدأ من أعلى RPT قائم لهذه السنة، وإلا أعادت إصدار رقم مستخدم.
+  // GREATEST يجعلها idempotent عند كل إقلاع، وفحص النمط يمنع فشل التحويل على أي رقم شاذ.
+  `INSERT INTO maintenance_document_sequences (doc_type, year, last_number)
+     SELECT 'تقرير زيارة', EXTRACT(YEAR FROM CURRENT_DATE)::smallint,
+            COALESCE(MAX(CASE WHEN split_part(report_number,'-',3) ~ '^[0-9]+$'
+                              THEN split_part(report_number,'-',3)::int END), 0)
+       FROM maintenance_generated_reports
+      WHERE report_number LIKE 'RPT-' || EXTRACT(YEAR FROM CURRENT_DATE)::text || '-%'
+   ON CONFLICT (doc_type, year) DO UPDATE
+      SET last_number = GREATEST(maintenance_document_sequences.last_number, EXCLUDED.last_number)`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

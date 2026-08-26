@@ -143,6 +143,8 @@ export const pricingBookApi = {
 };
 
 // ── Contract Maintenance (صيانة العقود) ──────────────────────────────────────
+/** سلسلة استعلام من قيم اختيارية — يتجاهل الفارغ (يُستخدم لمعاملات التقارير). */
+const qsFrom = (o: Record<string, any>) => { const p = Object.entries(o).filter(([, v]) => v != null && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&"); return p ? `?${p}` : ""; };
 const MS = "/api/maintenance-service";
 const msq = (o: Record<string, any>) => { const p = Object.entries(o).filter(([, v]) => v != null && v !== "").map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&"); return p ? `?${p}` : ""; };
 function msCrud<T = any>(base: string) {
@@ -186,10 +188,23 @@ export const maintenanceServiceApi = {
     update: (id: number, d: any) => apiFetch<any>(`${MS}/outgoing-register/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
     delete: (id: number) => apiFetch<void>(`${MS}/outgoing-register/${id}`, { method: "DELETE" }),
   },
+  // فوترة العمل غير المشمول/المتجاوز للسقف — عرض سعر ثم تأكيد بمبلغ قابل للتعديل
+  billing: {
+    pending: () => apiFetch<any[]>(`${MS}/billing/pending`),
+    billed: () => apiFetch<any[]>(`${MS}/billing/billed`),
+    quote: (lineId: number) => apiFetch<any>(`${MS}/billing/quote${msq({ lineId })}`),
+    bill: (lineId: number, d: { amount?: number | string; date?: string; description?: string; note?: string }) =>
+      apiFetch<any>(`${MS}/lines/${lineId}/bill`, { method: "POST", body: JSON.stringify(d) }),
+    unbill: (lineId: number) => apiFetch<{ reversalIncomeId: number; reversedIncomeId: number; amount: number }>(`${MS}/lines/${lineId}/bill`, { method: "DELETE" }),
+  },
+  preventivePlans: {
+    autoLink: () => apiFetch<{ linked: number }>(`${MS}/preventive-plans/auto-link`, { method: "POST", body: "{}" }),
+  },
   analytics: {
     equipmentHistory: (equipmentId: number) => apiFetch<any[]>(`${MS}/analytics/equipment-history${msq({ equipmentId })}`),
     contractVisitBalance: () => apiFetch<any[]>(`${MS}/analytics/contract-visit-balance`),
     pendingReschedule: () => apiFetch<any[]>(`${MS}/analytics/pending-reschedule`),
+    contractPmCoverage: () => apiFetch<any[]>(`${MS}/analytics/contract-pm-coverage`),
   },
 };
 
@@ -499,6 +514,24 @@ export const maintenanceApi = {
     const a = document.createElement("a");
     a.href = downloadUrl;
     a.download = `visit-report-${orderNumber ?? workOrderId}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(downloadUrl);
+  },
+  // تقرير زيارة عقد — نفس محرّك القوالب، برقم رسمي وقيد تلقائي في سجل الصادر
+  generateContractVisitReport: async (visitId: number, opts?: { templateId?: number; profileId?: number; visitNumber?: string }) => {
+    const url = `/api/maintenance/visits/${visitId}/report${qsFrom({ templateId: opts?.templateId, profileId: opts?.profileId })}`;
+    const res = await fetch(url, { method: "POST", credentials: "include" });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error ?? res.statusText);
+    }
+    const blob = await res.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = `${opts?.visitNumber ?? `visit-${visitId}`}.docx`;
     document.body.appendChild(a);
     a.click();
     a.remove();

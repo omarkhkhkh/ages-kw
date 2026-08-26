@@ -29,6 +29,7 @@ import {
 import { ObjectStorageService } from "../lib/objectStorage";
 import { buildTemplateDocx } from "../lib/docxFromTiptap";
 import { hasModuleAction } from "../middleware/auth";
+import { nextDocNumber } from "./maintenance-service";
 
 const router = Router();
 const objectStorageService = new ObjectStorageService();
@@ -75,14 +76,10 @@ async function generateOrderNumber(): Promise<string> {
   return `WO-${year}-${String(seq).padStart(4, "0")}`;
 }
 
+/** ترقيم التقارير الصادرة — يفوّض للسلسلة الرسمية الذرّية نفسها التي يستخدمها سجل الصادر.
+ *  (كان عدّادًا بـCOUNT+1 غير آمن عند التزامن، وعدّادًا ثانيًا موازيًا لترقيم صيانة العقود.) */
 async function generateReportNumber(): Promise<string> {
-  const year = new Date().getFullYear();
-  const { rows } = await pool.query(
-    `SELECT COUNT(*)::int AS count FROM maintenance_generated_reports WHERE report_number LIKE $1`,
-    [`RPT-${year}-%`]
-  );
-  const seq = (Number(rows[0]?.count) || 0) + 1;
-  return `RPT-${year}-${String(seq).padStart(4, "0")}`;
+  return nextDocNumber("تقرير زيارة");
 }
 
 function computeNextDueDate(from: Date, frequencyType: string, intervalValue: number): Date | null {
@@ -607,9 +604,11 @@ router.get("/preventive-plans", async (req: Request, res: Response) => {
               pp.meter_interval_value AS "meterIntervalValue", pp.checklist_items AS "checklistItems",
               pp.active, pp.next_due_date::text AS "nextDueDate", pp.last_generated_date::text AS "lastGeneratedDate",
               pp.notes, pp.created_at AS "createdAt", pp.updated_at AS "updatedAt",
-              eq.name AS "equipmentName", eq.asset_number AS "assetNumber"
+              eq.name AS "equipmentName", eq.asset_number AS "assetNumber",
+              pp.contract_id AS "contractId", sc.contract_number AS "contractNumber", sc.status AS "contractStatus"
        FROM maintenance_preventive_plans pp
        LEFT JOIN maintenance_equipment eq ON eq.id = pp.equipment_id
+       LEFT JOIN service_contracts sc ON sc.id = pp.contract_id
        ${where}
        ORDER BY pp.next_due_date ASC NULLS LAST`,
       params
@@ -1381,24 +1380,8 @@ router.post("/work-orders/:id/visit-report", async (req: Request, res: Response)
       TotalCost: Number(costRows[0]?.total || 0).toFixed(3),
     };
 
-    let outBuffer: Buffer;
-
-    if (template.bodyJson) {
-      // Template composed in-site — substitution happens while walking the
-      // Tiptap JSON tree (each token is one atomic node, so it can never be
-      // split across formatting runs); no docxtemplater needed for this path.
-      outBuffer = await buildTemplateDocx(template.bodyJson, tokenValues);
-    } else {
-      const buffer = await objectStorageService.readPrivateObject(template.fileUrl!);
-
-      const zip = new PizZip(buffer);
-      // docxtemplater's default delimiters are single braces {tag}; our tokens are documented
-      // and shown to users as {{Tag}} (matching the mail-merge convention from the spec), so
-      // the double-brace delimiters must be set explicitly or every tag reads as "duplicate".
-      const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, delimiters: { start: "{{", end: "}}" } });
-      doc.render(tokenValues);
-      outBuffer = doc.getZip().generate({ type: "nodebuffer" });
-    }
+    // مسارا القالب (مُصمَّم داخل النظام / ملف Word مرفوع) صارا في دالة واحدة يشاركها تقرير الزيارة
+    const outBuffer = await renderTemplate(template, tokenValues);
 
     const reportNumber = await generateReportNumber();
     const fileUrl = await objectStorageService.savePrivateObject(
@@ -1406,16 +1389,23 @@ router.post("/work-orders/:id/visit-report", async (req: Request, res: Response)
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       `${reportNumber}.docx`
     );
+    // السجل الموحّد: كل مستند صادر يُقيَّد رسميًا، أيًّا كان مصدره (أمر صيانة أو زيارة عقد)
+    const registerId = await registerOutgoingDoc({
+      docNumber: reportNumber, docType: "تقرير زيارة", workOrderId: id,
+      districtId: await districtOfEquipment(wo.equipmentId ?? null),
+      subject: `تقرير أمر صيانة ${wo.orderNumber} — ${wo.equipmentName || ""}`.trim(),
+      filePath: fileUrl, templateId: template.id, userId: req.session.userId ?? null,
+    });
     await pool.query(
       `INSERT INTO maintenance_generated_reports
          (report_number, work_order_id, template_id, equipment_name, equipment_category, equipment_location,
-          contract_id, contract_number, work_order_number, file_url, generated_by_user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          contract_id, contract_number, work_order_number, outgoing_register_id, file_url, generated_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         reportNumber, id, template.id,
         wo.equipmentName || "—", wo.equipmentCategory || null, wo.location || wo.equipmentLocation || null,
         wo.contractId || null, wo.contractNumber || null, wo.orderNumber,
-        fileUrl, req.session.userId || null,
+        registerId, fileUrl, req.session.userId || null,
       ]
     );
 
@@ -1481,6 +1471,219 @@ router.get("/reports/:id/download", async (req: Request, res: Response) => {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ error: "فشل في تنزيل التقرير" });
+  }
+});
+
+
+/* ═══ وصل الفجوة ٣: محرّك تقارير واحد + سجل صادر واحد ═══
+   نظام قوالب Word/Tiptap (هذا الملف) هو المحرّك الوحيد، وقد توسّع ليطبع «زيارة عقد» كاملة
+   لا أمر صيانة فقط. الترقيم صار من السلسلة الرسمية الذرّية nextDocNumber (نفس سلسلة سجل
+   الصادر — لا عدّادان)، وكل مستند يُولَّد يُقيَّد تلقائيًا في maintenance_outgoing_register.
+   ملف العرض (presentation_profile) يتحكّم بإظهار التكاليف/القطع وكتل التوقيع، وتسميات
+   الحقول تُستخدم لإخفاء رمز بعينه (الاسم الظاهر يأتي من نص القالب نفسه). */
+
+/** يقيّد مستندًا صادرًا في السجل الرسمي الموحّد. لا يكسر التوليد إن فشل — السجل ليس حرجًا. */
+async function registerOutgoingDoc(o: {
+  docNumber: string; docType: string; visitId?: number | null; workOrderId?: number | null;
+  districtId?: number | null; subject: string; filePath: string;
+  templateId?: number | null; profileId?: number | null; userId?: number | null;
+}): Promise<number | null> {
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO maintenance_outgoing_register
+         (doc_number, doc_type, visit_id, work_order_id, district_id, subject, file_path, template_id, profile_id, status, issued_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'أُرسل',$10)
+       ON CONFLICT (doc_number, version) DO NOTHING
+       RETURNING id`,
+      [o.docNumber, o.docType, o.visitId ?? null, o.workOrderId ?? null, o.districtId ?? null,
+       o.subject, o.filePath, o.templateId ?? null, o.profileId ?? null, o.userId ?? null]
+    );
+    return rows[0]?.id ?? null;
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
+}
+
+/** المنطقة التعليمية التي تتبعها مكينة اليوم (عبر إسنادها الساري) — لقيد المستند في السجل. */
+async function districtOfEquipment(equipmentId: number | null): Promise<number | null> {
+  if (!equipmentId) return null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT s.district_id FROM maintenance_equipment_assignments a
+       JOIN maintenance_schools s ON s.id = a.school_id
+       WHERE a.equipment_id = $1 AND a.valid_from <= CURRENT_DATE AND (a.valid_to IS NULL OR a.valid_to > CURRENT_DATE)
+       ORDER BY a.valid_from DESC LIMIT 1`, [equipmentId]);
+    return rows[0]?.district_id ?? null;
+  } catch { return null; }
+}
+
+/** يطبّق ملف العرض على قيم الرموز: يخفي التكاليف/القطع ويطفئ ما أُعلن غير مرئي في تسميات الحقول. */
+async function applyPresentationProfile(values: Record<string, string>, profile: any | null) {
+  if (!profile) return values;
+  if (!profile.show_costs) values.TotalCost = "";
+  if (!profile.show_parts) values.PartsUsed = "";
+  try {
+    const { rows: hidden } = await pool.query(
+      `SELECT field_key FROM maintenance_field_labels WHERE profile_id = $1 AND is_visible = false`, [profile.id]);
+    for (const h of hidden) if (h.field_key in values) values[h.field_key] = "";
+  } catch { /* التسميات اختيارية */ }
+  return values;
+}
+
+/** ملف العرض المناسب: المطلوب صراحةً، وإلا الأخص بالمنطقة، وإلا الافتراضي العام. */
+async function pickProfile(profileId: number | null, districtId: number | null) {
+  if (profileId) {
+    const { rows } = await pool.query(`SELECT * FROM maintenance_presentation_profiles WHERE id = $1`, [profileId]);
+    return rows[0] ?? null;
+  }
+  const { rows } = await pool.query(
+    `SELECT * FROM maintenance_presentation_profiles
+     WHERE district_id IS NOT DISTINCT FROM $1 OR district_id IS NULL
+     ORDER BY (district_id = $1) DESC NULLS LAST, is_default DESC, id
+     LIMIT 1`, [districtId]);
+  return rows[0] ?? null;
+}
+
+/** يحوّل قيم الرموز إلى مستند Word بنفس مسارَي المحرّك: قالب مُصمَّم داخل النظام أو ملف Word مرفوع. */
+async function renderTemplate(template: any, values: Record<string, string>): Promise<Buffer> {
+  if (template.bodyJson) return buildTemplateDocx(template.bodyJson, values);
+  const buffer = await objectStorageService.readPrivateObject(template.fileUrl!);
+  const zip = new PizZip(buffer);
+  const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true, delimiters: { start: "{{", end: "}}" } });
+  doc.render(values);
+  return doc.getZip().generate({ type: "nodebuffer" });
+}
+
+// تقرير زيارة عقد — يطبع الزيارة كاملة (كل مكائنها) بنفس محرّك القوالب، برقم رسمي وقيد صادر
+router.post("/visits/:id/report", async (req: Request, res: Response) => {
+  const id = parseId(req.params.id);
+  if (!id) return res.status(400).json({ error: "معرّف غير صالح" });
+  if (!hasModuleAction(req, "accessMaintenance", "add")) {
+    return res.status(403).json({ error: "ليس لديك صلاحية إصدار تقارير الصيانة." });
+  }
+  try {
+    const { rows: vr } = await pool.query(
+      `SELECT v.id, v.visit_number AS "visitNumber", to_char(v.visit_date,'YYYY-MM-DD') AS "visitDate",
+              v.maintenance_type AS "maintenanceType", v.status,
+              v.receiver_name AS "receiverName", v.receiver_title AS "receiverTitle",
+              to_char(v.received_at,'YYYY-MM-DD') AS "receivedAt",
+              s.id AS "schoolId", s.name_ar AS "school", s.district_id AS "districtId",
+              d.name_ar AS "district", w.name_ar AS "workshop",
+              u.full_name AS "technician", a.full_name AS "supervisor"
+       FROM maintenance_visits v
+       JOIN maintenance_schools s ON s.id = v.school_id
+       LEFT JOIN maintenance_districts d ON d.id = s.district_id
+       LEFT JOIN maintenance_workshops w ON w.id = v.workshop_id
+       LEFT JOIN users u ON u.id = v.technician_id
+       LEFT JOIN users a ON a.id = v.approved_by
+       WHERE v.id = $1`, [id]);
+    if (!vr.length) return res.status(404).json({ error: "الزيارة غير موجودة" });
+    const visit = vr[0];
+
+    const { rows: lines } = await pool.query(
+      `SELECT l.line_no AS "lineNo", e.name AS "equipmentName", e.asset_number AS "assetNumber",
+              e.serial_number AS "serialNumber", e.model, et.name_ar AS "equipmentType",
+              l.is_included AS "isIncluded", l.exclusion_reason AS "exclusionReason", l.condition,
+              l.works_done AS "worksDone", l.notes, l.work_order_id AS "workOrderId",
+              l.coverage_decision->>'path' AS "coveragePath"
+       FROM maintenance_visit_lines l
+       JOIN maintenance_equipment e ON e.id = l.equipment_id
+       LEFT JOIN maintenance_equipment_types et ON et.id = e.type_id
+       WHERE l.visit_id = $1 ORDER BY l.line_no`, [id]);
+    if (!lines.length) return res.status(400).json({ error: "لا مكائن في هذه الزيارة — أضف بنودًا قبل إصدار التقرير." });
+
+    // قطع الغيار وتكلفة أوامر الصيانة المتولّدة عن بنود هذه الزيارة
+    const woIds = lines.map((l: any) => l.workOrderId).filter(Boolean);
+    let partsText = "لا يوجد", totalCost = 0;
+    if (woIds.length) {
+      const { rows: parts } = await pool.query(
+        `SELECT part_name AS "partName", quantity FROM maintenance_work_order_parts WHERE work_order_id = ANY($1::int[])`, [woIds]);
+      if (parts.length) partsText = parts.map((p: any) => `${p.partName} × ${p.quantity}`).join("، ");
+      const { rows: cost } = await pool.query(
+        `SELECT COALESCE(SUM(amount),0)::numeric AS total FROM finance_expenses WHERE maintenance_work_order_id = ANY($1::int[])`, [woIds]);
+      totalCost = Number(cost[0]?.total ?? 0);
+    }
+
+    const profile = await pickProfile(req.query.profileId ? Number(req.query.profileId) : null, visit.districtId);
+    const templateId = req.query.templateId ? Number(req.query.templateId) : null;
+    const template = templateId
+      ? (await db.select().from(maintenanceReportTemplatesTable).where(eq(maintenanceReportTemplatesTable.id, templateId)))[0]
+      : (await db.select().from(maintenanceReportTemplatesTable).where(eq(maintenanceReportTemplatesTable.isDefault, true)))[0];
+    if (!template) return res.status(400).json({ error: "لا يوجد قالب تقرير محدد. الرجاء رفع أو تصميم قالب من صفحة إدارة القوالب أولاً." });
+
+    const reportNumber = await nextDocNumber("تقرير زيارة");
+    const included = lines.filter((l: any) => l.isIncluded);
+    const needsWork = included.filter((l: any) => l.condition === "تحتاج صيانة");
+    const machinesTable = lines.map((l: any) =>
+      `${l.lineNo}) ${l.equipmentName}${l.assetNumber ? ` (${l.assetNumber})` : ""}` +
+      (l.isIncluded ? ` — ${l.condition ?? ""}${l.worksDone ? ` — ${l.worksDone}` : ""}` : ` — مستبعَدة: ${l.exclusionReason ?? ""}`)
+    ).join("\n");
+    const signatures = Array.isArray(profile?.signature_blocks)
+      ? profile.signature_blocks.map((b: any) => b?.label).filter(Boolean).join("\n")
+      : "";
+
+    let values: Record<string, string> = {
+      ReportNumber: reportNumber,
+      Date: new Date().toLocaleDateString("ar-EG"),
+      VisitNumber: visit.visitNumber,
+      VisitDate: visit.visitDate ?? "",
+      VisitStatus: visit.status ?? "",
+      MaintenanceType: visit.maintenanceType ?? "",
+      District: visit.district ?? "",
+      School: visit.school ?? "",
+      Workshop: visit.workshop ?? "",
+      Location: [visit.school, visit.workshop].filter(Boolean).join(" — "),
+      Customer: visit.district ?? "",
+      Technician: visit.technician ?? "",
+      Supervisor: visit.supervisor ?? "",
+      ReceiverName: visit.receiverName ?? "",
+      ReceiverTitle: visit.receiverTitle ?? "",
+      ReceivedAt: visit.receivedAt ?? "",
+      MachinesTable: machinesTable,
+      MachineCount: String(lines.length),
+      IncludedCount: String(included.length),
+      NeedsMaintenanceCount: String(needsWork.length),
+      // الرموز المشتركة مع تقرير أمر الصيانة — تبقى صالحة في القوالب القديمة
+      EquipmentName: `${lines.length} مكينة`,
+      AssetNumber: included.map((l: any) => l.assetNumber).filter(Boolean).join("، "),
+      SerialNumber: "", Model: "",
+      WorkDetails: included.map((l: any) => l.worksDone).filter(Boolean).join("\n") || machinesTable,
+      Recommendations: lines.map((l: any) => l.notes).filter(Boolean).join("\n"),
+      PartsUsed: partsText,
+      TotalCost: totalCost.toFixed(3),
+      SignatureBlocks: signatures,
+    };
+    values = await applyPresentationProfile(values, profile);
+
+    const outBuffer = await renderTemplate(template, values);
+    const fileUrl = await objectStorageService.savePrivateObject(
+      outBuffer,
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      `${reportNumber}.docx`
+    );
+
+    const subject = `تقرير زيارة ${visit.visitNumber} — ${visit.school}`;
+    const registerId = await registerOutgoingDoc({
+      docNumber: reportNumber, docType: "تقرير زيارة", visitId: id, districtId: visit.districtId,
+      subject, filePath: fileUrl, templateId: template.id, profileId: profile?.id ?? null,
+      userId: req.session.userId ?? null,
+    });
+    await pool.query(
+      `INSERT INTO maintenance_generated_reports
+         (report_number, visit_id, template_id, equipment_name, equipment_location, work_order_number,
+          outgoing_register_id, file_url, generated_by_user_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [reportNumber, id, template.id, `${lines.length} مكينة — ${visit.school}`,
+       visit.workshop || visit.school || null, visit.visitNumber, registerId, fileUrl, req.session.userId || null]
+    );
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename="${reportNumber}.docx"`);
+    return res.send(outBuffer);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "فشل في توليد تقرير الزيارة" });
   }
 });
 

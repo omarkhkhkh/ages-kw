@@ -1,9 +1,9 @@
 import { useState, type CSSProperties } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { maintenanceServiceApi as ms, apiFetch } from "@/lib/api";
+import { maintenanceServiceApi as ms, maintenanceApi, apiFetch } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import { useToast } from "@/hooks/use-toast";
-import { Wrench, Plus, Trash2, ClipboardList, FileText, MapPin, BarChart3, ChevronRight, ShieldCheck, AlertTriangle, ScrollText } from "lucide-react";
+import { Wrench, Plus, Trash2, ClipboardList, FileText, MapPin, BarChart3, ChevronRight, ShieldCheck, AlertTriangle, ScrollText, Receipt, Undo2, X, Download, CalendarClock, Link2 } from "lucide-react";
 
 const G = "#D4A534", GD = "#A87C20", GR = "#0b1a10";
 const card: CSSProperties = { background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 16, marginBottom: 16 };
@@ -20,6 +20,7 @@ const TABS = [
   { key: "contracts", label: "العقود", icon: FileText },
   { key: "hierarchy", label: "الهيكل والكتالوج", icon: MapPin },
   { key: "registers", label: "السجلات", icon: ScrollText },
+  { key: "billing", label: "الفوترة", icon: Receipt },
   { key: "analytics", label: "التحليلات", icon: BarChart3 },
 ];
 
@@ -50,6 +51,7 @@ export default function ContractMaintenance() {
       {tab === "contracts" && <ContractsTab />}
       {tab === "hierarchy" && <HierarchyTab />}
       {tab === "registers" && <RegistersTab />}
+      {tab === "billing" && <BillingTab />}
       {tab === "analytics" && <AnalyticsTab />}
     </div>
   );
@@ -119,12 +121,24 @@ function VisitDetail({ visitId, onBack }: { visitId: number; onBack: () => void 
     onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
   const genM = useMutation({ mutationFn: (lineId: number) => ms.visits.generateWorkOrder(lineId), onSuccess: (r: any) => { inv(); toast({ title: `تم توليد أمر: ${r.orderNumber}` }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
+  // التقرير الرسمي يمرّ بمحرّك القوالب الموحّد: رقم رسمي + قيد تلقائي في سجل الصادر
+  const reportM = useMutation({
+    mutationFn: () => maintenanceApi.generateContractVisitReport(visitId, { visitNumber: visit?.visitNumber }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["ms-outgoing"] }); toast({ title: "✅ صدر التقرير وقُيّد في سجل الصادر" }); },
+    onError: (e: any) => toast({ title: "تعذّر إصدار التقرير", description: e.message, variant: "destructive" }),
+  });
+  const [billing, setBilling] = useState<number | null>(null);
   const delM = useMutation({ mutationFn: (lineId: number) => ms.visits.deleteLine(lineId), onSuccess: inv });
 
   const lines: any[] = visit?.lines ?? [];
   return (
     <>
-      <button onClick={onBack} style={{ ...btn, background: "#f8fafc", color: "#334155", border: "1px solid #e2e8f0", marginBottom: 14 }}>→ رجوع للزيارات</button>
+      {billing != null && <BillModal lineId={billing} onClose={() => { setBilling(null); inv(); }} />}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <button onClick={onBack} style={{ ...btn, background: "#f8fafc", color: "#334155", border: "1px solid #e2e8f0" }}>→ رجوع للزيارات</button>
+        <button onClick={() => reportM.mutate()} disabled={reportM.isPending || !lines.length} style={{ ...btn, opacity: lines.length ? 1 : .5 }}>
+          <Download size={14} /> {reportM.isPending ? "جارٍ الإصدار…" : "إصدار تقرير رسمي"}</button>
+      </div>
       <div style={card}>
         <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <div><div style={{ fontSize: 17, fontWeight: 800, color: GR }}>{visit?.visitNumber}</div>
@@ -151,9 +165,9 @@ function VisitDetail({ visitId, onBack }: { visitId: number; onBack: () => void 
 
       <div style={{ ...card, padding: 0, overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
-          <thead style={{ background: "#faf8f2" }}><tr>{["#", "المكينة", "الحالة", "التغطية", "أمر الصيانة", ""].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <thead style={{ background: "#faf8f2" }}><tr>{["#", "المكينة", "الحالة", "التغطية", "أمر الصيانة", "الفوترة", ""].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
           <tbody>
-            {lines.length === 0 ? <tr><td style={{ ...td, textAlign: "center", color: "#9ca3af" }} colSpan={6}>لا بنود بعد</td></tr> :
+            {lines.length === 0 ? <tr><td style={{ ...td, textAlign: "center", color: "#9ca3af" }} colSpan={7}>لا بنود بعد</td></tr> :
               lines.map((l) => {
                 const path = l.coverageDecision?.path;
                 return (
@@ -164,6 +178,11 @@ function VisitDetail({ visitId, onBack }: { visitId: number; onBack: () => void 
                     <td style={td}>{path ? <span style={{ padding: "2px 9px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: `${COVERAGE_COLOR[path] || "#6b7280"}18`, color: COVERAGE_COLOR[path] || "#6b7280" }}>{path}</span> : "—"}</td>
                     <td style={td}>{l.workOrderId ? <span style={{ color: "#16a34a", fontWeight: 700 }}>#{l.workOrderId}</span> :
                       (l.condition === "تحتاج صيانة" ? <button style={{ ...btn, padding: "5px 10px", fontSize: 12 }} disabled={genM.isPending} onClick={() => genM.mutate(l.id)}><Wrench size={12} /> توليد أمر</button> : "—")}</td>
+                    <td style={td}>{l.incomeId
+                      ? <span style={{ color: "#16a34a", fontWeight: 700, fontSize: 12 }}>{Number(l.billedAmount).toFixed(3)} د.ك</span>
+                      : (path === "خارج العقد" || path === "ضمن العقد"
+                          ? <button style={{ ...btn, padding: "5px 10px", fontSize: 12, background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a" }} onClick={() => setBilling(l.id)}><Receipt size={12} /> فوترة</button>
+                          : "—")}</td>
                     <td style={td}><button style={delBtn} onClick={() => delM.mutate(l.id)}><Trash2 size={13} color="#dc2626" /></button></td>
                   </tr>
                 );
@@ -331,10 +350,38 @@ export function RegistersTab() {
 
 /* ─────────── التحليلات ─────────── */
 export function AnalyticsTab() {
+  const qc = useQueryClient(); const { toast } = useToast();
   const { data: balance = [] } = useQuery({ queryKey: ["ms-balance"], queryFn: () => ms.analytics.contractVisitBalance() });
   const { data: pending = [] } = useQuery({ queryKey: ["ms-pending"], queryFn: () => ms.analytics.pendingReschedule() });
+  const { data: pmCoverage = [] } = useQuery({ queryKey: ["ms-pm-coverage"], queryFn: () => ms.analytics.contractPmCoverage() });
+  const autoLinkM = useMutation({
+    mutationFn: () => ms.preventivePlans.autoLink(),
+    onSuccess: (r) => { qc.invalidateQueries({ queryKey: ["ms-pm-coverage"] }); qc.invalidateQueries({ queryKey: ["maintenance-preventive-plans"] }); toast({ title: `رُبطت ${r.linked} خطة بعقودها` }); },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
   return (
     <>
+      <div style={{ ...card, padding: 0, overflowX: "auto" }}>
+        <div style={{ padding: "14px 16px 4px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: GR, display: "flex", alignItems: "center", gap: 7 }}><CalendarClock size={16} color={GD} /> تغطية الصيانة الوقائية لكل عقد نشط</span>
+          <button style={{ ...btn, padding: "6px 12px", fontSize: 12 }} disabled={autoLinkM.isPending} onClick={() => autoLinkM.mutate()}><Link2 size={13} /> ربط الخطط بعقودها تلقائيًا</button>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+          <thead style={{ background: "#faf8f2" }}><tr>{["العقد", "المنطقة", "مكائن العقد", "لها خطة", "بلا خطة", "مستحقة خلال ٣٠ يومًا", "متأخرة"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {(pmCoverage as any[]).length === 0 ? <tr><td style={{ ...td, textAlign: "center", color: "#9ca3af" }} colSpan={7}>لا عقود نشطة</td></tr> :
+              (pmCoverage as any[]).map((r) => (
+                <tr key={r.contractId}>
+                  <td style={{ ...td, fontWeight: 700 }}>{r.contractNumber}</td><td style={td}>{r.district ?? "—"}</td>
+                  <td style={td}>{r.equipmentCount}</td><td style={{ ...td, color: "#16a34a" }}>{r.equipmentWithPlan}</td>
+                  <td style={{ ...td, fontWeight: 800, color: Number(r.uncovered) > 0 ? "#dc2626" : "#16a34a" }}>{r.uncovered}</td>
+                  <td style={td}>{r.dueWithin30Days}</td>
+                  <td style={{ ...td, fontWeight: 700, color: Number(r.overdue) > 0 ? "#dc2626" : "#6b7280" }}>{r.overdue}</td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
       <div style={{ ...card, padding: 0, overflowX: "auto" }}>
         <div style={{ padding: "14px 16px 4px", fontSize: 13, fontWeight: 800, color: GR, display: "flex", alignItems: "center", gap: 7 }}><ShieldCheck size={16} color={GD} /> رصيد الزيارات الوقائية لكل عقد نشط</div>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
@@ -356,6 +403,163 @@ export function AnalyticsTab() {
             {(pending as any[]).length === 0 ? <tr><td style={{ ...td, textAlign: "center", color: "#9ca3af" }} colSpan={5}>لا بنود معلّقة</td></tr> :
               (pending as any[]).map((r, i) => (
                 <tr key={i}><td style={td}>{r.school}</td><td style={td}>{r.assetNumber}</td><td style={td}>{r.equipmentType ?? "—"}</td><td style={td}>{fmt(r.visitDate)}</td><td style={{ ...td, color: "#dc2626" }}>{r.exclusionReason}</td></tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/* ─────────── الفوترة (تحويل العمل غير المشمول إلى إيراد) ─────────── */
+
+/** نافذة عرض السعر: تشرح لماذا يُفوتَر البند ومن أين جاء كل رقم، والمبلغ يبقى قابلًا للتعديل. */
+function BillModal({ lineId, onClose }: { lineId: number; onClose: () => void }) {
+  const qc = useQueryClient(); const { toast } = useToast();
+  const { data: q, isLoading } = useQuery({ queryKey: ["ms-quote", lineId], queryFn: () => ms.billing.quote(lineId) });
+  const [amount, setAmount] = useState<string>("");
+  const [date, setDate] = useState<string>("");
+  const [description, setDescription] = useState<string>("");
+  const amountValue = amount !== "" ? amount : (q?.suggestedAmount ?? "");
+
+  const billM = useMutation({
+    mutationFn: () => ms.billing.bill(lineId, { amount: amountValue, date: date || undefined, description: description || undefined }),
+    onSuccess: (r: any) => {
+      qc.invalidateQueries({ queryKey: ["ms-billing-pending"] });
+      qc.invalidateQueries({ queryKey: ["ms-billing-billed"] });
+      qc.invalidateQueries({ queryKey: ["ms-visit"] });
+      toast({ title: `✅ سُجّل إيراد ${Number(r.amount).toFixed(3)} د.ك` });
+      onClose();
+    },
+    onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(11,26,16,.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div dir="rtl" onClick={(e) => e.stopPropagation()} style={{ background: "white", borderRadius: 16, border: `1.5px solid ${G}33`, width: "min(680px,100%)", maxHeight: "88vh", overflowY: "auto", padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: GR, display: "flex", alignItems: "center", gap: 7 }}><Receipt size={17} color={GD} /> فوترة بند زيارة</div>
+          <button onClick={onClose} style={{ ...delBtn, background: "#f8fafc", border: "1px solid #e2e8f0" }}><X size={14} color="#64748b" /></button>
+        </div>
+
+        {isLoading || !q ? <div style={{ padding: 30, textAlign: "center", color: "#9ca3af" }}>جارٍ حساب عرض السعر…</div> : (
+          <>
+            <div style={{ background: "#faf8f2", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 12.5, color: "#374151", lineHeight: 1.9 }}>
+              <div><b>{q.visitNumber}</b> · {q.school} · {q.assetNumber} — {q.equipmentName}</div>
+              <div>مسار التغطية: <span style={{ fontWeight: 700, color: COVERAGE_COLOR[q.coveragePath] ?? "#6b7280" }}>{q.coveragePath ?? "—"}</span> · {q.reason}</div>
+              <div>أساس التسعير: {q.pricingBasis}{q.contractNumber ? ` · عقد ${q.contractNumber}` : ""}</div>
+            </div>
+
+            {q.items?.length > 0 && (
+              <div style={{ border: "1px solid #f0ead8", borderRadius: 10, overflow: "hidden", marginBottom: 14 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead style={{ background: "#faf8f2" }}><tr>{["البند", "الكمية", "سعر الوحدة", "هامش %", "الإجمالي", "المصدر"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {q.items.map((it: any, i: number) => (
+                      <tr key={i}>
+                        <td style={td}>{it.label}{it.itemCode ? <span style={{ color: "#9ca3af" }}> ({it.itemCode})</span> : null}</td>
+                        <td style={td}>{it.quantity}</td>
+                        <td style={td}>{Number(it.unitPrice).toFixed(3)}</td>
+                        <td style={td}>{it.markupPct || 0}</td>
+                        <td style={{ ...td, fontWeight: 700 }}>{Number(it.total).toFixed(3)}</td>
+                        <td style={{ ...td, fontSize: 11, color: it.source === "قائمة الأسعار" ? "#16a34a" : "#d97706" }}>{it.source}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12.5, color: "#6b7280", marginBottom: 14 }}>
+              <span>التكلفة الفعلية للمرجع: <b style={{ color: "#374151" }}>{Number(q.actualCost).toFixed(3)} د.ك</b></span>
+              {q.capOverage != null && <span>مقدار تجاوز السقف: <b style={{ color: "#dc2626" }}>{Number(q.capOverage).toFixed(3)} د.ك</b></span>}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+              <div><label style={lbl}>المبلغ (د.ك) *</label>
+                <input style={inp} type="number" step="0.001" value={amountValue} onChange={(e) => setAmount(e.target.value)} /></div>
+              <div><label style={lbl}>تاريخ الإيراد</label>
+                <input style={inp} type="date" value={date || q.visitDate || ""} onChange={(e) => setDate(e.target.value)} /></div>
+            </div>
+            <div style={{ marginBottom: 16 }}><label style={lbl}>الوصف (يُترك فارغًا ليُولَّد تلقائيًا)</label>
+              <input style={inp} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={`${q.coveragePath === "خارج العقد" ? "عمل خارج العقد" : "تجاوز سقف التغطية"} — زيارة ${q.visitNumber} · ${q.school} · ${q.equipmentName}`} /></div>
+
+            {!q.billable
+              ? <div style={{ padding: 12, borderRadius: 10, background: "#fff1f2", border: "1px solid #fecaca", color: "#dc2626", fontSize: 12.5, fontWeight: 700 }}>{q.reason}</div>
+              : <button style={{ ...btn, width: "100%", justifyContent: "center" }} disabled={billM.isPending || !Number(amountValue)} onClick={() => billM.mutate()}>
+                  <Receipt size={15} /> {billM.isPending ? "جارٍ التسجيل…" : "تسجيل الإيراد"}
+                </button>}
+            <p style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 10, marginBottom: 0, lineHeight: 1.8 }}>
+              يُدرَج الإيراد في دفتر الإيرادات ويُصنَّف تلقائيًا على قسم «الصيانة»، وينعكس في دفتر الأحداث المالية.
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function BillingTab() {
+  const qc = useQueryClient(); const { toast } = useToast();
+  const [billing, setBilling] = useState<number | null>(null);
+  const { data: pending = [] } = useQuery({ queryKey: ["ms-billing-pending"], queryFn: () => ms.billing.pending() });
+  const { data: billed = [] } = useQuery({ queryKey: ["ms-billing-billed"], queryFn: () => ms.billing.billed() });
+  const unbillM = useMutation({
+    mutationFn: (lineId: number) => ms.billing.unbill(lineId), // يعكس بقيد سالب — لا يحذف شيئًا
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ms-billing-pending"] });
+      qc.invalidateQueries({ queryKey: ["ms-billing-billed"] });
+      toast({ title: "أُلغيت الفوترة بقيد إيراد سالب معاكس" });
+    },
+    onError: (e: any) => toast({ title: "تعذّر التراجع", description: e.message, variant: "destructive" }),
+  });
+  const totalBilled = (billed as any[]).reduce((s, r) => s + Number(r.billedAmount || 0), 0);
+
+  return (
+    <>
+      {billing != null && <BillModal lineId={billing} onClose={() => setBilling(null)} />}
+
+      <div style={{ ...card, padding: 0, overflowX: "auto" }}>
+        <div style={{ padding: "14px 16px 4px", fontSize: 13, fontWeight: 800, color: GR, display: "flex", alignItems: "center", gap: 7 }}>
+          <Receipt size={16} color={GD} /> بنود مستحقة الفوترة — عمل خارج العقد أو متجاوز لسقف التغطية
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+          <thead style={{ background: "#faf8f2" }}><tr>{["الزيارة", "المدرسة", "المكينة", "التغطية", "أمر الصيانة", "تكلفة القطع", ""].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {(pending as any[]).length === 0 ? <tr><td style={{ ...td, textAlign: "center", color: "#9ca3af" }} colSpan={7}>لا بنود مستحقة — كل العمل مشمول بالعقود أو مفوتَر</td></tr> :
+              (pending as any[]).map((r) => (
+                <tr key={r.lineId}>
+                  <td style={{ ...td, fontWeight: 700 }}>{r.visitNumber}<div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 400 }}>{fmt(r.visitDate)}</div></td>
+                  <td style={td}>{r.school}</td>
+                  <td style={td}><b>{r.assetNumber}</b> — {r.equipmentName}</td>
+                  <td style={td}><span style={{ padding: "2px 9px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: `${COVERAGE_COLOR[r.coveragePath] || "#6b7280"}18`, color: COVERAGE_COLOR[r.coveragePath] || "#6b7280" }}>{r.coveragePath}</span></td>
+                  <td style={td}>{r.workOrderNumber ?? "—"}</td>
+                  <td style={td}>{Number(r.partsCost).toFixed(3)}</td>
+                  <td style={td}><button style={{ ...btn, padding: "5px 12px", fontSize: 12 }} onClick={() => setBilling(r.lineId)}><Receipt size={12} /> فوترة</button></td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ ...card, padding: 0, overflowX: "auto" }}>
+        <div style={{ padding: "14px 16px 4px", fontSize: 13, fontWeight: 800, color: GR, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 7, flexWrap: "wrap" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 7 }}><ScrollText size={16} color={GD} /> بنود مفوترة</span>
+          <span style={{ fontSize: 12.5, color: "#16a34a" }}>إجمالي الإيراد المُحقَّق: <b>{totalBilled.toFixed(3)} د.ك</b></span>
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+          <thead style={{ background: "#faf8f2" }}><tr>{["الزيارة", "المدرسة", "المكينة", "المبلغ", "السبب", ""].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {(billed as any[]).length === 0 ? <tr><td style={{ ...td, textAlign: "center", color: "#9ca3af" }} colSpan={6}>لا بنود مفوترة بعد</td></tr> :
+              (billed as any[]).map((r) => (
+                <tr key={r.lineId}>
+                  <td style={{ ...td, fontWeight: 700 }}>{r.visitNumber}</td>
+                  <td style={td}>{r.school}</td>
+                  <td style={td}><b>{r.assetNumber}</b> — {r.equipmentName}</td>
+                  <td style={{ ...td, fontWeight: 800, color: "#16a34a" }}>{Number(r.billedAmount).toFixed(3)}</td>
+                  <td style={{ ...td, fontSize: 12, color: "#6b7280" }}>{r.billingNote ?? "—"}</td>
+                  <td style={td}><button style={{ ...delBtn, background: "#fffbeb", border: "1px solid #fde68a" }} title="التراجع عن الفوترة وحذف قيد الإيراد" disabled={unbillM.isPending} onClick={() => unbillM.mutate(r.lineId)}><Undo2 size={13} color="#d97706" /></button></td>
+                </tr>
               ))}
           </tbody>
         </table>

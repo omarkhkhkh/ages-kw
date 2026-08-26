@@ -22,6 +22,7 @@ const cardStyle: React.CSSProperties = { background: "white", borderRadius: 16, 
 
 const REPORT_TYPES: Record<string, string> = {
   visit_report: "تقرير زيارة صيانة",
+  contract_visit_report: "تقرير زيارة عقد (عدة مكائن)",
   inspection_report: "تقرير فحص",
   installation_report: "تقرير تركيب",
 };
@@ -30,6 +31,10 @@ const TOKENS = [
   "{{ReportNumber}}", "{{Date}}", "{{EquipmentName}}", "{{AssetNumber}}", "{{SerialNumber}}", "{{Model}}",
   "{{Location}}", "{{Customer}}", "{{Technician}}", "{{Supervisor}}", "{{MaintenanceType}}",
   "{{WorkDetails}}", "{{Recommendations}}", "{{PartsUsed}}", "{{TotalCost}}",
+  // رموز زيارة العقد — تُملأ عند إصدار التقرير من تبويب الزيارات (تبقى فارغة في تقرير أمر صيانة)
+  "{{VisitNumber}}", "{{VisitDate}}", "{{VisitStatus}}", "{{District}}", "{{School}}", "{{Workshop}}",
+  "{{MachinesTable}}", "{{MachineCount}}", "{{IncludedCount}}", "{{NeedsMaintenanceCount}}",
+  "{{ReceiverName}}", "{{ReceiverTitle}}", "{{ReceivedAt}}", "{{SignatureBlocks}}",
 ];
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };

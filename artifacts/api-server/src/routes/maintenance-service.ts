@@ -428,7 +428,7 @@ crud({
 /* ═══ المرحلة ٥: التقارير الرسمية + السجلات + الترقيم + مطالبات الضمان ═══ */
 
 // ترقيم رسمي متسلسل آمن عند التزامن (upsert ذرّي على سلسلة النوع/السنة)
-async function nextDocNumber(docType: string): Promise<string> {
+export async function nextDocNumber(docType: string): Promise<string> {
   const prefixMap: Record<string, string> = { "تقرير زيارة": "RPT", "مطالبة مالية": "INV", "عرض سعر": "QUO", "محضر استلام": "RCV", "كتاب رسمي": "LTR" };
   const prefix = prefixMap[docType] || "DOC";
   const year = new Date().getFullYear();
@@ -594,6 +594,334 @@ router.get("/analytics/pending-reschedule", async (_req: Request, res: Response)
        ORDER BY v.visit_date DESC`);
     return res.json(rows);
   } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب البنود" }); }
+});
+
+
+/* ═══ وصل الفجوة ١: فوترة العمل غير المشمول/المتجاوز للسقف كإيراد ═══
+   قرار التغطية المجمّد في البند يحدّد *هل* يُفوتَر (لا يتغيّر بعد الزيارة)، بينما استهلاك
+   السقف يُقرأ حيًّا لأن صرف القطع يحدث بعد الزيارة. التسعير من قائمة أسعار العقد، ولعمل
+   خارج العقد من قائمة أحدث عقد نشط لنفس المنطقة («أسعار الجهة»)، وما لا سعر له يرجع
+   لتكلفته الفعلية — والمبلغ يبقى قابلًا للتعديل قبل التأكيد. الإيراد يُدرَج في finance_income
+   فيلتقطه trigger القسم (الصيانة) ومرآة دفتر الأحداث تلقائيًا. */
+
+/** شرط البند القابل للفوترة: خارج العقد، أو داخل عقد تجاوز سقفه فعليًا وصُرفت له قطع. */
+const BILLABLE_LINE_SQL = `
+  l.income_id IS NULL AND l.is_included = true AND (
+    l.coverage_decision->>'path' = 'خارج العقد'
+    OR (l.coverage_decision->>'path' = 'ضمن العقد'
+        AND EXISTS (SELECT 1 FROM maintenance_work_order_parts wp
+                     WHERE wp.work_order_id = l.work_order_id AND wp.status = 'issued')
+        AND (SELECT COALESCE(SUM(sc.consumed - sc.annual_cap),0) FROM service_contract_coverage sc
+              WHERE sc.contract_id = l.contract_id AND sc.coverage = 'مشمول بسقف'
+                AND sc.annual_cap IS NOT NULL AND sc.consumed > sc.annual_cap)
+            > (SELECT COALESCE(SUM(l2.billed_amount),0) FROM maintenance_visit_lines l2
+                WHERE l2.contract_id = l.contract_id AND l2.income_id IS NOT NULL
+                  AND l2.coverage_decision->>'path' = 'ضمن العقد')))`;
+
+const round3 = (n: number) => Math.round((Number(n) || 0) * 1000) / 1000;
+
+type QuoteItem = { itemCode: string | null; label: string; quantity: number; unitPrice: number; markupPct: number; total: number; source: string };
+
+/** عرض سعر بند زيارة: هل يُفوتَر ولماذا، وبكم — مع تفصيل مصدر كل رقم. null = البند غير موجود. */
+async function buildQuote(lineId: number) {
+  const { rows: lr } = await pool.query(
+    `SELECT l.id, l.line_no AS "lineNo", l.visit_id AS "visitId", l.contract_id AS "contractId",
+            l.work_order_id AS "workOrderId", l.income_id AS "incomeId", l.billed_amount AS "billedAmount",
+            l.is_included AS "isIncluded", l.coverage_decision AS "coverageDecision",
+            v.visit_number AS "visitNumber", to_char(v.visit_date,'YYYY-MM-DD') AS "visitDate",
+            s.district_id AS "districtId", s.name_ar AS "school",
+            e.name AS "equipmentName", e.asset_number AS "assetNumber",
+            wo.order_number AS "workOrderNumber", c.contract_number AS "contractNumber"
+     FROM maintenance_visit_lines l
+     JOIN maintenance_visits v ON v.id = l.visit_id
+     JOIN maintenance_schools s ON s.id = v.school_id
+     JOIN maintenance_equipment e ON e.id = l.equipment_id
+     LEFT JOIN maintenance_work_orders wo ON wo.id = l.work_order_id
+     LEFT JOIN service_contracts c ON c.id = l.contract_id
+     WHERE l.id = $1`, [lineId]);
+  if (!lr.length) return null;
+  const line = lr[0];
+  const path: string | null = line.coverageDecision?.path ?? null;
+
+  // (أ) هل يُفوتَر؟ — المسار المجمّد يقرّر، والسقف يُراجَع حيًّا
+  let billable = false, reason = "", capOverage: number | null = null;
+  if (!line.isIncluded) reason = "بند مستبعَد من الزيارة — لا عمل يُفوتَر";
+  else if (path === "ضمان") reason = "المكينة داخل الضمان — التكلفة على المورّد";
+  else if (path === "خارج العقد") { billable = true; reason = "عمل خارج العقد — يُسعَّر من أسعار الجهة"; }
+  else if (path === "ضمن العقد") {
+    const { rows: caps } = await pool.query(
+      `SELECT item_code AS "itemCode", (consumed - annual_cap)::numeric AS overage
+       FROM service_contract_coverage
+       WHERE contract_id = $1 AND coverage = 'مشمول بسقف' AND annual_cap IS NOT NULL AND consumed > annual_cap`,
+      [line.contractId]);
+    if (caps.length) {
+      const gross = round3(caps.reduce((s: number, r: any) => s + Number(r.overage), 0));
+      // السقف تعاقدي على مستوى العقد لا البند — يُخصم ما فُوتر سلفًا منه وإلا تحصّل نفس التجاوز مرتين
+      const { rows: prior } = await pool.query(
+        `SELECT COALESCE(SUM(billed_amount),0)::numeric AS total FROM maintenance_visit_lines
+         WHERE contract_id = $1 AND income_id IS NOT NULL AND coverage_decision->>'path' = 'ضمن العقد'`,
+        [line.contractId]);
+      const alreadyBilled = round3(Number(prior[0]?.total ?? 0));
+      capOverage = round3(gross - alreadyBilled);
+      if (capOverage > 0) {
+        billable = true;
+        reason = `تجاوز سقف التغطية (${caps.map((r: any) => r.itemCode).join("، ")}) بمقدار ${gross.toFixed(3)} د.ك`
+          + (alreadyBilled ? ` — فُوتر منه ${alreadyBilled.toFixed(3)}، والمتبقّي ${capOverage.toFixed(3)} د.ك` : "");
+      } else reason = `تجاوز السقف (${gross.toFixed(3)} د.ك) مُحصَّل بالكامل سلفًا`;
+    } else reason = "مشمول بالعقد ضمن السقف — لا يُفوتَر";
+  } else reason = "لا يوجد قرار تغطية محفوظ لهذا البند";
+
+  // (ب) قائمة الأسعار المرجعية: عقد البند، أو أحدث عقد نشط لنفس المنطقة حين يكون العمل خارج العقد
+  let pricingContractId: number | null = line.contractId;
+  let pricingBasis = line.contractId ? "قائمة أسعار العقد" : "قائمة أسعار الجهة (أحدث عقد نشط للمنطقة)";
+  if (!pricingContractId && line.districtId) {
+    const { rows } = await pool.query(
+      `SELECT id FROM service_contracts WHERE district_id = $1 AND status = 'نشط' ORDER BY start_date DESC LIMIT 1`,
+      [line.districtId]);
+    pricingContractId = rows[0]?.id ?? null;
+  }
+  if (!pricingContractId) pricingBasis = "لا قائمة أسعار متاحة — التكلفة الفعلية";
+
+  // (ج) البنود: قطع الغيار المصروفة على أمر الصيانة، مسعَّرة من القائمة وإلا بتكلفتها الفعلية
+  const items: QuoteItem[] = [];
+  let actualCost = 0;
+  if (line.workOrderId) {
+    const { rows: parts } = await pool.query(
+      `SELECT DISTINCT ON (wp.id) wp.id, wp.part_name AS "partName", wp.quantity::numeric AS quantity,
+              COALESCE(wp.unit_price,0)::numeric AS "unitPrice", inv.part_number AS "partNumber",
+              pl.item_code AS "plCode", pl.unit_price::numeric AS "plPrice", COALESCE(pl.markup_pct,0)::numeric AS "plMarkup"
+       FROM maintenance_work_order_parts wp
+       LEFT JOIN maintenance_inventory inv ON inv.id = wp.inventory_item_id
+       LEFT JOIN service_contract_price_list pl
+              ON pl.contract_id = $2 AND (pl.item_code = inv.part_number OR pl.item_code = wp.part_name)
+       WHERE wp.work_order_id = $1 AND wp.status = 'issued'
+       ORDER BY wp.id, (pl.item_code = inv.part_number) DESC NULLS LAST, pl.id`,
+      [line.workOrderId, pricingContractId]);
+    for (const p of parts) {
+      const qty = Number(p.quantity);
+      actualCost += qty * Number(p.unitPrice);
+      if (p.plPrice != null) {
+        items.push({ itemCode: p.plCode, label: p.partName, quantity: qty, unitPrice: Number(p.plPrice),
+          markupPct: Number(p.plMarkup), total: round3(qty * Number(p.plPrice) * (1 + Number(p.plMarkup) / 100)), source: "قائمة الأسعار" });
+      } else {
+        items.push({ itemCode: p.partNumber ?? null, label: p.partName, quantity: qty, unitPrice: Number(p.unitPrice),
+          markupPct: 0, total: round3(qty * Number(p.unitPrice)), source: "تكلفة فعلية" });
+      }
+    }
+    const { rows: exp } = await pool.query(
+      `SELECT COALESCE(SUM(amount),0)::numeric AS total FROM finance_expenses WHERE maintenance_work_order_id = $1`,
+      [line.workOrderId]);
+    actualCost += Number(exp[0]?.total ?? 0);
+  }
+  // بند الزيارة/العمالة من القائمة (مرة واحدة) إن كان معرَّفًا في العقد
+  if (pricingContractId) {
+    const { rows: labor } = await pool.query(
+      `SELECT item_code AS "itemCode", unit, unit_price::numeric AS "unitPrice", COALESCE(markup_pct,0)::numeric AS "markupPct"
+       FROM service_contract_price_list
+       WHERE contract_id = $1 AND item_code IN ('زيارة','عمالة','أجرة عمل','labor','visit')`, [pricingContractId]);
+    for (const l of labor) {
+      items.push({ itemCode: l.itemCode, label: l.itemCode, quantity: 1, unitPrice: Number(l.unitPrice),
+        markupPct: Number(l.markupPct), total: round3(Number(l.unitPrice) * (1 + Number(l.markupPct) / 100)), source: "قائمة الأسعار" });
+    }
+  }
+
+  // (د) المبلغ المقترح — ولا يتجاوز مقدار تجاوز السقف حين تكون الفوترة بسببه
+  let suggested = round3(items.reduce((s, i) => s + i.total, 0));
+  if (!suggested) suggested = round3(actualCost);
+  if (capOverage != null) suggested = suggested ? round3(Math.min(suggested, capOverage)) : capOverage;
+
+  return {
+    lineId: line.id, lineNo: line.lineNo, visitId: line.visitId, visitNumber: line.visitNumber, visitDate: line.visitDate,
+    school: line.school, equipmentName: line.equipmentName, assetNumber: line.assetNumber,
+    contractId: line.contractId, contractNumber: line.contractNumber,
+    workOrderId: line.workOrderId, workOrderNumber: line.workOrderNumber,
+    incomeId: line.incomeId, billedAmount: line.billedAmount == null ? null : Number(line.billedAmount),
+    coveragePath: path, billable, reason, capOverage,
+    pricingContractId, pricingBasis, items, actualCost: round3(actualCost), suggestedAmount: suggested,
+  };
+}
+
+// البنود المستحقة للفوترة عبر كل الزيارات (لم تُفوتَر بعد)
+router.get("/billing/pending", async (_req: Request, res: Response) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT l.id AS "lineId", l.line_no AS "lineNo", v.id AS "visitId", v.visit_number AS "visitNumber",
+              to_char(v.visit_date,'YYYY-MM-DD') AS "visitDate", s.name_ar AS "school",
+              e.name AS "equipmentName", e.asset_number AS "assetNumber",
+              l.contract_id AS "contractId", c.contract_number AS "contractNumber",
+              l.coverage_decision->>'path' AS "coveragePath",
+              l.work_order_id AS "workOrderId", wo.order_number AS "workOrderNumber",
+              COALESCE((SELECT SUM(wp.quantity * COALESCE(wp.unit_price,0)) FROM maintenance_work_order_parts wp
+                        WHERE wp.work_order_id = l.work_order_id AND wp.status = 'issued'),0)::numeric AS "partsCost"
+       FROM maintenance_visit_lines l
+       JOIN maintenance_visits v ON v.id = l.visit_id
+       JOIN maintenance_schools s ON s.id = v.school_id
+       JOIN maintenance_equipment e ON e.id = l.equipment_id
+       LEFT JOIN service_contracts c ON c.id = l.contract_id
+       LEFT JOIN maintenance_work_orders wo ON wo.id = l.work_order_id
+       WHERE ${BILLABLE_LINE_SQL}
+       ORDER BY v.visit_date DESC, l.line_no`);
+    return res.json(rows);
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب البنود المستحقة" }); }
+});
+
+// البنود المفوترة (لمتابعة ما تحوّل إلى إيراد فعلًا)
+router.get("/billing/billed", async (_req: Request, res: Response) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT l.id AS "lineId", v.visit_number AS "visitNumber", to_char(v.visit_date,'YYYY-MM-DD') AS "visitDate",
+              s.name_ar AS "school", e.name AS "equipmentName", e.asset_number AS "assetNumber",
+              c.contract_number AS "contractNumber", l.coverage_decision->>'path' AS "coveragePath",
+              l.income_id AS "incomeId", l.billed_amount AS "billedAmount", l.billed_at AS "billedAt",
+              l.billing_note AS "billingNote", fi.description AS "incomeDescription"
+       FROM maintenance_visit_lines l
+       JOIN maintenance_visits v ON v.id = l.visit_id
+       JOIN maintenance_schools s ON s.id = v.school_id
+       JOIN maintenance_equipment e ON e.id = l.equipment_id
+       LEFT JOIN service_contracts c ON c.id = l.contract_id
+       LEFT JOIN finance_income fi ON fi.id = l.income_id
+       WHERE l.income_id IS NOT NULL
+       ORDER BY l.billed_at DESC NULLS LAST`);
+    return res.json(rows);
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب البنود المفوترة" }); }
+});
+
+// عرض سعر بند واحد قبل الفوترة (تفصيل مصدر كل رقم)
+router.get("/billing/quote", async (req: Request, res: Response) => {
+  const lineId = Number(req.query.lineId);
+  if (!lineId) return res.status(400).json({ error: "البند مطلوب" });
+  try {
+    const quote = await buildQuote(lineId);
+    if (!quote) return res.status(404).json({ error: "البند غير موجود" });
+    return res.json(quote);
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل حساب عرض السعر" }); }
+});
+
+// الفوترة — يُنشئ سجل إيراد ويربطه بالبند (معاملة واحدة)
+router.post("/lines/:id/bill", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  const lineId = Number(req.params.id);
+  const b = req.body ?? {};
+  const client = await pool.connect();
+  try {
+    const quote = await buildQuote(lineId);
+    if (!quote) return res.status(404).json({ error: "البند غير موجود" });
+    if (quote.incomeId) return res.status(409).json({ error: "البند مفوتَر بالفعل" });
+    if (!quote.billable) return res.status(400).json({ error: quote.reason });
+    const amount = b.amount === undefined || b.amount === "" || b.amount === null ? quote.suggestedAmount : Number(b.amount);
+    if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: "مبلغ غير صالح" });
+    const date = (typeof b.date === "string" && b.date.trim()) || quote.visitDate;
+    const description = (typeof b.description === "string" && b.description.trim())
+      || `${quote.coveragePath === "خارج العقد" ? "عمل خارج العقد" : "تجاوز سقف التغطية"} — زيارة ${quote.visitNumber} · ${quote.school} · ${quote.equipmentName}`;
+    const note = (typeof b.note === "string" && b.note.trim()) || quote.reason;
+
+    await client.query("BEGIN");
+    const { rows: inc } = await client.query(
+      `INSERT INTO finance_income (maintenance_work_order_id, source_module, income_source, description, amount, "date", category, notes, created_by)
+       VALUES ($1,'maintenance','service_visit',$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [quote.workOrderId, description, String(round3(amount)), date,
+       quote.contractId ? "contract" : "other", note, req.session.userId ?? null]);
+    const incomeId = inc[0].id;
+    await client.query(
+      `UPDATE maintenance_visit_lines SET income_id = $1, billed_amount = $2, billed_at = now(), billing_note = $3 WHERE id = $4`,
+      [incomeId, String(round3(amount)), note, lineId]);
+    await client.query("COMMIT");
+    return res.status(201).json({ incomeId, amount: round3(amount), date, description });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch { /* المعاملة قد لا تكون بدأت */ }
+    console.error(e); return res.status(500).json({ error: "فشل تسجيل الفوترة" });
+  } finally { client.release(); }
+});
+
+// التراجع عن الفوترة — بقيد إيراد سالب لا بالحذف: يصفّي دفتر الإيرادات إلى صفر، وتعكسه
+// مرآة دفتر الأحداث تلقائيًا (AFTER INSERT)، فيبقى الدفتران append-only والفحص أخضر بصدق،
+// ويبقى الصفّان شاهدَين على الفوترة وتصحيحها. البند يُفكّ ربطه فيعود قابلًا للفوترة.
+// يُرفض إن كان قيد الإيراد قد عُكس سلفًا من دفتر الأحداث (المرحلة ٩) — التصحيح تمّ هناك.
+router.delete("/lines/:id/bill", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  const lineId = Number(req.params.id);
+  const client = await pool.connect();
+  try {
+    const { rows: lr } = await client.query(
+      `SELECT l.income_id, l.billed_amount, fi.amount, fi.description, fi.category,
+              fi.cost_center_id, fi.maintenance_work_order_id
+       FROM maintenance_visit_lines l LEFT JOIN finance_income fi ON fi.id = l.income_id
+       WHERE l.id = $1`, [lineId]);
+    if (!lr.length) return res.status(404).json({ error: "البند غير موجود" });
+    const line = lr[0];
+    if (!line.income_id) return res.status(400).json({ error: "البند غير مفوتَر" });
+    if (line.amount == null) return res.status(409).json({ error: "سجل الإيراد الأصلي محذوف من دفتر الإيرادات — صحّح من دفتر الأحداث" });
+    const { rows: ev } = await client.query(
+      `SELECT id FROM financial_events WHERE source_ledger = 'finance_income' AND source_id = $1`, [line.income_id]);
+    if (ev.length) {
+      const { rows: rev } = await client.query(`SELECT 1 FROM financial_events WHERE reverses_event_id = $1`, [ev[0].id]);
+      if (rev.length) return res.status(409).json({ error: "قيد الإيراد مُعاكَس في دفتر الأحداث — التصحيح تمّ هناك" });
+    }
+    await client.query("BEGIN");
+    // cost_center_id يُنسخ صراحةً من الأصل (الـtrigger لا يملأ إلا الفارغ) ليقع العكس على نفس القسم
+    const { rows: revInc } = await client.query(
+      `INSERT INTO finance_income (maintenance_work_order_id, cost_center_id, source_module, income_source, description, amount, "date", category, notes, created_by)
+       VALUES ($1,$2,'maintenance','service_visit_reversal',$3,$4,CURRENT_DATE,$5,$6,$7) RETURNING id`,
+      [line.maintenance_work_order_id, line.cost_center_id,
+       `عكس فوترة — ${line.description ?? ""}`.slice(0, 500), String(-Number(line.amount)),
+       line.category ?? "other", `يعكس قيد الإيراد #${line.income_id}`, req.session.userId ?? null]);
+    await client.query(`UPDATE maintenance_visit_lines SET income_id = NULL, billed_amount = NULL, billed_at = NULL, billing_note = NULL WHERE id = $1`, [lineId]);
+    await client.query("COMMIT");
+    return res.json({ reversalIncomeId: revInc[0].id, reversedIncomeId: line.income_id, amount: -Number(line.amount) });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch { /* المعاملة قد لا تكون بدأت */ }
+    console.error(e); return res.status(500).json({ error: "فشل التراجع عن الفوترة" });
+  } finally { client.release(); }
+});
+
+/* ═══ وصل الفجوة ٢: ربط خطط الصيانة الوقائية بعقود الصيانة ═══
+   الخطة تُنفَّذ على مكينة، والمكينة مُسندة زمنيًا لعقد — فالربط يُشتق من الإسناد بدل إدخاله
+   يدويًا، ويُخزَّن على الخطة ليبقى ثابتًا في التقارير. */
+
+// ربط تلقائي: يملأ عقد كل خطة بلا عقد من إسناد مكينتها الساري اليوم (idempotent)
+router.post("/preventive-plans/auto-link", async (req: Request, res: Response) => {
+  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE maintenance_preventive_plans pp
+       SET contract_id = a.contract_id, updated_at = now()
+       FROM maintenance_equipment_assignments a
+       WHERE a.equipment_id = pp.equipment_id
+         AND a.contract_id IS NOT NULL
+         AND a.valid_from <= CURRENT_DATE AND (a.valid_to IS NULL OR a.valid_to > CURRENT_DATE)
+         AND pp.contract_id IS NULL`);
+    return res.json({ linked: rowCount ?? 0 });
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل الربط التلقائي" }); }
+});
+
+// تغطية الصيانة الوقائية لكل عقد نشط: كم مكينة تحته، وكم منها بلا خطة سارية
+router.get("/analytics/contract-pm-coverage", async (_req: Request, res: Response) => {
+  try {
+    const { rows } = await pool.query(
+      `WITH covered AS (
+         SELECT DISTINCT a.contract_id, a.equipment_id
+         FROM maintenance_equipment_assignments a
+         WHERE a.contract_id IS NOT NULL
+           AND a.valid_from <= CURRENT_DATE AND (a.valid_to IS NULL OR a.valid_to > CURRENT_DATE))
+       SELECT c.id AS "contractId", c.contract_number AS "contractNumber", d.name_ar AS "district",
+              c.pm_visits_per_year AS "pmVisitsPerYear",
+              COUNT(DISTINCT cv.equipment_id)::int AS "equipmentCount",
+              COUNT(DISTINCT pp.equipment_id) FILTER (WHERE pp.active)::int AS "equipmentWithPlan",
+              (COUNT(DISTINCT cv.equipment_id) - COUNT(DISTINCT pp.equipment_id) FILTER (WHERE pp.active))::int AS "uncovered",
+              COUNT(pp.id) FILTER (WHERE pp.active AND pp.next_due_date IS NOT NULL
+                                     AND pp.next_due_date <= CURRENT_DATE + 30)::int AS "dueWithin30Days",
+              COUNT(pp.id) FILTER (WHERE pp.active AND pp.next_due_date IS NOT NULL
+                                     AND pp.next_due_date < CURRENT_DATE)::int AS "overdue"
+       FROM service_contracts c
+       LEFT JOIN maintenance_districts d ON d.id = c.district_id
+       LEFT JOIN covered cv ON cv.contract_id = c.id
+       LEFT JOIN maintenance_preventive_plans pp
+              ON pp.equipment_id = cv.equipment_id AND (pp.contract_id = c.id OR pp.contract_id IS NULL)
+       WHERE c.status = 'نشط'
+       GROUP BY c.id, c.contract_number, d.name_ar, c.pm_visits_per_year
+       ORDER BY "uncovered" DESC, c.contract_number`);
+    return res.json(rows);
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب تغطية الوقائية" }); }
 });
 
 export default router;

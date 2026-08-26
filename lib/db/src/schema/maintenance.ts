@@ -112,6 +112,8 @@ export const maintenanceWorkOrderPartsTable = pgTable("maintenance_work_order_pa
 export const maintenancePreventivePlansTable = pgTable("maintenance_preventive_plans", {
   id: serial("id").primaryKey(),
   equipmentId: integer("equipment_id").notNull().references(() => maintenanceEquipmentTable.id, { onDelete: "cascade" }),
+  // عقد الصيانة الذي تنفَّذ الخطة تحته — service_contracts بـDDL خام (ليس جدول drizzle)، لذا بلا references()
+  contractId: integer("contract_id"),
   planName: text("plan_name").notNull(),
   frequencyType: text("frequency_type").notNull().default("monthly"),
   // daily | weekly | monthly | quarterly | semi_annual | annual | meter_based
@@ -182,6 +184,9 @@ export const maintenanceGeneratedReportsTable = pgTable("maintenance_generated_r
   contractId: integer("contract_id").references(() => contractsTable.id, { onDelete: "set null" }),
   contractNumber: text("contract_number"),
   workOrderNumber: text("work_order_number"),
+  // تقرير زيارة عقد (بلا أمر صيانة) + قيده في سجل الصادر الموحّد — جدولان بـDDL خام، بلا references()
+  visitId: integer("visit_id"),
+  outgoingRegisterId: integer("outgoing_register_id"),
   fileUrl: text("file_url").notNull(),
   generatedByUserId: integer("generated_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
   generatedAt: timestamp("generated_at").notNull().defaultNow(),

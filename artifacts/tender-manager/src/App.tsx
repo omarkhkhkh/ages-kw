@@ -8,6 +8,7 @@ import { Layout } from '@/components/layout';
 import Landing from '@/pages/landing';
 import Login from '@/pages/login';
 import Dashboard from '@/pages/dashboard';
+import WorkloadPage from '@/pages/workload';
 import TendersList from '@/pages/tenders-list';
 import TenderNew from '@/pages/tender-new';
 import TenderDetail from '@/pages/tender-detail';
@@ -113,6 +114,9 @@ function AppRouter() {
         <Route path="/" component={Dashboard} />
         {/* بعد تسجيل الدخول، /login تعيد التوجيه للوحة التحكم بدل صفحة 404 */}
         <Route path="/login"><Redirect to="/" /></Route>
+        <Route path="/workload">
+          <ModuleGuard access={isAdmin || (user.positions ?? []).includes("executive_manager")}><WorkloadPage /></ModuleGuard>
+        </Route>
         <Route path="/tenders">
           <ModuleGuard access={isAdmin || user.accessTenders}><TendersList /></ModuleGuard>
         </Route>

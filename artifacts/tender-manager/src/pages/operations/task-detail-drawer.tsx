@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useUpload } from "@workspace/object-storage-web";
-import { tasksApi } from "@/lib/api";
+import { workTransfersApi, tasksApi } from "@/lib/api";
 import { objectPathToUrl } from "@/components/file-upload";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -190,6 +190,17 @@ export default function TaskDetailDrawer({ taskId, isAdmin, canApprove, currentU
               ) : (
                 <>
                   {task.description && <div style={{ padding: "12px 16px", borderRadius: 12, background: "#f9f7f2", border: "1px solid #f0ead8", fontSize: 13, color: "#374151", lineHeight: 1.6 }}>{task.description}</div>}
+                  {isOwnTask && (
+                    <button onClick={() => {
+                      const reason = prompt("سبب طلب النقل؟ (يصل للمدير التنفيذي ويبقى في سيرة العمل)");
+                      if (!reason?.trim()) return;
+                      workTransfersApi.requestTransfer({ entityType: "task", entityId: taskId, reason: reason.trim() })
+                        .then(() => toast({ title: "أُرسل طلب النقل للمدير التنفيذي" }))
+                        .catch((e: any) => toast({ title: "تعذّر الطلب", description: e.message, variant: "destructive" }));
+                    }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, border: "1.5px solid #e5dfc8", background: "#fdf8ec", color: "#A87C20", cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "inherit", alignSelf: "flex-start" }}>
+                      اطلب نقل هذه المهمة
+                    </button>
+                  )}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12.5 }}>
                     <div><span style={{ color: "#9ca3af" }}>المسؤول: </span>{task.assigneeName ?? "—"}</div>
                     <div><span style={{ color: "#9ca3af" }}>تاريخ الاستحقاق: </span>{fmtDate(task.dueDate)}</div>

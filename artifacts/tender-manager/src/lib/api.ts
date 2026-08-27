@@ -217,6 +217,22 @@ export const positionsApi = {
   revoke: (userId: number, positionKey: string) => apiFetch<any>("/api/positions/revoke", { method: "POST", body: JSON.stringify({ userId, positionKey }) }),
 };
 
+// ── النقل الموحّد ولوحة الأحمال ──────────────────────────────────────────────
+export const workTransfersApi = {
+  entityTypes: () => apiFetch<any[]>("/api/work-transfers/entity-types"),
+  workload: () => apiFetch<any[]>("/api/work-transfers/workload"),
+  userItems: (userId: number) => apiFetch<any[]>(`/api/work-transfers/user/${userId}/items`),
+  history: (entityType: string, entityId: number) => apiFetch<any[]>(`/api/work-transfers/history?entityType=${entityType}&entityId=${entityId}`),
+  recent: () => apiFetch<any[]>("/api/work-transfers/recent"),
+  transfer: (d: { entityType: string; entityId: number; toUserId: number; reason: string }) =>
+    apiFetch<any>("/api/work-transfers", { method: "POST", body: JSON.stringify(d) }),
+  requestTransfer: (d: { entityType: string; entityId: number; reason: string; suggestedToUserId?: number }) =>
+    apiFetch<any>("/api/work-transfers/requests", { method: "POST", body: JSON.stringify(d) }),
+  requests: (status?: string) => apiFetch<any[]>(`/api/work-transfers/requests${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  approveRequest: (id: number, toUserId?: number) => apiFetch<any>(`/api/work-transfers/requests/${id}/approve`, { method: "POST", body: JSON.stringify(toUserId ? { toUserId } : {}) }),
+  rejectRequest: (id: number) => apiFetch<any>(`/api/work-transfers/requests/${id}/reject`, { method: "POST", body: "{}" }),
+};
+
 // ── RFQ Requests ───────────────────────────────────────────────────────────
 export const rfqApi = {
   list: (tenderId?: number) => apiFetch<any[]>(tenderId ? `/api/rfq-requests?tenderId=${tenderId}` : "/api/rfq-requests"),

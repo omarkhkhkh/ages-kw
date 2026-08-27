@@ -32,6 +32,7 @@ import maintenanceRouter from "./maintenance";
 import maintenanceServiceRouter from "./maintenance-service";
 import researchRouter from "./research";
 import positionsRouter from "./positions";
+import workTransfersRouter from "./work-transfers";
 import pricingRouter from "./pricing";
 import opportunitiesRouter from "./opportunities";
 import costCentersRouter from "./cost-centers";
@@ -73,6 +74,9 @@ router.use(activityLogger);
 
 // المناصب (القبعات) — حراسة الحوكمة داخل الراوتر نفسه (المدير العام أو التنفيذي)
 router.use("/positions", positionsRouter);
+
+// النقل الموحّد ولوحة الأحمال — الحوكمة داخل الراوتر (تنفيذ للمديرين، طلبات للملاك)
+router.use("/work-transfers", workTransfersRouter);
 
 // Notifications — every authenticated user reads/marks-read only their own
 router.use("/notifications", notificationsRouter);

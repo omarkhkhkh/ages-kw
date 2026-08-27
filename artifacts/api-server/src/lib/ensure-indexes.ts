@@ -696,6 +696,34 @@ const MIGRATIONS = [
      actor_user_id integer REFERENCES users(id) ON DELETE SET NULL,
      created_at timestamp NOT NULL DEFAULT now())`,
 
+
+  /* ═══ الخارطة الموحّدة — المرحلة ٢: النقل الموحّد + طلباته (سيرة الملف تبدأ هنا) ═══
+     زر واحد وسلوك واحد لكل عمل مسند: النقل يغيّر المالك في جدول الكيان نفسه ويقيّد
+     سطرًا دائمًا (من ← إلى، بواسطة، السبب). الموظف يطلب ولا ينقل؛ التنفيذي والعام ينفذان. */
+  `CREATE TABLE IF NOT EXISTS work_transfer_requests (
+     id serial PRIMARY KEY,
+     entity_type text NOT NULL,
+     entity_id integer NOT NULL,
+     requested_by integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     suggested_to_user_id integer REFERENCES users(id) ON DELETE SET NULL,
+     reason text NOT NULL,
+     status text NOT NULL DEFAULT 'معلق' CHECK (status IN ('معلق','منفذ','مرفوض')),
+     decided_by integer REFERENCES users(id) ON DELETE SET NULL,
+     decided_at timestamp,
+     created_at timestamp NOT NULL DEFAULT now())`,
+  `CREATE INDEX IF NOT EXISTS idx_wtr_status ON work_transfer_requests (status)`,
+  `CREATE TABLE IF NOT EXISTS work_transfers (
+     id serial PRIMARY KEY,
+     entity_type text NOT NULL,
+     entity_id integer NOT NULL,
+     from_user_id integer REFERENCES users(id) ON DELETE SET NULL,
+     to_user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     transferred_by integer REFERENCES users(id) ON DELETE SET NULL,
+     reason text NOT NULL,
+     request_id integer REFERENCES work_transfer_requests(id) ON DELETE SET NULL,
+     created_at timestamp NOT NULL DEFAULT now())`,
+  `CREATE INDEX IF NOT EXISTS idx_wt_entity ON work_transfers (entity_type, entity_id)`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

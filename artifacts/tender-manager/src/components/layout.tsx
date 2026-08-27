@@ -5,6 +5,7 @@ import {
   ChevronDown, Clock, Truck, Wallet, ListChecks, ClipboardCheck,
   FileCheck, Landmark, Settings, Bell, HelpCircle, Headphones,
   MapPin, BarChart3, Plus, X, Menu, Trophy, Sparkles, Mail, IdCard, Wrench, FlaskConical, Calculator, Compass,
+  Scale,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -145,6 +146,11 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
         { href: "/maintenance",                  label: t("nav.maintenance"),        show: can("accessMaintenance") },
         { href: "/maintenance/report-templates", label: t("nav.maintenanceReports"), show: isAdmin || can("accessMaintenance") },
       ].filter(i => i.show),
+    },
+    {
+      // قاعدة الإخفاء الكامل: المدخل غير موجود أصلًا لغير الأدمن وحامل قبعة التنفيذي
+      id: "workload", label: "لوحة الأحمال", icon: Scale,
+      show: isAdmin || ((user as any)?.positions ?? []).includes("executive_manager"), href: "/workload",
     },
     {
       id: "research", label: t("nav.research"), icon: FlaskConical,

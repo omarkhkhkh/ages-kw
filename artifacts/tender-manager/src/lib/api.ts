@@ -233,6 +233,19 @@ export const workTransfersApi = {
   rejectRequest: (id: number) => apiFetch<any>(`/api/work-transfers/requests/${id}/reject`, { method: "POST", body: "{}" }),
 };
 
+// ── ملفات الحالة (رحلة المناقصة/الممارسة) ────────────────────────────────────
+export const caseFilesApi = {
+  byEntity: (entityType: string, entityId: number) => apiFetch<any>(`/api/case-files/by-entity?entityType=${entityType}&entityId=${entityId}`),
+  list: (status?: string) => apiFetch<any[]>(`/api/case-files${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  declareSourcing: (d: { entityType: string; entityId: number; sourcingPath: string; researcherUserId?: number; supplierId?: number }) =>
+    apiFetch<any>("/api/case-files/declare-sourcing", { method: "POST", body: JSON.stringify(d) }),
+  submit: (id: number) => apiFetch<any>(`/api/case-files/${id}/submit`, { method: "POST", body: "{}" }),
+  hold: (id: number, reason: string) => apiFetch<any>(`/api/case-files/${id}/hold`, { method: "POST", body: JSON.stringify({ reason }) }),
+  releaseHold: (id: number) => apiFetch<any>(`/api/case-files/${id}/release-hold`, { method: "POST", body: "{}" }),
+  approve: (id: number, note?: string) => apiFetch<any>(`/api/case-files/${id}/approve`, { method: "POST", body: JSON.stringify(note ? { note } : {}) }),
+  reject: (id: number, note: string) => apiFetch<any>(`/api/case-files/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
+};
+
 // ── RFQ Requests ───────────────────────────────────────────────────────────
 export const rfqApi = {
   list: (tenderId?: number) => apiFetch<any[]>(tenderId ? `/api/rfq-requests?tenderId=${tenderId}` : "/api/rfq-requests"),

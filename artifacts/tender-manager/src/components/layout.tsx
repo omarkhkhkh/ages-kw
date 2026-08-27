@@ -148,6 +148,10 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       ].filter(i => i.show),
     },
     {
+      id: "caseFiles", label: "الملفات والاعتمادات", icon: FolderOpen,
+      show: isAdmin || ["executive_manager", "financial_manager", "general_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), href: "/case-files",
+    },
+    {
       // قاعدة الإخفاء الكامل: المدخل غير موجود أصلًا لغير الأدمن وحامل قبعة التنفيذي
       id: "workload", label: "لوحة الأحمال", icon: Scale,
       show: isAdmin || ((user as any)?.positions ?? []).includes("executive_manager"), href: "/workload",

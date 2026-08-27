@@ -33,6 +33,7 @@ import maintenanceServiceRouter from "./maintenance-service";
 import researchRouter from "./research";
 import positionsRouter from "./positions";
 import workTransfersRouter from "./work-transfers";
+import caseFilesRouter from "./case-files";
 import pricingRouter from "./pricing";
 import opportunitiesRouter from "./opportunities";
 import costCentersRouter from "./cost-centers";
@@ -77,6 +78,9 @@ router.use("/positions", positionsRouter);
 
 // النقل الموحّد ولوحة الأحمال — الحوكمة داخل الراوتر (تنفيذ للمديرين، طلبات للملاك)
 router.use("/work-transfers", workTransfersRouter);
+
+// ملفات الحالة (رحلة المناقصة/الممارسة) — الحوكمة داخل الراوتر حسب القبعات
+router.use("/case-files", caseFilesRouter);
 
 // Notifications — every authenticated user reads/marks-read only their own
 router.use("/notifications", notificationsRouter);

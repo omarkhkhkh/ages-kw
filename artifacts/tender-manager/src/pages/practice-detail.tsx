@@ -7,12 +7,12 @@ import { STATUS_ARABIC } from "@/lib/constants";
 import {
   ArrowRight, Save, Trash2, Clock, Building, FileText,
   User, Loader2, BookOpen, Calculator, Users, Package, ChevronDown,
-  Trophy, Pencil, X, AlertTriangle, Mail, ListChecks,
-} from "lucide-react";
+  Trophy, Pencil, X, AlertTriangle, Mail, ListChecks, FolderOpen } from "lucide-react";
 import FileUpload from "@/components/file-upload";
 import BidResultPanel from "@/components/bid-result-panel";
 import CorrespondenceListPanel from "@/components/correspondence/correspondence-list-panel";
 import { useAuth } from "@/contexts/auth";
+import CaseFilePanel from "@/components/case-file-panel";
 import EntityDirectoryPicker from "@/components/entity-directory-picker";
 import LinkedPricingSheets from "@/components/linked-pricing-sheets";
 import LinkedTasks from "@/components/linked-tasks";
@@ -86,7 +86,7 @@ export default function PracticeDetail() {
 
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<any>({});
-  const [activeTab, setActiveTab] = useState<"details" | "bid" | "pricing" | "tasks" | "correspondence">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "case" | "bid" | "pricing" | "tasks" | "correspondence">("details");
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -181,6 +181,7 @@ export default function PracticeDetail() {
 
   const TABS: [string, string, any][] = [
     ["details", "تفاصيل الممارسة", FileText],
+    ["case",    "الملف",           FolderOpen],
     ["bid", "فض الظروف", Trophy],
     ["pricing", "التسعير", Calculator],
     ["correspondence", "المراسلات", Mail],
@@ -364,6 +365,8 @@ export default function PracticeDetail() {
       )}
 
       {/* ══ TASKS TAB ══ */}
+      {activeTab === "case" && <CaseFilePanel entityType="practice" entityId={id} />}
+
       {activeTab === "tasks" && (
         <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "18px 20px" }}>
           <LinkedTasks entityType="practice" entityId={id} />

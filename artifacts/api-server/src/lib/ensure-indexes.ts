@@ -724,6 +724,46 @@ const MIGRATIONS = [
      created_at timestamp NOT NULL DEFAULT now())`,
   `CREATE INDEX IF NOT EXISTS idx_wt_entity ON work_transfers (entity_type, entity_id)`,
 
+
+  /* ═══ الخارطة الموحّدة — المرحلة ٣: ملف الحالة (رحلة المناقصة/الممارسة) ═══
+     لكل مناقصة/ممارسة ملفٌ واحد: من رفعه، مسار توريده المُعلَن (فريق البحث ← باحث يختاره
+     المستشار، أو مصدر خاص ← مورد مسجَّل ظاهر للمديرَين)، حالته (بما فيها موقوف ماليًا
+     بسبب مُلزم)، وقراره النهائي عند المدير العام — وتجاوزُه لأي إيقاف يُسجَّل باسمه. */
+  `CREATE TABLE IF NOT EXISTS case_files (
+     id serial PRIMARY KEY,
+     entity_type text NOT NULL CHECK (entity_type IN ('tender','practice')),
+     entity_id integer NOT NULL,
+     raised_by integer REFERENCES users(id) ON DELETE SET NULL,
+     sourcing_path text CHECK (sourcing_path IN ('فريق البحث','مصدر خاص')),
+     own_source_supplier_id integer REFERENCES suppliers(id) ON DELETE SET NULL,
+     researcher_user_id integer REFERENCES users(id) ON DELETE SET NULL,
+     research_assignment_id integer REFERENCES research_assignments(id) ON DELETE SET NULL,
+     status text NOT NULL DEFAULT 'مفتوح'
+       CHECK (status IN ('مفتوح','قيد العمل','موقوف ماليًا','بانتظار الاعتماد','معتمد','مرفوض','مغلق')),
+     prev_status text,
+     hold_reason text,
+     held_by integer REFERENCES users(id) ON DELETE SET NULL,
+     held_at timestamp,
+     submitted_by integer REFERENCES users(id) ON DELETE SET NULL,
+     submitted_at timestamp,
+     decided_by integer REFERENCES users(id) ON DELETE SET NULL,
+     decided_at timestamp,
+     decision_note text,
+     gm_override boolean NOT NULL DEFAULT false,
+     created_at timestamp NOT NULL DEFAULT now(),
+     updated_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_case_entity UNIQUE (entity_type, entity_id),
+     CONSTRAINT ck_case_own_source CHECK (sourcing_path <> 'مصدر خاص' OR own_source_supplier_id IS NOT NULL))`,
+  `CREATE INDEX IF NOT EXISTS idx_case_files_status ON case_files (status)`,
+  `CREATE TABLE IF NOT EXISTS case_file_events (
+     id serial PRIMARY KEY,
+     case_file_id integer NOT NULL REFERENCES case_files(id) ON DELETE CASCADE,
+     event text NOT NULL,
+     details text,
+     actor_user_id integer REFERENCES users(id) ON DELETE SET NULL,
+     created_at timestamp NOT NULL DEFAULT now())`,
+  `CREATE INDEX IF NOT EXISTS idx_cfe_case ON case_file_events (case_file_id)`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

@@ -17,13 +17,13 @@ import {
   ArrowRight, Save, Trash2, Clock, Building, FileText,
   CheckCircle2, AlertTriangle, User, Loader2,
   BookOpen, Calculator, Users, Package, ChevronDown,
-  DollarSign, TrendingUp, Trophy, Pencil, X, AlertCircle, Mail, ListChecks,
-} from "lucide-react";
+  DollarSign, TrendingUp, Trophy, Pencil, X, AlertCircle, Mail, ListChecks, FolderOpen } from "lucide-react";
 import FileUpload from "@/components/file-upload";
 import BidResultPanel from "@/components/bid-result-panel";
 import TenderCompetitorAnalysis from "@/components/tender-competitor-analysis";
 import CorrespondenceListPanel from "@/components/correspondence/correspondence-list-panel";
 import { useAuth } from "@/contexts/auth";
+import CaseFilePanel from "@/components/case-file-panel";
 import EntityDirectoryPicker from "@/components/entity-directory-picker";
 import LinkedPricingSheets from "@/components/linked-pricing-sheets";
 import LinkedTasks from "@/components/linked-tasks";
@@ -119,7 +119,7 @@ export default function TenderDetail() {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [savingFields, setSavingFields] = useState<Set<string>>(new Set());
-  const [activeTab, setActiveTab] = useState<"details" | "bid" | "analysis" | "pricing" | "correspondence" | "tasks">("details");
+  const [activeTab, setActiveTab] = useState<"details" | "case" | "bid" | "analysis" | "pricing" | "correspondence" | "tasks">("details");
   const initialized = useRef(false);
 
   const { data: companies = [] } = useQuery<any[]>({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
@@ -278,6 +278,7 @@ export default function TenderDetail() {
   /* ── Tabs ── */
   const TABS: [string, string, any][] = [
     ["details",  "تفاصيل المناقصة", FileText],
+    ["case",     "الملف",            FolderOpen],
     ["bid",      "فض العطاء",       Trophy],
     ["analysis", "تحليل المنافسة",  TrendingUp],
     ["pricing",  "التسعير",          Calculator],
@@ -490,6 +491,8 @@ export default function TenderDetail() {
       )}
 
       {/* ══ TASKS TAB ══ */}
+      {activeTab === "case" && <CaseFilePanel entityType="tender" entityId={id} />}
+
       {activeTab === "tasks" && (
         <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "18px 20px" }}>
           <LinkedTasks entityType="tender" entityId={id} />

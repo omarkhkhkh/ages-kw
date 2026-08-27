@@ -45,7 +45,7 @@ const CASE_SELECT = `
   cf.id, cf.entity_type AS "entityType", cf.entity_id AS "entityId",
   cf.sourcing_path AS "sourcingPath", cf.status, cf.prev_status AS "prevStatus",
   cf.hold_reason AS "holdReason", cf.held_at AS "heldAt", cf.gm_override AS "gmOverride",
-  cf.decision_note AS "decisionNote", cf.submitted_at AS "submittedAt", cf.decided_at AS "decidedAt",
+  cf.decision_note AS "decisionNote", cf.outcome, cf.submitted_at AS "submittedAt", cf.decided_at AS "decidedAt",
   cf.own_source_supplier_id AS "ownSourceSupplierId", cf.researcher_user_id AS "researcherUserId",
   cf.research_assignment_id AS "researchAssignmentId", cf.raised_by AS "raisedBy",
   ru.full_name AS "raisedByName", hu.full_name AS "heldByName", du.full_name AS "decidedByName",
@@ -265,5 +265,171 @@ async function decide(req: Request, res: Response, approve: boolean) {
 }
 router.post("/:id/approve", (req, res) => decide(req, res, true));
 router.post("/:id/reject", (req, res) => decide(req, res, false));
+
+
+/* ═══ المرحلة ٤: بوابتا الإغلاق + بطاقة «من ذاكرة الشركة» ═══ */
+
+/** جلسة فض العطاء لكيان — البوابة الأولى للإغلاق */
+async function bidSessionOf(type: string, id: number): Promise<{ id: number; entries: number } | null> {
+  const col = type === "tender" ? "tender_id" : "practice_id";
+  const { rows } = await pool.query(
+    `SELECT br.id, (SELECT COUNT(*)::int FROM bid_entries be WHERE be.bid_result_id = br.id) AS entries
+     FROM bid_results br WHERE br.source_type = $1 AND br.${col} = $2 ORDER BY br.id DESC LIMIT 1`, [type, id]);
+  return rows.length ? { id: rows[0].id, entries: Number(rows[0].entries) } : null;
+}
+
+// جاهزية الإغلاق: هل الجلسة مسجلة؟ (تستخدمها الواجهة قبل فتح نافذة الإغلاق)
+router.get("/:id/closure-readiness", async (req: Request, res: Response) => {
+  const caseId = Number(req.params.id);
+  try {
+    const { rows } = await pool.query(`SELECT * FROM case_files WHERE id = $1`, [caseId]);
+    if (!rows.length) return res.status(404).json({ error: "الملف غير موجود" });
+    const cf = rows[0];
+    const cfView = await getCase(cf.entity_type, cf.entity_id);
+    if (!(await canSee(req, cfView))) return res.status(403).json({ error: "هذا الملف لمشاركيه ومطّلعيه" });
+    const session = await bidSessionOf(cf.entity_type, cf.entity_id);
+    return res.json({ hasBidSession: !!session, bidEntries: session?.entries ?? 0, status: cf.status });
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل فحص الجاهزية" }); }
+});
+
+/* ── الإغلاق ببوابتين: فوز/خسارة تتطلب جلسة الفض + الدرس؛ الانسحاب يُعفى من الجلسة ── */
+router.post("/:id/close", async (req: Request, res: Response) => {
+  const caseId = Number(req.params.id);
+  const outcome = String(req.body?.outcome ?? "");
+  const reasons = String(req.body?.reasons ?? "").trim();
+  const lessons = String(req.body?.lessons ?? "").trim();
+  if (!["فوز", "خسارة", "انسحاب"].includes(outcome)) {
+    return res.status(400).json({ error: "النتيجة: «فوز» أو «خسارة» أو «انسحاب»" });
+  }
+  const client = await pool.connect();
+  try {
+    const { rows } = await pool.query(`SELECT * FROM case_files WHERE id = $1`, [caseId]);
+    if (!rows.length) return res.status(404).json({ error: "الملف غير موجود" });
+    const cf = rows[0];
+    if (cf.raised_by !== req.session.userId && !(await isOverseer(req))) {
+      return res.status(403).json({ error: "الإغلاق لرافع الملف أو المديرين" });
+    }
+    if (cf.status === "مغلق") return res.status(409).json({ error: "الملف مغلق بالفعل" });
+    if (cf.status === "موقوف ماليًا") return res.status(409).json({ error: "الملف موقوف ماليًا — يُرفع الإيقاف قبل الإغلاق" });
+
+    // البوابة الأولى: جلسة فض العطاء — إلزامية للفوز والخسارة، والانسحاب قبل التقديم يُعفى
+    let session: { id: number; entries: number } | null = null;
+    if (outcome !== "انسحاب") {
+      session = await bidSessionOf(cf.entity_type, cf.entity_id);
+      if (!session) {
+        return res.status(409).json({ error: "بوابة الإغلاق: سجّل جلسة فض العطاء أولًا (تبويب فض العطاء) — من نافسنا وبكم ومن فاز. الأرشيف يكتمل بحكم الدورة لا بحكم الهمّة." });
+      }
+      if (session.entries === 0) {
+        return res.status(409).json({ error: "جلسة الفض بلا شركات — أدخل المتنافسين وأسعارهم قبل الإغلاق" });
+      }
+    }
+    // البوابة الثانية: الدرس المستفاد — الأسباب إلزامية دائمًا، والدروس عند الخسارة على الأقل
+    if (!reasons) return res.status(400).json({ error: "بوابة الإغلاق: اكتب أسباب النتيجة — تدخل مركز المعرفة" });
+    if (outcome === "خسارة" && !lessons) return res.status(400).json({ error: "الخسارة بلا درس خسارتان — اكتب الدروس المستفادة" });
+
+    const title = (await entityTitle(cf.entity_type, cf.entity_id)) ?? `#${cf.entity_id}`;
+    // أسماء المنافسين تُسحب من الجلسة تلقائيًا (لا إدخال يدوي مكرر)
+    let competitorNames: string | null = null;
+    if (session) {
+      const { rows: comps } = await pool.query(
+        `SELECT string_agg(company_name, '، ') AS names FROM bid_entries WHERE bid_result_id = $1 AND is_us = false`, [session.id]);
+      competitorNames = comps[0]?.names ?? null;
+    }
+    const outcomeMap: Record<string, string> = { "فوز": "won", "خسارة": "lost", "انسحاب": "other" };
+
+    await client.query("BEGIN");
+    const { rows: ke } = await client.query(
+      `INSERT INTO knowledge_entries (tender_id, practice_id, title, outcome, reasons, lessons_learned, competitor_names, tags, created_by_user_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      [cf.entity_type === "tender" ? cf.entity_id : null,
+       cf.entity_type === "practice" ? cf.entity_id : null,
+       `${outcome}: ${title}`.slice(0, 300), outcomeMap[outcome], reasons, lessons || null,
+       competitorNames, "إغلاق ملف", req.session.userId ?? null]);
+    await client.query(
+      `UPDATE case_files SET status='مغلق', outcome=$1, bid_result_id=$2, knowledge_entry_id=$3, updated_at=now() WHERE id=$4`,
+      [outcome, session?.id ?? null, ke[0].id, caseId]);
+    await client.query("COMMIT");
+    await logEvent(caseId, `إغلاق الملف — ${outcome}`,
+      outcome === "انسحاب"
+        ? "انسحاب قبل التقديم — مُعفى من جلسة الفض"
+        : `جلسة الفض #${session!.id} (${session!.entries} شركة) + الدرس المستفاد #${ke[0].id}${competitorNames ? " — نافسنا: " + competitorNames : ""}`,
+      req.session.userId ?? null);
+    // تلميح تقييم الموردين: مصدر الملف الخاص إن وُجد
+    return res.json({
+      ok: true, outcome, knowledgeEntryId: ke[0].id, bidResultId: session?.id ?? null,
+      evaluateSupplierId: cf.own_source_supplier_id ?? null,
+      nextStep: outcome === "فوز" ? "التحويل إلى عقد نشط يأتي في المرحلة الخامسة" : null,
+    });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch { /* قد لا تكون بدأت */ }
+    console.error(e); return res.status(500).json({ error: "فشل إغلاق الملف" });
+  } finally { client.release(); }
+});
+
+/* ── بطاقة «من ذاكرة الشركة» — تُدفع لحظة فتح الملف، لا تُسأل ── */
+router.get("/memory-card", async (req: Request, res: Response) => {
+  const type = String(req.query.entityType ?? "");
+  const id = Number(req.query.entityId);
+  if (!ENTITY[type] || !id) return res.status(400).json({ error: "نوع الكيان ومعرّفه مطلوبان" });
+  try {
+    // جهة الكيان (المناقصات والممارسات كلتاهما تحملان government_entity_id)
+    const { rows: ent } = await pool.query(
+      `SELECT government_entity_id AS gid FROM ${ENTITY[type].table} WHERE id = $1`, [id]);
+    if (!ent.length) return res.status(404).json({ error: "الكيان غير موجود" });
+    const gid = ent[0].gid;
+    if (!gid) return res.json({ hasHistory: false, note: "لا جهة محددة للكيان — اربطه بجهة ليعمل استرجاع الذاكرة" });
+
+    // كل جلسات الفض السابقة مع نفس الجهة (مناقصات وممارسات) — عدا الكيان الحالي
+    const { rows: sessions } = await pool.query(
+      `SELECT br.id,
+              MAX(CASE WHEN be.is_us THEN be.total_price END) AS our_price,
+              MAX(CASE WHEN be.is_winner THEN be.total_price END) AS winner_price,
+              BOOL_OR(be.is_us AND be.is_winner) AS we_won
+       FROM bid_results br
+       JOIN bid_entries be ON be.bid_result_id = br.id
+       LEFT JOIN tenders t ON t.id = br.tender_id
+       LEFT JOIN practices pr ON pr.id = br.practice_id
+       WHERE COALESCE(t.government_entity_id, pr.government_entity_id) = $1
+         AND NOT (br.source_type = $2 AND COALESCE(br.tender_id, br.practice_id) = $3)
+       GROUP BY br.id`, [gid, type, id]);
+
+    const total = sessions.length;
+    const wins = sessions.filter((s: any) => s.we_won).length;
+    const gaps = sessions
+      .filter((s: any) => !s.we_won && s.our_price != null && s.winner_price != null && Number(s.our_price) > 0)
+      .map((s: any) => ((Number(s.our_price) - Number(s.winner_price)) / Number(s.our_price)) * 100);
+    const avgGapPct = gaps.length ? Math.round((gaps.reduce((a: number, b: number) => a + b, 0) / gaps.length) * 10) / 10 : null;
+
+    // المنافسون المتوقعون: تكرار الحضور والفوز عند هذه الجهة
+    const { rows: competitors } = await pool.query(
+      `SELECT be.company_name AS name,
+              COUNT(*)::int AS appearances,
+              COUNT(*) FILTER (WHERE be.is_winner)::int AS wins,
+              ROUND(AVG(be.total_price)::numeric, 3) AS "avgPrice"
+       FROM bid_results br
+       JOIN bid_entries be ON be.bid_result_id = br.id AND be.is_us = false
+       LEFT JOIN tenders t ON t.id = br.tender_id
+       LEFT JOIN practices pr ON pr.id = br.practice_id
+       WHERE COALESCE(t.government_entity_id, pr.government_entity_id) = $1
+         AND NOT (br.source_type = $2 AND COALESCE(br.tender_id, br.practice_id) = $3)
+       GROUP BY be.company_name
+       ORDER BY appearances DESC, wins DESC LIMIT 5`, [gid, type, id]);
+
+    // دروس سابقة مع نفس الجهة
+    const { rows: lessons } = await pool.query(
+      `SELECT ke.title, ke.outcome, ke.reasons
+       FROM knowledge_entries ke
+       LEFT JOIN tenders t ON t.id = ke.tender_id
+       LEFT JOIN practices pr ON pr.id = ke.practice_id
+       WHERE COALESCE(t.government_entity_id, pr.government_entity_id) = $1
+       ORDER BY ke.id DESC LIMIT 3`, [gid]);
+
+    return res.json({
+      hasHistory: total > 0 || competitors.length > 0 || lessons.length > 0,
+      sessions: total, wins, losses: total - wins, avgGapPct,
+      competitors, lessons,
+    });
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل استرجاع الذاكرة" }); }
+});
 
 export default router;

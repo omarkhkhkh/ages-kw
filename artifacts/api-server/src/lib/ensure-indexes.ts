@@ -764,6 +764,14 @@ const MIGRATIONS = [
      created_at timestamp NOT NULL DEFAULT now())`,
   `CREATE INDEX IF NOT EXISTS idx_cfe_case ON case_file_events (case_file_id)`,
 
+
+  /* ═══ الخارطة الموحّدة — المرحلة ٤: بوابتا الإغلاق (جلسة الفض + الدرس) ═══
+     الملف لا يُغلق بفوز/خسارة قبل تسجيل جلسة فض العطاء (تغذّي ذكاء المنافسين قسرًا)
+     والدرس المستفاد (يغذّي مركز المعرفة) — والانسحاب قبل التقديم يُعفى من الجلسة. */
+  `ALTER TABLE case_files ADD COLUMN IF NOT EXISTS outcome text`,
+  `ALTER TABLE case_files ADD COLUMN IF NOT EXISTS bid_result_id integer REFERENCES bid_results(id) ON DELETE SET NULL`,
+  `ALTER TABLE case_files ADD COLUMN IF NOT EXISTS knowledge_entry_id integer REFERENCES knowledge_entries(id) ON DELETE SET NULL`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

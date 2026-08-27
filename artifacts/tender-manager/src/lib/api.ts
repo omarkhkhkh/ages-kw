@@ -244,6 +244,9 @@ export const caseFilesApi = {
   releaseHold: (id: number) => apiFetch<any>(`/api/case-files/${id}/release-hold`, { method: "POST", body: "{}" }),
   approve: (id: number, note?: string) => apiFetch<any>(`/api/case-files/${id}/approve`, { method: "POST", body: JSON.stringify(note ? { note } : {}) }),
   reject: (id: number, note: string) => apiFetch<any>(`/api/case-files/${id}/reject`, { method: "POST", body: JSON.stringify({ note }) }),
+  closureReadiness: (id: number) => apiFetch<any>(`/api/case-files/${id}/closure-readiness`),
+  close: (id: number, d: { outcome: string; reasons: string; lessons?: string }) => apiFetch<any>(`/api/case-files/${id}/close`, { method: "POST", body: JSON.stringify(d) }),
+  memoryCard: (entityType: string, entityId: number) => apiFetch<any>(`/api/case-files/memory-card?entityType=${entityType}&entityId=${entityId}`),
 };
 
 // ── RFQ Requests ───────────────────────────────────────────────────────────

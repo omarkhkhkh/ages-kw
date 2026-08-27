@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { caseFilesApi, apiFetch } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import { useToast } from "@/hooks/use-toast";
-import { FolderOpen, Send, PauseCircle, PlayCircle, CheckCircle2, XCircle, History, ShieldAlert, Brain, Trophy, X } from "lucide-react";
+import { FolderOpen, Send, PauseCircle, PlayCircle, CheckCircle2, XCircle, History, ShieldAlert, Brain, Trophy, X, FileSignature, Activity, Plus } from "lucide-react";
 
 /* ═══ لوحة ملف الحالة — تُركَّب داخل صفحة المناقصة/الممارسة ═══
    بوابة إعلان مسار التوريد ← الحالة وشريط الإيقاف ← أزرار حسب القبعة ← السيرة.
@@ -118,6 +118,135 @@ function CloseModal({ cf, onClose }: { cf: any; onClose: () => void }) {
   );
 }
 
+/* ── نافذة التحويل إلى عقد نشط: رقم + قيمة + ملف التشغيل ── */
+const OPS_OPTIONS = ["توريد فقط", "توريد + صيانة", "توريد + نقل", "توريد + صيانة + نقل"];
+function ConvertModal({ cf, onClose }: { cf: any; onClose: () => void }) {
+  const qc = useQueryClient(); const { toast } = useToast();
+  const [form, setForm] = useState({ contractNumber: "", contractValue: "", opsProfile: "توريد فقط", startDate: "", endDate: "" });
+  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const convM = useMutation({
+    mutationFn: () => caseFilesApi.convertToContract(cf.id, { contractNumber: form.contractNumber, opsProfile: form.opsProfile, contractValue: form.contractValue || undefined, startDate: form.startDate || undefined, endDate: form.endDate || undefined }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["case-file", cf.entityType, cf.entityId] }); toast({ title: "✅ تحوّل الملف إلى عقد نشط" }); onClose(); },
+    onError: (e: any) => toast({ title: "تعذّر التحويل", description: e.message, variant: "destructive" }),
+  });
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(11,26,16,.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div dir="rtl" onClick={(e) => e.stopPropagation()} style={{ background: "white", borderRadius: 16, border: `1.5px solid ${G}33`, width: "min(540px,100%)", maxHeight: "88vh", overflowY: "auto", padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: GR, display: "flex", alignItems: "center", gap: 7 }}><FileSignature size={16} color={GD} /> تحويل إلى عقد نشط</div>
+          <button onClick={onClose} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 6, cursor: "pointer", display: "inline-flex" }}><X size={14} color="#64748b" /></button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div><label style={lbl}>رقم العقد *</label><input style={inp} value={form.contractNumber} onChange={(e) => set("contractNumber", e.target.value)} /></div>
+            <div><label style={lbl}>قيمة العقد (د.ك)</label><input style={inp} type="number" step="0.001" value={form.contractValue} onChange={(e) => set("contractValue", e.target.value)} /></div>
+          </div>
+          <div><label style={lbl}>ملف التشغيل * — يحدد أي أقسام تعمل تحت هذا العقد</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              {OPS_OPTIONS.map((o) => (
+                <button key={o} onClick={() => set("opsProfile", o)} style={{ padding: "9px 0", borderRadius: 9, fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", border: `1.5px solid ${form.opsProfile === o ? G : "#e5dfc8"}`, background: form.opsProfile === o ? "#fdf8ec" : "white", color: form.opsProfile === o ? GD : "#6b7280" }}>{o}</button>
+              ))}
+            </div></div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div><label style={lbl}>بداية العقد</label><input style={inp} type="date" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} /></div>
+            <div><label style={lbl}>نهايته</label><input style={inp} type="date" value={form.endDate} onChange={(e) => set("endDate", e.target.value)} /></div>
+          </div>
+          <button style={{ ...btn, justifyContent: "center" }} disabled={convM.isPending || !form.contractNumber.trim()} onClick={() => convM.mutate()}>
+            <FileSignature size={14} /> {convM.isPending ? "جارٍ التحويل…" : "تحويل"}</button>
+          <p style={{ fontSize: 11.5, color: "#9ca3af", margin: 0, lineHeight: 1.8 }}>عقد «توريد فقط» لا تُقبل عليه مصاريف صيانة أو نقل — توسّعه لاحقًا يكون بتحديث ملفه بقرار واعٍ.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── شاشة العقد الحية: الهامش والنزيف والانحرافات والتزام الموردين ── */
+function ContractMonitor({ contractId }: { contractId: number }) {
+  const qc = useQueryClient(); const { toast } = useToast();
+  const { data: m } = useQuery({ queryKey: ["contract-monitor", contractId], queryFn: () => caseFilesApi.contractMonitor(contractId) });
+  const { data: suppliers = [] } = useQuery<any[]>({ queryKey: ["suppliers-brief"], queryFn: () => apiFetch<any[]>("/api/suppliers").catch(() => []) });
+  const [vf, setVf] = useState({ itemName: "", estimatedCost: "", actualCost: "", supplierId: "", reason: "" });
+  const addM = useMutation({
+    mutationFn: () => caseFilesApi.addVariance({ contractId, itemName: vf.itemName, actualCost: vf.actualCost, estimatedCost: vf.estimatedCost || undefined, supplierId: vf.supplierId ? Number(vf.supplierId) : undefined, reason: vf.reason }),
+    onSuccess: (r: any) => {
+      qc.invalidateQueries({ queryKey: ["contract-monitor", contractId] });
+      setVf({ itemName: "", estimatedCost: "", actualCost: "", supplierId: "", reason: "" });
+      toast({ title: r.kind === "نزيف" ? `⚠ نزيف ${r.risePct != null ? r.risePct + "%" : ""}` : r.kind === "وفر" ? "✅ وفر مسجَّل" : "قُيّد", description: r.cfoAttention ? "ارتفاع ≥5% — يستدعي نظر المدير المالي" : undefined, variant: r.kind === "نزيف" ? "destructive" : undefined });
+    },
+    onError: (e: any) => toast({ title: "تعذّر القيد", description: e.message, variant: "destructive" }),
+  });
+  if (!m) return null;
+  const showMaint = (m.contract.opsProfile ?? "").includes("صيانة");
+  const showTrans = (m.contract.opsProfile ?? "").includes("نقل");
+  const kpi = (label: string, val: any, color = GR) => (
+    <div style={{ background: "#faf8f2", borderRadius: 10, padding: "10px 14px", minWidth: 110 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, color: "#9ca3af" }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 900, color }}>{val}</div>
+    </div>
+  );
+  const fmt = (n: any) => (n == null ? "—" : Number(n).toLocaleString(undefined, { maximumFractionDigits: 3 }));
+  return (
+    <div style={{ ...card, borderRightWidth: 4, borderRightColor: m.bleeding ? "#dc2626" : "#16a34a" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: GR, display: "flex", alignItems: "center", gap: 7 }}>
+          <Activity size={16} color={GD} /> العقد النشط {m.contract.contractNumber}
+          <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: "#fdf8ec", color: GD, border: `1px solid ${G}30` }}>{m.contract.opsProfile}</span>
+        </div>
+        {m.bleeding && <span style={{ fontSize: 12, fontWeight: 800, color: "#dc2626" }}>⚠ العقد ينزف — المصاريف {m.expensePctOfValue != null ? m.expensePctOfValue + "% من قيمته" : "تتجاوز المحصَّل"}</span>}
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {kpi("قيمة العقد", fmt(m.contract.contractValue))}
+        {kpi("المحصَّل", fmt(m.collected), "#2563eb")}
+        {showMaint && kpi("مصاريف الصيانة", fmt(m.maintExpenses), "#b45309")}
+        {showTrans && kpi("مصاريف النقل", fmt(m.transExpenses), "#b45309")}
+        {kpi("مصاريف أخرى", fmt(m.otherExpenses), "#b45309")}
+        {kpi("الهامش الحي", fmt(m.liveMargin), m.liveMargin < 0 ? "#dc2626" : "#16a34a")}
+      </div>
+      {m.expensePctOfValue != null && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ height: 8, borderRadius: 6, background: "#f0ead8", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${Math.min(100, m.expensePctOfValue)}%`, background: m.expensePctOfValue >= 80 ? "#dc2626" : m.expensePctOfValue >= 60 ? "#d97706" : "#16a34a" }} /></div>
+          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3 }}>استهلاك القيمة: {m.expensePctOfValue}%</div>
+        </div>
+      )}
+
+      <div style={{ marginTop: 14, borderTop: "1.5px dashed #f0ead8", paddingTop: 10 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: GR, marginBottom: 6 }}>الانحرافات — التقديري مجمَّد والفعلي يُقيَّد بجانبه
+          <span style={{ marginRight: 8, fontSize: 11.5, fontWeight: 700 }}><span style={{ color: "#16a34a" }}>وفر {Number(m.varianceSavings).toLocaleString()}</span> · <span style={{ color: "#dc2626" }}>نزيف {Number(m.varianceBleeds).toLocaleString()}</span></span>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.8fr 0.8fr 1fr 1.4fr auto", gap: 6, alignItems: "end", marginBottom: 8 }}>
+          <div><label style={lbl}>البند *</label><input style={inp} value={vf.itemName} onChange={(e) => setVf({ ...vf, itemName: e.target.value })} /></div>
+          <div><label style={lbl}>تقديري</label><input style={inp} type="number" step="0.001" value={vf.estimatedCost} onChange={(e) => setVf({ ...vf, estimatedCost: e.target.value })} /></div>
+          <div><label style={lbl}>فعلي *</label><input style={inp} type="number" step="0.001" value={vf.actualCost} onChange={(e) => setVf({ ...vf, actualCost: e.target.value })} /></div>
+          <div><label style={lbl}>المورد</label><select style={inp} value={vf.supplierId} onChange={(e) => setVf({ ...vf, supplierId: e.target.value })}><option value="">—</option>{suppliers.map((sp: any) => <option key={sp.id} value={sp.id}>{sp.name}</option>)}</select></div>
+          <div><label style={lbl}>السبب *</label><input style={inp} value={vf.reason} onChange={(e) => setVf({ ...vf, reason: e.target.value })} placeholder="خصم تأكيد / ارتفاع سوق…" /></div>
+          <button style={{ ...btn, height: 38 }} disabled={addM.isPending || !vf.itemName.trim() || !vf.actualCost || !vf.reason.trim()} onClick={() => addM.mutate()}><Plus size={13} /></button>
+        </div>
+        {(m.variances ?? []).map((v: any) => {
+          const diff = v.estimatedCost == null ? null : Number(v.actualCost) - Number(v.estimatedCost);
+          return (
+            <div key={v.id} style={{ fontSize: 12.5, color: "#4b5563", padding: "5px 0", borderBottom: "1px dashed #f0ead8" }}>
+              <b>{v.itemName}</b>{v.supplierName && <> — {v.supplierName}</>}: تقديري {fmt(v.estimatedCost)} ← فعلي <b>{fmt(v.actualCost)}</b>
+              {diff != null && diff !== 0 && <b style={{ color: diff > 0 ? "#dc2626" : "#16a34a" }}> ({diff > 0 ? "نزيف +" : "وفر −"}{Math.abs(diff).toLocaleString()})</b>}
+              <span style={{ color: "#9ca3af" }}> · {v.reason}</span>
+            </div>
+          );
+        })}
+        {(m.supplierCommitment ?? []).length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "#9ca3af", marginBottom: 4 }}>التزام الموردين بأسعارهم (من الانحرافات — بالبرهان لا بالانطباع)</div>
+            {(m.supplierCommitment ?? []).map((c: any) => (
+              <div key={c.supplierName} style={{ fontSize: 12, color: "#6b7280", padding: "2px 0" }}>
+                {c.supplierName}: {c.records} قيود — <span style={{ color: "#dc2626" }}>ارتفع {c.rises}</span> · <span style={{ color: "#16a34a" }}>نزل {c.falls}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function CaseFilePanel({ entityType, entityId }: { entityType: "tender" | "practice"; entityId: number }) {
   const { user } = useAuth();
   const qc = useQueryClient(); const { toast } = useToast();
@@ -137,6 +266,7 @@ export default function CaseFilePanel({ entityType, entityId }: { entityType: "t
 
   const [path, setPath] = useState<"فريق البحث" | "مصدر خاص">("فريق البحث");
   const [closing, setClosing] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [researcher, setResearcher] = useState("");
   const [supplierId, setSupplierId] = useState("");
 
@@ -208,6 +338,8 @@ export default function CaseFilePanel({ entityType, entityId }: { entityType: "t
   return (
     <div>
       {closing && <CloseModal cf={cf} onClose={() => setClosing(false)} />}
+      {converting && <ConvertModal cf={cf} onClose={() => setConverting(false)} />}
+      {cf.contractId && <ContractMonitor contractId={cf.contractId} />}
       <MemoryCard entityType={entityType} entityId={entityId} />
       {/* رأس الملف */}
       <div style={{ ...card, borderRightWidth: 4, borderRightColor: held ? "#dc2626" : cf.status === "معتمد" ? "#16a34a" : G }}>
@@ -227,6 +359,7 @@ export default function CaseFilePanel({ entityType, entityId }: { entityType: "t
           )}
           {cf.decisionNote && <> · ملاحظة القرار: <b>{cf.decisionNote}</b></>}
           {cf.outcome && <> · النتيجة: <b style={{ color: cf.outcome === "فوز" ? "#16a34a" : cf.outcome === "خسارة" ? "#dc2626" : "#6b7280" }}>{cf.outcome}</b></>}
+          {cf.contractNumber && <> · العقد: <b style={{ color: "#16a34a" }}>{cf.contractNumber}</b> ({cf.opsProfile})</>}
         </div>
 
         {held && (
@@ -249,6 +382,10 @@ export default function CaseFilePanel({ entityType, entityId }: { entityType: "t
           {held && (isCFO || isGM) && (
             <button style={{ ...btn, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0" }} disabled={releaseM.isPending}
               onClick={() => releaseM.mutate()}><PlayCircle size={13} /> رفع الإيقاف</button>
+          )}
+          {cf.outcome === "فوز" && !cf.contractId && (isRaiser || isGM) && (
+            <button style={{ ...btn, background: "#16a34a" }} onClick={() => setConverting(true)}>
+              <FileSignature size={13} /> تحويل إلى عقد نشط</button>
           )}
           {cf.status !== "مغلق" && !held && (isRaiser || isGM) && (
             <button style={{ ...btn, background: "white", color: GD, border: `1.5px solid ${G}66` }} onClick={() => setClosing(true)}>

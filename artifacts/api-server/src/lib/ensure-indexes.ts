@@ -772,6 +772,25 @@ const MIGRATIONS = [
   `ALTER TABLE case_files ADD COLUMN IF NOT EXISTS bid_result_id integer REFERENCES bid_results(id) ON DELETE SET NULL`,
   `ALTER TABLE case_files ADD COLUMN IF NOT EXISTS knowledge_entry_id integer REFERENCES knowledge_entries(id) ON DELETE SET NULL`,
 
+
+  /* ═══ الخارطة الموحّدة — المرحلة ٥: العقد النشط بملف تشغيله + الانحرافات ═══
+     الملف الفائز يتحول لعقد نشط بملف تشغيل (توريد فقط/+صيانة/+نقل/+كلاهما) يحدد أي
+     أقسام تشتغل تحته — ونسبُ مصروفِ صيانةٍ لعقد توريدٍ صرف يُرفض. والتقديري يُجمَّد
+     والفعلي يُقيَّد بجانبه: النزول وفر والارتفاع نزيف بسبب، والتزام المورد يُقاس منهما. */
+  `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS ops_profile text NOT NULL DEFAULT 'توريد فقط'`,
+  `ALTER TABLE case_files ADD COLUMN IF NOT EXISTS contract_id integer REFERENCES contracts(id) ON DELETE SET NULL`,
+  `CREATE TABLE IF NOT EXISTS contract_variances (
+     id serial PRIMARY KEY,
+     contract_id integer NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+     item_name text NOT NULL,
+     estimated_cost numeric(15,3),
+     actual_cost numeric(15,3) NOT NULL,
+     supplier_id integer REFERENCES suppliers(id) ON DELETE SET NULL,
+     reason text NOT NULL,
+     created_by integer REFERENCES users(id) ON DELETE SET NULL,
+     created_at timestamp NOT NULL DEFAULT now())`,
+  `CREATE INDEX IF NOT EXISTS idx_cv_contract ON contract_variances (contract_id)`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

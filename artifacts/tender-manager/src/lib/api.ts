@@ -247,6 +247,11 @@ export const caseFilesApi = {
   closureReadiness: (id: number) => apiFetch<any>(`/api/case-files/${id}/closure-readiness`),
   close: (id: number, d: { outcome: string; reasons: string; lessons?: string }) => apiFetch<any>(`/api/case-files/${id}/close`, { method: "POST", body: JSON.stringify(d) }),
   memoryCard: (entityType: string, entityId: number) => apiFetch<any>(`/api/case-files/memory-card?entityType=${entityType}&entityId=${entityId}`),
+  convertToContract: (id: number, d: { contractNumber: string; opsProfile: string; contractValue?: string; startDate?: string; endDate?: string }) =>
+    apiFetch<any>(`/api/case-files/${id}/convert-to-contract`, { method: "POST", body: JSON.stringify(d) }),
+  contractMonitor: (contractId: number) => apiFetch<any>(`/api/case-files/contract-monitor/${contractId}`),
+  addVariance: (d: { contractId: number; itemName: string; actualCost: string; estimatedCost?: string; supplierId?: number; reason: string }) =>
+    apiFetch<any>("/api/case-files/contract-variances", { method: "POST", body: JSON.stringify(d) }),
 };
 
 // ── RFQ Requests ───────────────────────────────────────────────────────────

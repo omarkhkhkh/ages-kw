@@ -48,6 +48,7 @@ const CASE_SELECT = `
   cf.decision_note AS "decisionNote", cf.outcome, cf.submitted_at AS "submittedAt", cf.decided_at AS "decidedAt",
   cf.own_source_supplier_id AS "ownSourceSupplierId", cf.researcher_user_id AS "researcherUserId",
   cf.research_assignment_id AS "researchAssignmentId", cf.raised_by AS "raisedBy",
+  cf.contract_id AS "contractId", ct.contract_number AS "contractNumber", ct.ops_profile AS "opsProfile",
   ru.full_name AS "raisedByName", hu.full_name AS "heldByName", du.full_name AS "decidedByName",
   su.full_name AS "researcherName", sp.name AS "ownSourceSupplierName", sp.status AS "ownSourceSupplierStatus"`;
 const CASE_JOINS = `
@@ -55,7 +56,8 @@ const CASE_JOINS = `
   LEFT JOIN users hu ON hu.id = cf.held_by
   LEFT JOIN users du ON du.id = cf.decided_by
   LEFT JOIN users su ON su.id = cf.researcher_user_id
-  LEFT JOIN suppliers sp ON sp.id = cf.own_source_supplier_id`;
+  LEFT JOIN suppliers sp ON sp.id = cf.own_source_supplier_id
+  LEFT JOIN contracts ct ON ct.id = cf.contract_id`;
 
 async function getCase(type: string, id: number) {
   const { rows } = await pool.query(
@@ -430,6 +432,159 @@ router.get("/memory-card", async (req: Request, res: Response) => {
       competitors, lessons,
     });
   } catch (e) { console.error(e); return res.status(500).json({ error: "فشل استرجاع الذاكرة" }); }
+});
+
+
+/* ═══ المرحلة ٥: العقد النشط بملف تشغيله + الهامش الحي + الانحرافات ═══ */
+
+const OPS_PROFILES = ["توريد فقط", "توريد + صيانة", "توريد + نقل", "توريد + صيانة + نقل"];
+
+/* ── التحويل: الملف الفائز يصبح عقدًا نشطًا بملف تشغيل ── */
+router.post("/:id/convert-to-contract", async (req: Request, res: Response) => {
+  const caseId = Number(req.params.id);
+  const contractNumber = String(req.body?.contractNumber ?? "").trim();
+  const opsProfile = String(req.body?.opsProfile ?? "");
+  const contractValue = req.body?.contractValue != null && req.body.contractValue !== "" ? Number(req.body.contractValue) : null;
+  if (!contractNumber) return res.status(400).json({ error: "رقم العقد مطلوب" });
+  if (!OPS_PROFILES.includes(opsProfile)) return res.status(400).json({ error: "ملف التشغيل: توريد فقط / +صيانة / +نقل / +كلاهما" });
+  const client = await pool.connect();
+  try {
+    const { rows } = await pool.query(`SELECT * FROM case_files WHERE id = $1`, [caseId]);
+    if (!rows.length) return res.status(404).json({ error: "الملف غير موجود" });
+    const cf = rows[0];
+    if (cf.raised_by !== req.session.userId && !(await isOverseer(req))) {
+      return res.status(403).json({ error: "التحويل لرافع الملف أو المديرين" });
+    }
+    if (cf.outcome !== "فوز") return res.status(409).json({ error: "يتحول للعقد النشط الملفُ المغلقُ بفوز فقط" });
+    if (cf.contract_id) return res.status(409).json({ error: "الملف مرتبط بعقد بالفعل" });
+
+    const { rows: ent } = await pool.query(
+      `SELECT government_entity_id AS gid FROM ${ENTITY[cf.entity_type].table} WHERE id = $1`, [cf.entity_id]);
+
+    await client.query("BEGIN");
+    const { rows: c } = await client.query(
+      `INSERT INTO contracts (tender_id, practice_id, government_entity_id, contract_number, contract_value,
+                              start_date, end_date, status, ops_profile, assigned_user_id, created_by_user_id, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11) RETURNING id`,
+      [cf.entity_type === "tender" ? cf.entity_id : null,
+       cf.entity_type === "practice" ? cf.entity_id : null,
+       ent[0]?.gid ?? null, contractNumber, contractValue,
+       req.body?.startDate || null, req.body?.endDate || null,
+       opsProfile, cf.raised_by, req.session.userId ?? null,
+       "عقد نشط مولَّد من ملف الحالة"]);
+    await client.query(`UPDATE case_files SET contract_id = $1, updated_at = now() WHERE id = $2`, [c[0].id, caseId]);
+    await client.query("COMMIT");
+    await logEvent(caseId, "تحويل إلى عقد نشط",
+      `العقد ${contractNumber} — ملف التشغيل: ${opsProfile}${contractValue ? ` — القيمة ${contractValue}` : ""}`,
+      req.session.userId ?? null);
+    return res.status(201).json({ ok: true, contractId: c[0].id });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch { /* قد لا تكون بدأت */ }
+    console.error(e); return res.status(500).json({ error: "فشل التحويل إلى عقد" });
+  } finally { client.release(); }
+});
+
+/* ── شاشة العقد الحية: القيمة ← المحصَّل ← مصاريف التشغيل بحسب ملفه ← الهامش ← النزيف ── */
+router.get("/contract-monitor/:contractId", async (req: Request, res: Response) => {
+  const contractId = Number(req.params.contractId);
+  try {
+    const { rows: cr } = await pool.query(
+      `SELECT c.id, c.contract_number AS "contractNumber", c.contract_value AS "contractValue",
+              c.ops_profile AS "opsProfile", c.status, c.start_date AS "startDate", c.end_date AS "endDate",
+              c.assigned_user_id AS "assignedUserId", c.created_by_user_id AS "createdByUserId",
+              ge.name AS "entityName"
+       FROM contracts c LEFT JOIN government_entities ge ON ge.id = c.government_entity_id
+       WHERE c.id = $1`, [contractId]);
+    if (!cr.length) return res.status(404).json({ error: "العقد غير موجود" });
+    const c = cr[0];
+    const me = req.session.userId;
+    if (!(await isOverseer(req)) && c.assignedUserId !== me && c.createdByUserId !== me) {
+      return res.status(403).json({ error: "شاشة العقد لمشاركيه ومطّلعيه" });
+    }
+
+    const { rows: fin } = await pool.query(
+      `SELECT
+         (SELECT COALESCE(SUM(amount),0) FROM finance_income  WHERE contract_id = $1)::numeric AS collected,
+         (SELECT COALESCE(SUM(amount),0) FROM finance_expenses WHERE contract_id = $1 AND maintenance_work_order_id IS NOT NULL)::numeric AS "maintExpenses",
+         (SELECT COALESCE(SUM(amount),0) FROM finance_expenses WHERE contract_id = $1 AND transportation_order_id IS NOT NULL)::numeric AS "transExpenses",
+         (SELECT COALESCE(SUM(amount),0) FROM finance_expenses WHERE contract_id = $1 AND maintenance_work_order_id IS NULL AND transportation_order_id IS NULL)::numeric AS "otherExpenses"`,
+      [contractId]);
+    const f = fin[0];
+    const totalExpenses = Number(f.maintExpenses) + Number(f.transExpenses) + Number(f.otherExpenses);
+    const value = c.contractValue != null ? Number(c.contractValue) : null;
+
+    const { rows: variances } = await pool.query(
+      `SELECT v.id, v.item_name AS "itemName", v.estimated_cost AS "estimatedCost", v.actual_cost AS "actualCost",
+              v.reason, v.created_at AS "createdAt", s.name AS "supplierName", u.full_name AS "createdByName"
+       FROM contract_variances v
+       LEFT JOIN suppliers s ON s.id = v.supplier_id
+       LEFT JOIN users u ON u.id = v.created_by
+       WHERE v.contract_id = $1 ORDER BY v.id DESC`, [contractId]);
+    let savings = 0, bleeds = 0;
+    for (const v of variances) {
+      if (v.estimatedCost == null) continue;
+      const diff = Number(v.actualCost) - Number(v.estimatedCost);
+      if (diff > 0) bleeds += diff; else savings += -diff;
+    }
+    // التزام كل مورد بسعره — يُقاس من الانحرافات لا من الانطباع
+    const { rows: commitment } = await pool.query(
+      `SELECT s.name AS "supplierName",
+              COUNT(*)::int AS records,
+              COUNT(*) FILTER (WHERE v.estimated_cost IS NOT NULL AND v.actual_cost > v.estimated_cost)::int AS rises,
+              COUNT(*) FILTER (WHERE v.estimated_cost IS NOT NULL AND v.actual_cost < v.estimated_cost)::int AS falls
+       FROM contract_variances v JOIN suppliers s ON s.id = v.supplier_id
+       WHERE v.contract_id = $1 GROUP BY s.name ORDER BY rises DESC`, [contractId]);
+
+    const expensePctOfValue = value && value > 0 ? Math.round((totalExpenses / value) * 1000) / 10 : null;
+    return res.json({
+      contract: c,
+      collected: Number(f.collected),
+      maintExpenses: Number(f.maintExpenses),
+      transExpenses: Number(f.transExpenses),
+      otherExpenses: Number(f.otherExpenses),
+      totalExpenses,
+      liveMargin: Number(f.collected) - totalExpenses,
+      valueMargin: value != null ? value - totalExpenses : null,
+      expensePctOfValue,
+      bleeding: expensePctOfValue != null ? expensePctOfValue >= 80 : Number(f.collected) - totalExpenses < 0,
+      variances, varianceSavings: Math.round(savings * 1000) / 1000, varianceBleeds: Math.round(bleeds * 1000) / 1000,
+      supplierCommitment: commitment,
+    });
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب شاشة العقد" }); }
+});
+
+/* ── قيد انحراف: التقديري مجمَّد والفعلي يُقيَّد بجانبه بسبب ── */
+router.post("/contract-variances", async (req: Request, res: Response) => {
+  const contractId = Number(req.body?.contractId);
+  const itemName = String(req.body?.itemName ?? "").trim();
+  const actualCost = Number(req.body?.actualCost);
+  const estimatedCost = req.body?.estimatedCost != null && req.body.estimatedCost !== "" ? Number(req.body.estimatedCost) : null;
+  const supplierId = req.body?.supplierId ? Number(req.body.supplierId) : null;
+  const reason = String(req.body?.reason ?? "").trim();
+  if (!contractId || !itemName || !Number.isFinite(actualCost)) {
+    return res.status(400).json({ error: "العقد والبند والتكلفة الفعلية مطلوبة" });
+  }
+  if (!reason) return res.status(400).json({ error: "سبب الفرق إلزامي — النزول وفر يُفسَّر والارتفاع نزيف يُفسَّر" });
+  try {
+    const { rows: cr } = await pool.query(
+      `SELECT assigned_user_id AS a, created_by_user_id AS b FROM contracts WHERE id = $1`, [contractId]);
+    if (!cr.length) return res.status(404).json({ error: "العقد غير موجود" });
+    const me = req.session.userId;
+    if (!(await isOverseer(req)) && cr[0].a !== me && cr[0].b !== me) {
+      return res.status(403).json({ error: "قيد الانحرافات لمشاركي العقد ومطّلعيه" });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO contract_variances (contract_id, item_name, estimated_cost, actual_cost, supplier_id, reason, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [contractId, itemName, estimatedCost, actualCost, supplierId, reason, me ?? null]);
+    const risePct = estimatedCost && estimatedCost > 0 ? Math.round(((actualCost - estimatedCost) / estimatedCost) * 1000) / 10 : null;
+    return res.status(201).json({
+      id: rows[0].id,
+      kind: estimatedCost == null ? "قيد فعلي" : actualCost > estimatedCost ? "نزيف" : actualCost < estimatedCost ? "وفر" : "مطابق",
+      risePct,
+      cfoAttention: risePct != null && risePct >= 5, // ارتفاع ≥5% يستدعي نظر المدير المالي
+    });
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل قيد الانحراف" }); }
 });
 
 export default router;

@@ -187,6 +187,18 @@ router.post("/expenses", async (req: Request, res: Response) => {
   try {
     const { contractId, purchaseOrderId, maintenanceWorkOrderId, transportationOrderId, vehicleId, workerId, description, amount, dueDate, paidDate, status, category, vendor, notes } = req.body as any;
     if (!description?.trim() || !amount) return res.status(400).json({ error: "الوصف والمبلغ مطلوبان" });
+    // حارس ملف تشغيل العقد (الخارطة م٥): مصروف صيانة/نقل على عقد لا يشمله ملفُه يُرفض —
+    // إما خطأ إدخال وإما توسّعٌ فعلي يستدعي تحديث الملف بقرار واعٍ لا بتسرب صامت.
+    if (contractId && (maintenanceWorkOrderId || transportationOrderId)) {
+      const { rows: cp } = await pool.query(`SELECT ops_profile FROM contracts WHERE id = $1`, [Number(contractId)]);
+      const profile = cp[0]?.ops_profile ?? "توريد فقط";
+      if (maintenanceWorkOrderId && !profile.includes("صيانة")) {
+        return res.status(409).json({ error: `ملف تشغيل العقد «${profile}» لا يشمل الصيانة — خطأ إدخال أو حدّث ملف التشغيل أولًا` });
+      }
+      if (transportationOrderId && !profile.includes("نقل")) {
+        return res.status(409).json({ error: `ملف تشغيل العقد «${profile}» لا يشمل النقل — خطأ إدخال أو حدّث ملف التشغيل أولًا` });
+      }
+    }
     const [row] = await db.insert(financeExpensesTable).values({
       contractId: contractId ? Number(contractId) : null,
       purchaseOrderId: purchaseOrderId ? Number(purchaseOrderId) : null,

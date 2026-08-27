@@ -34,6 +34,7 @@ import researchRouter from "./research";
 import positionsRouter from "./positions";
 import workTransfersRouter from "./work-transfers";
 import caseFilesRouter from "./case-files";
+import obligationsRouter from "./obligations";
 import pricingRouter from "./pricing";
 import opportunitiesRouter from "./opportunities";
 import costCentersRouter from "./cost-centers";
@@ -81,6 +82,9 @@ router.use("/work-transfers", workTransfersRouter);
 
 // ملفات الحالة (رحلة المناقصة/الممارسة) — الحوكمة داخل الراوتر حسب القبعات
 router.use("/case-files", caseFilesRouter);
+
+// الالتزامات المتجددة + مسيّر الرواتب — الحوكمة داخل الراوتر حسب القبعات
+router.use("/obligations", obligationsRouter);
 
 // Notifications — every authenticated user reads/marks-read only their own
 router.use("/notifications", notificationsRouter);

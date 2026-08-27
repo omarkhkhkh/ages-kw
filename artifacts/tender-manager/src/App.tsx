@@ -10,6 +10,7 @@ import Login from '@/pages/login';
 import Dashboard from '@/pages/dashboard';
 import WorkloadPage from '@/pages/workload';
 import CaseFilesPage from '@/pages/case-files';
+import ObligationsPage from '@/pages/obligations';
 import TendersList from '@/pages/tenders-list';
 import TenderNew from '@/pages/tender-new';
 import TenderDetail from '@/pages/tender-detail';
@@ -115,6 +116,9 @@ function AppRouter() {
         <Route path="/" component={Dashboard} />
         {/* بعد تسجيل الدخول، /login تعيد التوجيه للوحة التحكم بدل صفحة 404 */}
         <Route path="/login"><Redirect to="/" /></Route>
+        <Route path="/obligations">
+          <ModuleGuard access={isAdmin || ["executive_manager","financial_manager","general_manager"].some(k => (user.positions ?? []).includes(k))}><ObligationsPage /></ModuleGuard>
+        </Route>
         <Route path="/case-files">
           <ModuleGuard access={isAdmin || ["executive_manager","financial_manager","general_manager"].some(k => (user.positions ?? []).includes(k))}><CaseFilesPage /></ModuleGuard>
         </Route>

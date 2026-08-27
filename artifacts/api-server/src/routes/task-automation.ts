@@ -169,6 +169,39 @@ export async function runAutomationChecks(): Promise<void> {
       });
     }
 
+    // اقتراب انتهاء مستند شركة (الخارطة م٦ — مفتاح بتاريخ الاستحقاق فيتجدد التنبيه بعد كل تجديد)
+    const { rows: documents } = await pool.query(
+      `SELECT id, name, expiry_date AS "expiryDate" FROM company_documents
+       WHERE expiry_date IS NOT NULL AND expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + $1::int`,
+      [EXPIRY_WINDOW_DAYS]
+    );
+    for (const d of documents) {
+      await insertAutomationTask({
+        title: `متابعة اقتراب انتهاء مستند: ${d.name}`,
+        sourceType: "document_expiry", sourceId: d.id, triggerKey: `expiry_${d.expiryDate}`,
+        linkedEntityType: "companyDocument", linkedEntityId: d.id, priority: "high", dueDate: d.expiryDate,
+      });
+    }
+
+    // اقتراب انتهاء وثائق العمال الأربع: إقامة/جواز/تأمين صحي/إذن عمل (الخارطة م٦)
+    const { rows: workerDocs } = await pool.query(
+      `SELECT w.id, w.full_name AS "name", d.doc_type AS "docType", d.expiry
+       FROM workers w
+       CROSS JOIN LATERAL (VALUES
+         ('إقامة', w.residency_expiry), ('جواز', w.passport_expiry),
+         ('تأمين صحي', w.health_insurance_expiry), ('إذن عمل', w.work_permit_expiry)
+       ) AS d(doc_type, expiry)
+       WHERE w.status = 'active' AND d.expiry IS NOT NULL AND d.expiry BETWEEN CURRENT_DATE AND CURRENT_DATE + $1::int`,
+      [EXPIRY_WINDOW_DAYS]
+    );
+    for (const wd of workerDocs) {
+      await insertAutomationTask({
+        title: `متابعة اقتراب انتهاء ${wd.docType} العامل ${wd.name}`,
+        sourceType: "worker_doc_expiry", sourceId: wd.id, triggerKey: `${wd.docType}_${wd.expiry}`,
+        linkedEntityType: "worker", linkedEntityId: wd.id, priority: "high", dueDate: wd.expiry,
+      });
+    }
+
     // تأخر مورد (استدلالي) — أمر شراء بلا تقدّم في مراحله منذ فترة، وحالته غير نهائية
     const { rows: delayedPOs } = await pool.query(
       `SELECT po.id, po.order_number AS "orderNumber", po.execution_stage AS "executionStage", MAX(h.changed_at) AS "lastChange"

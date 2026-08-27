@@ -791,6 +791,31 @@ const MIGRATIONS = [
      created_at timestamp NOT NULL DEFAULT now())`,
   `CREATE INDEX IF NOT EXISTS idx_cv_contract ON contract_variances (contract_id)`,
 
+
+  /* ═══ الخارطة الموحّدة — المرحلة ٦: مسيّر الرواتب على مراكز تكلفة الأقسام ═══
+     مسودة شهرية تتولد بكل عامل نشط وراتبه ومركز قسمه (من وحدته المسندة)، يراجعها
+     المدير المالي ويرحّلها — فيتقيد كل راتب مصروفًا على مركز قسم صاحبه. */
+  `CREATE TABLE IF NOT EXISTS payroll_runs (
+     id serial PRIMARY KEY,
+     year integer NOT NULL,
+     month integer NOT NULL CHECK (month BETWEEN 1 AND 12),
+     status text NOT NULL DEFAULT 'مسودة' CHECK (status IN ('مسودة','مرحّل')),
+     created_by integer REFERENCES users(id) ON DELETE SET NULL,
+     posted_by integer REFERENCES users(id) ON DELETE SET NULL,
+     posted_at timestamp,
+     created_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_payroll_month UNIQUE (year, month))`,
+  `CREATE TABLE IF NOT EXISTS payroll_items (
+     id serial PRIMARY KEY,
+     run_id integer NOT NULL REFERENCES payroll_runs(id) ON DELETE CASCADE,
+     worker_id integer NOT NULL REFERENCES workers(id) ON DELETE CASCADE,
+     worker_name text NOT NULL,
+     salary numeric(12,3) NOT NULL,
+     cost_center_id integer REFERENCES cost_centers(id) ON DELETE SET NULL,
+     cost_center_name text,
+     expense_id integer REFERENCES finance_expenses(id) ON DELETE SET NULL,
+     CONSTRAINT uq_payroll_worker UNIQUE (run_id, worker_id))`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

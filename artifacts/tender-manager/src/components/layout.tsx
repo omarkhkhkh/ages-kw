@@ -5,7 +5,7 @@ import {
   ChevronDown, Clock, Truck, Wallet, ListChecks, ClipboardCheck,
   FileCheck, Landmark, Settings, Bell, HelpCircle, Headphones,
   MapPin, BarChart3, Plus, X, Menu, Trophy, Sparkles, Mail, IdCard, Wrench, FlaskConical, Calculator, Compass,
-  Scale,
+  Scale, CalendarClock,
 } from "lucide-react";
 import React, { useState, useRef, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -146,6 +146,10 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
         { href: "/maintenance",                  label: t("nav.maintenance"),        show: can("accessMaintenance") },
         { href: "/maintenance/report-templates", label: t("nav.maintenanceReports"), show: isAdmin || can("accessMaintenance") },
       ].filter(i => i.show),
+    },
+    {
+      id: "obligations", label: "التجديدات والمسيّر", icon: CalendarClock,
+      show: isAdmin || ["executive_manager", "financial_manager", "general_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), href: "/obligations",
     },
     {
       id: "caseFiles", label: "الملفات والاعتمادات", icon: FolderOpen,

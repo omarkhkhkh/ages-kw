@@ -254,6 +254,18 @@ export const caseFilesApi = {
     apiFetch<any>("/api/case-files/contract-variances", { method: "POST", body: JSON.stringify(d) }),
 };
 
+// ── الالتزامات المتجددة + مسيّر الرواتب ─────────────────────────────────────
+export const obligationsApi = {
+  board: (windowDays?: number) => apiFetch<any[]>(`/api/obligations/board${windowDays ? `?windowDays=${windowDays}` : ""}`),
+  dispatch: (d: { kind: string; id: number; docType?: string; assigneeUserId: number }) => apiFetch<any>("/api/obligations/dispatch", { method: "POST", body: JSON.stringify(d) }),
+  complete: (d: { taskId: number; newExpiryDate: string; amount: string | number; notes?: string }) => apiFetch<any>("/api/obligations/complete", { method: "POST", body: JSON.stringify(d) }),
+  payroll: (runId?: number) => apiFetch<any>(`/api/obligations/payroll${runId ? `?runId=${runId}` : ""}`),
+  payrollGenerate: (year: number, month: number) => apiFetch<any>("/api/obligations/payroll/generate", { method: "POST", body: JSON.stringify({ year, month }) }),
+  payrollPost: (id: number) => apiFetch<any>(`/api/obligations/payroll/${id}/post`, { method: "POST", body: "{}" }),
+  payrollUpdateItem: (id: number, salary: number) => apiFetch<any>(`/api/obligations/payroll/items/${id}`, { method: "PATCH", body: JSON.stringify({ salary }) }),
+  payrollDeleteItem: (id: number) => apiFetch<void>(`/api/obligations/payroll/items/${id}`, { method: "DELETE" }),
+};
+
 // ── RFQ Requests ───────────────────────────────────────────────────────────
 export const rfqApi = {
   list: (tenderId?: number) => apiFetch<any[]>(tenderId ? `/api/rfq-requests?tenderId=${tenderId}` : "/api/rfq-requests"),

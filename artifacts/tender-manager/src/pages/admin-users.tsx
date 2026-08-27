@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch, permissionsApi } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
+import { positionsApi } from "@/lib/api";
 import { Link } from "wouter";
 import {
   UserPlus, Trash2, Pencil, ShieldCheck, CheckCircle2, XCircle,
@@ -967,7 +968,7 @@ function PermissionsModal({ user, onClose }: { user: UserRow; onClose: () => voi
 }
 
 /* ── User Card ── */
-function UserCard({ u, me, onEdit, onDelete, onViewProfile, onViewPermissions }: { u: UserRow; me: any; onEdit: () => void; onDelete: () => void; onViewProfile: () => void; onViewPermissions: () => void }) {
+function UserCard({ u, me, onEdit, onDelete, onViewProfile, onViewPositions, onViewPermissions }: { u: UserRow; me: any; onEdit: () => void; onDelete: () => void; onViewProfile: () => void; onViewPositions: () => void; onViewPermissions: () => void }) {
   const isAdmin = u.role === "admin";
 
   return (
@@ -1004,6 +1005,10 @@ function UserCard({ u, me, onEdit, onDelete, onViewProfile, onViewPermissions }:
             onMouseEnter={e => (e.currentTarget.style.background = `${G}18`)}
             onMouseLeave={e => (e.currentTarget.style.background = "#fffbeb")}>
             <Eye size={13} /> الملف
+          </button>
+          <button onClick={onViewPositions} title="القبعات (المناصب)"
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#fdf8ec", color: GD, border: `1px solid ${G}40`, cursor: "pointer", fontFamily: "inherit" }}>
+            <KeyRound size={13} /> القبعات
           </button>
           {u.role !== "admin" && (
             <button onClick={onViewPermissions} title="صلاحيات السجلات"
@@ -1075,6 +1080,62 @@ function UserCard({ u, me, onEdit, onDelete, onViewProfile, onViewPermissions }:
   );
 }
 
+
+/* ── نافذة القبعات: منح/سحب المناصب مع سجل دائم — القبعة تضبط الصلاحيات على حزمتها ── */
+function PositionsModal({ user, onClose }: { user: UserRow; onClose: () => void }) {
+  const qc = useQueryClient();
+  const { data: allPositions = [] } = useQuery<any[]>({ queryKey: ["positions"], queryFn: () => positionsApi.list() });
+  const { data: mine } = useQuery<{ positions: string[] }>({ queryKey: ["user-positions", user.id], queryFn: () => positionsApi.ofUser(user.id) });
+  const { data: audit = [] } = useQuery<any[]>({ queryKey: ["positions-audit"], queryFn: () => positionsApi.audit() });
+  const held = mine?.positions ?? [];
+  const inv = () => { qc.invalidateQueries({ queryKey: ["user-positions", user.id] }); qc.invalidateQueries({ queryKey: ["positions"] }); qc.invalidateQueries({ queryKey: ["positions-audit"] }); qc.invalidateQueries({ queryKey: ["admin-users"] }); };
+  const grantMut = useMutation({ mutationFn: (key: string) => positionsApi.grant(user.id, key), onSuccess: inv, onError: (e: any) => alert(e.message) });
+  const revokeMut = useMutation({ mutationFn: (key: string) => positionsApi.revoke(user.id, key), onSuccess: inv, onError: (e: any) => alert(e.message) });
+  const userAudit = audit.filter((a) => a.targetName === user.fullName).slice(0, 8);
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(11,26,16,.45)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div dir="rtl" onClick={(e) => e.stopPropagation()} style={{ background: "white", borderRadius: 16, border: `1.5px solid ${G}33`, width: "min(620px,100%)", maxHeight: "88vh", overflowY: "auto", padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 800, color: GR, margin: 0 }}>القبعات — {user.fullName}</h2>
+          <button onClick={onClose} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 6, cursor: "pointer", display: "inline-flex" }}><XCircle size={15} color="#64748b" /></button>
+        </div>
+        <p style={{ fontSize: 12, color: "#9ca3af", margin: "0 0 14px" }}>أول قبعة تضبط صلاحيات المستخدم على حزمتها («القبعة تحدد ما يرى»)، واللاحقة تضيف فوقها، والسحب يسحب ما لا تغطيه قبعة باقية. كل منح وسحب يُقيَّد في السجل باسم فاعله.</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {allPositions.map((pos) => {
+            const has = held.includes(pos.key);
+            const managerial = pos.tier === "إداري";
+            return (
+              <div key={pos.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, border: `1.5px solid ${has ? G + "55" : "#f0ead8"}`, background: has ? "#fdf8ec" : "white", borderRadius: 12, padding: "10px 14px" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <b style={{ fontSize: 13.5, color: GR }}>{pos.nameAr}</b>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 9px", borderRadius: 20, background: managerial ? "#f5f3ff" : "#f0fdf4", color: managerial ? "#7c3aed" : "#16a34a" }}>{pos.tier}</span>
+                    {(pos.holders ?? []).length > 0 && <span style={{ fontSize: 11, color: "#9ca3af" }}>يحملها: {(pos.holders ?? []).map((h: any) => h.fullName).join("، ")}</span>}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "#6b7280", marginTop: 2 }}>{pos.description}</div>
+                </div>
+                {has
+                  ? <button disabled={revokeMut.isPending} onClick={() => revokeMut.mutate(pos.key)} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: "#fff1f2", color: "#dc2626", border: "1px solid #fecaca", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>سحب</button>
+                  : <button disabled={grantMut.isPending} onClick={() => grantMut.mutate(pos.key)} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg,${G},${GD})`, color: "white", border: "none", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>منح</button>}
+              </div>
+            );
+          })}
+        </div>
+        {userAudit.length > 0 && (
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: "#9ca3af", letterSpacing: 1, marginBottom: 6 }}>آخر الحركات على قبعاته</div>
+            {userAudit.map((a) => (
+              <div key={a.id} style={{ fontSize: 12, color: "#6b7280", padding: "3px 0", borderBottom: "1px dashed #f0ead8" }}>
+                <b style={{ color: a.action === "منح" ? "#16a34a" : "#dc2626" }}>{a.action}</b> {a.positionName} — بواسطة {a.actorName ?? "؟"} · {formatKuwaitDateTime(a.createdAt)}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Page ── */
 export default function AdminUsers() {
   const { user: me } = useAuth();
@@ -1084,6 +1145,7 @@ export default function AdminUsers() {
   const [form,          setForm]          = useState({ ...defaultForm });
   const [newPass,       setNewPass]       = useState("");
   const [profileUserId,     setProfileUserId]     = useState<number | null>(null);
+  const [positionsUser,     setPositionsUser]     = useState<UserRow | null>(null);
   const [permissionsUser,   setPermissionsUser]   = useState<UserRow | null>(null);
 
   const { data: users = [], isLoading } = useQuery<UserRow[]>({
@@ -1166,6 +1228,11 @@ export default function AdminUsers() {
         <EmployeeProfileModal userId={profileUserId} onClose={() => setProfileUserId(null)} />
       )}
 
+      {/* Positions (hats) modal */}
+      {positionsUser !== null && (
+        <PositionsModal user={positionsUser} onClose={() => setPositionsUser(null)} />
+      )}
+
       {/* Record permissions modal */}
       {permissionsUser !== null && (
         <PermissionsModal user={permissionsUser} onClose={() => setPermissionsUser(null)} />
@@ -1244,6 +1311,7 @@ export default function AdminUsers() {
               onEdit={() => { closeAll(); setEditing({ ...u }); }}
               onDelete={() => { if (confirm(`حذف ${u.fullName}؟`)) deleteMut.mutate(u.id); }}
               onViewProfile={() => setProfileUserId(u.id)}
+              onViewPositions={() => setPositionsUser(u)}
               onViewPermissions={() => setPermissionsUser(u)}
             />
           ))}

@@ -27,6 +27,8 @@ const TABS = [
 export default function ContractMaintenance() {
   const { user } = useAuth();
   const canView = user?.role === "admin" || !!(user as any)?.accessMaintenance;
+  // قاعدة الإخفاء الكامل: الفوترة أدمن-فقط فلا تُعرض لغيره
+  const visibleTabs = TABS.filter((t) => t.key !== "billing" || user?.role === "admin");
   const [tab, setTab] = useState("visits");
   if (!canView) return <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>هذه الصفحة لمن لديه صلاحية الصيانة.</div>;
 
@@ -40,7 +42,7 @@ export default function ContractMaintenance() {
       <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 18px 14px" }}>الزيارات وبنودها · العقود ومصفوفة التغطية · الهيكل التعليمي · السجلات الرسمية · التحليلات.</p>
 
       <div style={{ display: "flex", gap: 4, background: "white", borderRadius: 14, border: "1.5px solid #f0ead8", padding: 6, marginBottom: 18, flexWrap: "wrap" }}>
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none", background: tab === t.key ? `linear-gradient(135deg,${G},${GD})` : "transparent", color: tab === t.key ? "white" : "#374151" }}>
             <t.icon size={15} /> {t.label}
           </button>

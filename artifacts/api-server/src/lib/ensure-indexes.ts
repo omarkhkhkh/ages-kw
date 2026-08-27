@@ -658,6 +658,44 @@ const MIGRATIONS = [
    ON CONFLICT (doc_type, year) DO UPDATE
       SET last_number = GREATEST(maintenance_document_sequences.last_number, EXCLUDED.last_number)`,
 
+
+  /* ═══ الخارطة الموحّدة — المرحلة ١: المناصب (القبعات) + الحوكمة + سجل المنح ═══
+     المنصب قبعة تُلبَس فوق مصفوفة الصلاحيات القائمة: منحُها يطبّق حزمتها على المصفوفة،
+     وسحبُها يسحب ما لا تغطيه قبعة أخرى. المنح محكوم: الإدارية للمدير العام وحده،
+     والتشغيلية له وللمدير التنفيذي — وكل منح/سحب يُقيَّد في سجل دائم. */
+  `CREATE TABLE IF NOT EXISTS positions (
+     id serial PRIMARY KEY,
+     key text NOT NULL UNIQUE,
+     name_ar text NOT NULL,
+     tier text NOT NULL CHECK (tier IN ('إداري','تشغيلي')),
+     description text,
+     sort_order smallint NOT NULL DEFAULT 0)`,
+  `INSERT INTO positions (key, name_ar, tier, description, sort_order) VALUES
+     ('general_manager',   'المدير العام',    'إداري',  'القرار النهائي: قبول أو رفض — وتجاوز مسجَّل لأي حاجز', 1),
+     ('executive_manager', 'المدير التنفيذي', 'إداري',  'يراقب الفرق، يصنع جدول أسعار أوامر الشراء، يوزّع وينقل', 2),
+     ('financial_manager', 'المدير المالي',   'إداري',  'يراجع كل ورقة تسعير ويوقف الملفات ذات الأثر المالي', 3),
+     ('consultant',        'مستشار',          'تشغيلي', 'يرفع المناقصات والممارسات ويختار العروض ويبني التسعير المبدئي', 4),
+     ('researcher',        'باحث',            'تشغيلي', 'يجمع عروض الأسعار والمواصفات للبنود الخارجية — لا يسعّر', 5),
+     ('delegate',          'مندوب',           'تشغيلي', 'الكتب والمراجعات والتجديدات وجمع أسعار البنود المحلية', 6),
+     ('transport_worker',  'موظف نقل',        'تشغيلي', 'ينفّذ جدول المتابعة اليومي بشروط كل مهمة', 7),
+     ('maintenance_worker','موظف صيانة',      'تشغيلي', 'ينفّذ أوامر الصيانة والزيارات المسندة له', 8)
+   ON CONFLICT (key) DO NOTHING`,
+  `CREATE TABLE IF NOT EXISTS user_positions (
+     id serial PRIMARY KEY,
+     user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     position_id integer NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+     granted_by integer REFERENCES users(id) ON DELETE SET NULL,
+     granted_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_user_position UNIQUE (user_id, position_id))`,
+  `CREATE INDEX IF NOT EXISTS idx_user_positions_user ON user_positions (user_id)`,
+  `CREATE TABLE IF NOT EXISTS position_audit_log (
+     id serial PRIMARY KEY,
+     action text NOT NULL CHECK (action IN ('منح','سحب')),
+     user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     position_id integer NOT NULL REFERENCES positions(id) ON DELETE CASCADE,
+     actor_user_id integer REFERENCES users(id) ON DELETE SET NULL,
+     created_at timestamp NOT NULL DEFAULT now())`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

@@ -208,6 +208,15 @@ export const maintenanceServiceApi = {
   },
 };
 
+// ── المناصب (القبعات) ────────────────────────────────────────────────────────
+export const positionsApi = {
+  list: () => apiFetch<any[]>("/api/positions"),
+  ofUser: (userId: number) => apiFetch<{ positions: string[] }>(`/api/positions/user/${userId}`),
+  audit: () => apiFetch<any[]>("/api/positions/audit"),
+  grant: (userId: number, positionKey: string) => apiFetch<any>("/api/positions/grant", { method: "POST", body: JSON.stringify({ userId, positionKey }) }),
+  revoke: (userId: number, positionKey: string) => apiFetch<any>("/api/positions/revoke", { method: "POST", body: JSON.stringify({ userId, positionKey }) }),
+};
+
 // ── RFQ Requests ───────────────────────────────────────────────────────────
 export const rfqApi = {
   list: (tenderId?: number) => apiFetch<any[]>(tenderId ? `/api/rfq-requests?tenderId=${tenderId}` : "/api/rfq-requests"),

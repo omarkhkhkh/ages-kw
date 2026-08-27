@@ -38,6 +38,8 @@ declare module "express-session" {
     permissions: Record<string, ModuleActions>;
     // خصوصية السجلات الرئيسية: 'own' | 'all'
     recordViewScope: string;
+    // القبعات (مفاتيح المناصب) — تُحمَّل عند الدخول وتقود هوية سير العمل
+    positions: string[];
   }
 }
 

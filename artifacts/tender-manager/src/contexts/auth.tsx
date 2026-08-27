@@ -37,6 +37,8 @@ export interface AuthUser {
   correspondenceViewAll: boolean;
   permissions?: Record<string, { view: boolean; add: boolean; edit: boolean; del: boolean }>;
   recordViewScope?: string;
+  // القبعات (مفاتيح المناصب) — قاعدة «ما لا تملكه لا تراه» تُبنى عليها
+  positions?: string[];
 }
 
 interface AuthContextValue {

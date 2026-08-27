@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { positionsOfUser } from "./positions";
 import bcrypt from "bcryptjs";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -48,6 +49,7 @@ function buildUserResponse(user: any) {
     correspondenceViewAll: user.correspondenceViewAll,
     permissions: user.permissions ?? synthesizePermissions(user),
     recordViewScope: user.recordViewScope ?? "own",
+    positions: user.positions ?? [],
   };
 }
 
@@ -95,6 +97,7 @@ router.post("/login", async (req, res) => {
   req.session.correspondenceViewAll = user.correspondenceViewAll ?? false;
   req.session.permissions = user.permissions ?? synthesizePermissions(user);
   req.session.recordViewScope = user.recordViewScope ?? "own";
+  try { req.session.positions = await positionsOfUser(user.id); } catch { req.session.positions = []; }
 
   // Log login activity
   logActivity({
@@ -106,7 +109,7 @@ router.post("/login", async (req, res) => {
     ipAddress: (req.headers["x-forwarded-for"] as string) || req.ip || undefined,
   }).catch(() => {});
 
-  res.json(buildUserResponse(user));
+  res.json(buildUserResponse({ ...user, positions: req.session.positions ?? [] }));
 });
 
 // POST /api/auth/logout
@@ -157,6 +160,7 @@ router.get("/me", (req, res) => {
     accessOpportunities: req.session.accessOpportunities ?? true,
     opportunityCanPrice: req.session.opportunityCanPrice ?? false,
     opportunityCanApprove: req.session.opportunityCanApprove ?? false,
+    positions: req.session.positions ?? [],
     taskViewScope: req.session.taskViewScope ?? "own",
     taskCanApprove: req.session.taskCanApprove ?? false,
     correspondenceViewAll: req.session.correspondenceViewAll ?? false,

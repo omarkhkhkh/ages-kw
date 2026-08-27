@@ -1178,6 +1178,8 @@ export default function MaintenanceIndex() {
 
   const [activeTab, setActiveTab] = useState<"dashboard" | "equipment" | "workOrders" | "preventive" | "inventory" | "visits" | "contracts" | "hierarchy" | "registers" | "billing" | "analytics">("dashboard");
 
+  // قاعدة الإخفاء الكامل: كل أفعال الفوترة أدمن-فقط في الخادم — فالتبويب لا يُعرض لغيره أصلًا
+  const isAdminUser = user?.role === "admin";
   const TABS = [
     { key: "dashboard", label: "لوحة التحكم", icon: LayoutDashboard },
     { key: "equipment", label: "المعدات", icon: Boxes },
@@ -1188,7 +1190,7 @@ export default function MaintenanceIndex() {
     { key: "contracts", label: "عقود الصيانة", icon: FileText },
     { key: "hierarchy", label: "الهيكل والكتالوج", icon: MapPin },
     { key: "registers", label: "السجلات", icon: ScrollText },
-    { key: "billing", label: "الفوترة", icon: Receipt },
+    ...(isAdminUser ? [{ key: "billing", label: "الفوترة", icon: Receipt } as const] : []),
     { key: "analytics", label: "التحليلات", icon: BarChart3 },
   ] as const;
 

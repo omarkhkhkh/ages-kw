@@ -148,6 +148,10 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       ].filter(i => i.show),
     },
     {
+      id: "financialCenter", label: "المركز المالي", icon: Landmark,
+      show: isAdmin || ["executive_manager", "financial_manager", "general_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), href: "/financial-center",
+    },
+    {
       id: "obligations", label: "التجديدات والمسيّر", icon: CalendarClock,
       show: isAdmin || ["executive_manager", "financial_manager", "general_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), href: "/obligations",
     },

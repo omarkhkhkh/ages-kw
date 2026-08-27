@@ -816,6 +816,33 @@ const MIGRATIONS = [
      expense_id integer REFERENCES finance_expenses(id) ON DELETE SET NULL,
      CONSTRAINT uq_payroll_worker UNIQUE (run_id, worker_id))`,
 
+
+  /* ═══ الخارطة الموحّدة — المرحلة ٧ (الأخيرة): الميزانية ذات الأسنان ═══
+     ميزانية سنوية لكل مركز مقسمة على فئات المصروف — ثلاثية حية (مخصص/مصروف/متبقٍ)،
+     إنذار عند ٨٠٪، وعند التجاوز يتحول الصرف لطلب تجاوز على طاولة المدير المالي. */
+  `CREATE TABLE IF NOT EXISTS cost_center_category_budgets (
+     id serial PRIMARY KEY,
+     cost_center_id integer NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+     year integer NOT NULL,
+     category text NOT NULL,
+     amount numeric(15,3) NOT NULL DEFAULT 0,
+     created_at timestamp NOT NULL DEFAULT now(),
+     updated_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_cccb UNIQUE (cost_center_id, year, category))`,
+  `CREATE TABLE IF NOT EXISTS budget_overrun_requests (
+     id serial PRIMARY KEY,
+     cost_center_id integer NOT NULL REFERENCES cost_centers(id) ON DELETE CASCADE,
+     category text NOT NULL,
+     year integer NOT NULL,
+     amount numeric(15,3) NOT NULL,
+     reason text NOT NULL,
+     status text NOT NULL DEFAULT 'معلق' CHECK (status IN ('معلق','موافق','مرفوض','مستهلك')),
+     requested_by integer REFERENCES users(id) ON DELETE SET NULL,
+     decided_by integer REFERENCES users(id) ON DELETE SET NULL,
+     decided_at timestamp,
+     created_at timestamp NOT NULL DEFAULT now())`,
+  `CREATE INDEX IF NOT EXISTS idx_bor_status ON budget_overrun_requests (status)`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

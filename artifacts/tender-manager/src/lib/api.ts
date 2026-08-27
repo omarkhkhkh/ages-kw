@@ -266,6 +266,21 @@ export const obligationsApi = {
   payrollDeleteItem: (id: number) => apiFetch<void>(`/api/obligations/payroll/items/${id}`, { method: "DELETE" }),
 };
 
+// ── المركز المالي — الأبواب الخمسة ──────────────────────────────────────────
+export const financialCenterApi = {
+  liquidity: (months?: number, safety?: number) => apiFetch<any>(`/api/financial-center/liquidity?months=${months ?? 6}${safety != null ? `&safety=${safety}` : ""}`),
+  readiness: (year?: number) => apiFetch<any>(`/api/financial-center/readiness${year ? `?year=${year}` : ""}`),
+  alerts: () => apiFetch<any>("/api/financial-center/alerts"),
+  categoryBudgets: (year?: number) => apiFetch<any[]>(`/api/financial-center/category-budgets${year ? `?year=${year}` : ""}`),
+  saveCategoryBudget: (d: { costCenterId: number; category: string; amount: number; year?: number }) => apiFetch<any>("/api/financial-center/category-budgets", { method: "POST", body: JSON.stringify(d) }),
+  deleteCategoryBudget: (id: number) => apiFetch<void>(`/api/financial-center/category-budgets/${id}`, { method: "DELETE" }),
+  createOverrun: (d: { costCenterId: number; category: string; amount: number; reason: string; year?: number }) => apiFetch<any>("/api/financial-center/overrun-requests", { method: "POST", body: JSON.stringify(d) }),
+  overruns: (status?: string) => apiFetch<any[]>(`/api/financial-center/overrun-requests${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  approveOverrun: (id: number) => apiFetch<any>(`/api/financial-center/overrun-requests/${id}/approve`, { method: "POST", body: "{}" }),
+  rejectOverrun: (id: number) => apiFetch<any>(`/api/financial-center/overrun-requests/${id}/reject`, { method: "POST", body: "{}" }),
+  cfoDesk: () => apiFetch<any>("/api/financial-center/cfo-desk"),
+};
+
 // ── RFQ Requests ───────────────────────────────────────────────────────────
 export const rfqApi = {
   list: (tenderId?: number) => apiFetch<any[]>(tenderId ? `/api/rfq-requests?tenderId=${tenderId}` : "/api/rfq-requests"),

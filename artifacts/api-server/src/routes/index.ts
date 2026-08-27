@@ -35,6 +35,7 @@ import positionsRouter from "./positions";
 import workTransfersRouter from "./work-transfers";
 import caseFilesRouter from "./case-files";
 import obligationsRouter from "./obligations";
+import financialCenterRouter from "./financial-center";
 import pricingRouter from "./pricing";
 import opportunitiesRouter from "./opportunities";
 import costCentersRouter from "./cost-centers";
@@ -85,6 +86,9 @@ router.use("/case-files", caseFilesRouter);
 
 // الالتزامات المتجددة + مسيّر الرواتب — الحوكمة داخل الراوتر حسب القبعات
 router.use("/obligations", obligationsRouter);
+
+// المركز المالي — الأبواب الخمسة (الحوكمة داخل الراوتر حسب القبعات)
+router.use("/financial-center", financialCenterRouter);
 
 // Notifications — every authenticated user reads/marks-read only their own
 router.use("/notifications", notificationsRouter);

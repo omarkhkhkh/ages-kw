@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { hasModuleAction } from "../middleware/auth";
 import { eq, and, desc, sql } from "drizzle-orm";
 import {
   db, pool,
@@ -182,11 +183,62 @@ router.get("/expenses", async (req: Request, res: Response) => {
   }
 });
 
+/** أسنان الميزانية (الخارطة م٧): يستنتج مركز المصروف بنفس أولوية trigger التصنيف،
+ *  فإن وُجدت ميزانية فئة لذلك المركز والسنة واستُهلكت، يُرفض الصرف برقم 422 إلا
+ *  بطلب تجاوز موافَق (يُستهلك مرة واحدة) — والمدير المالي والعام يمرّان مباشرة. */
+async function inferExpenseCenterId(b: any): Promise<number | null> {
+  let name: string | null = null;
+  if (b.maintenanceWorkOrderId) name = "الصيانة";
+  else if (b.transportationOrderId || b.vehicleId) name = "النقل";
+  else if (b.workerId) {
+    const { rows } = await pool.query(`SELECT assigned_module AS m FROM workers WHERE id = $1`, [Number(b.workerId)]);
+    name = rows[0]?.m === "maintenance" ? "الصيانة" : rows[0]?.m === "transportation" ? "النقل" : "عام/غير موزّع";
+  } else name = "عام/غير موزّع";
+  if (!name) return null;
+  const { rows } = await pool.query(`SELECT id FROM cost_centers WHERE name = $1`, [name]);
+  return rows[0]?.id ?? null;
+}
+async function budgetTeethCheck(req: Request, b: any): Promise<{ blocked: boolean; msg?: string; centerId?: number }> {
+  const centerId = await inferExpenseCenterId(b);
+  if (!centerId) return { blocked: false };
+  const category = b.category || "general";
+  const year = new Date().getFullYear();
+  const { rows: bud } = await pool.query(
+    `SELECT b.amount::numeric AS allocated,
+            COALESCE((SELECT SUM(e.amount) FROM finance_expenses e
+                      WHERE e.cost_center_id = b.cost_center_id AND e.category = b.category
+                        AND EXTRACT(YEAR FROM COALESCE(e.transaction_date, e.created_at))::int = b.year),0)::numeric AS spent
+     FROM cost_center_category_budgets b WHERE b.cost_center_id = $1 AND b.category = $2 AND b.year = $3`,
+    [centerId, category, year]);
+  if (!bud.length) return { blocked: false, centerId };
+  const allocated = Number(bud[0].allocated), spent = Number(bud[0].spent);
+  if (spent + Number(b.amount) <= allocated) return { blocked: false, centerId };
+  // ميزانية الفئة مستهلكة — المالي والعام يمرّان، وغيرهما يحتاج طلب تجاوز موافَقًا
+  const { rows: hats } = await pool.query(
+    `SELECT 1 FROM user_positions up JOIN positions p ON p.id = up.position_id
+     WHERE up.user_id = $1 AND p.key IN ('financial_manager','general_manager') LIMIT 1`, [req.session.userId]);
+  if (req.session.role === "admin" || hats.length) return { blocked: false, centerId };
+  if (b.overrunRequestId) {
+    const { rows: ok } = await pool.query(
+      `UPDATE budget_overrun_requests SET status = 'مستهلك'
+       WHERE id = $1 AND status = 'موافق' AND cost_center_id = $2 AND category = $3 AND year = $4 AND amount >= $5
+       RETURNING id`,
+      [Number(b.overrunRequestId), centerId, category, year, Number(b.amount)]);
+    if (ok.length) return { blocked: false, centerId };
+  }
+  return { blocked: true, msg: `ميزانية «${category}» لهذا المركز مستهلكة (${spent.toFixed(3)}/${allocated.toFixed(3)}) — قدّم طلب تجاوز للمدير المالي`, centerId };
+}
+
 router.post("/expenses", async (req: Request, res: Response) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  // الخارطة م٧: الصرف لمن يملك إضافة المالية بالمصفوفة (حزم القبعات تمنحها عمدًا) — وأسنان الميزانية تحكم غير المالي/العام
+  if (!isAdmin(req) && !hasModuleAction(req, "accessFinance", "add")) return res.status(403).json({ error: "الصرف لمن يملك صلاحية الإضافة في المالية" });
   try {
     const { contractId, purchaseOrderId, maintenanceWorkOrderId, transportationOrderId, vehicleId, workerId, description, amount, dueDate, paidDate, status, category, vendor, notes } = req.body as any;
     if (!description?.trim() || !amount) return res.status(400).json({ error: "الوصف والمبلغ مطلوبان" });
+    // أسنان الميزانية (الخارطة م٧): الفئة المستهلكة توقف الصرف حتى موافقة المالي
+    const teeth = await budgetTeethCheck(req, req.body);
+    if (teeth.blocked) return res.status(422).json({ error: teeth.msg, needsOverrunRequest: true });
+
     // حارس ملف تشغيل العقد (الخارطة م٥): مصروف صيانة/نقل على عقد لا يشمله ملفُه يُرفض —
     // إما خطأ إدخال وإما توسّعٌ فعلي يستدعي تحديث الملف بقرار واعٍ لا بتسرب صامت.
     if (contractId && (maintenanceWorkOrderId || transportationOrderId)) {

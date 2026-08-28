@@ -298,6 +298,7 @@ export default function PracticesList() {
                         <span style={{ display: "flex", alignItems: "center", gap: 5, color: urgent ? "#dc2626" : "#374151", fontWeight: urgent ? 800 : 500 }}>
                           {urgent && <AlertTriangle size={12} />}
                           {p.deadline ? formatDate(p.deadline) : "—"}
+                          {(p as any).bondAlert && <span title="الكفالة الأولية لم تصدر">🛡️!</span>}
                         </span>
                       </td>
                       <td style={{ ...S.td, fontFamily: "monospace", whiteSpace: "nowrap" }}>{p.offerValue ? formatCurrency(p.offerValue) : "—"}</td>
@@ -305,6 +306,13 @@ export default function PracticesList() {
                         <span style={{ padding: "3px 11px", borderRadius: 999, fontSize: 11, fontWeight: 800, background: hex.bg, color: hex.color, border: `1px solid ${hex.border}`, whiteSpace: "nowrap" }}>
                           {STATUS_ARABIC[p.status] ?? p.status}
                         </span>
+                        {(p as any).caseStatus && (
+                          <div style={{ marginTop: 4 }}>
+                            <span style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 9px", borderRadius: 20, background: (p as any).caseStatus === "موقوف ماليًا" ? "#fff1f2" : (p as any).caseStatus === "معتمد" ? "#f0fdf4" : "#fdf8ec", color: (p as any).caseStatus === "موقوف ماليًا" ? "#dc2626" : (p as any).caseStatus === "معتمد" ? "#16a34a" : "#A87C20", whiteSpace: "nowrap" }}>
+                              📁 {(p as any).caseStatus}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td style={S.td} onClick={(e) => e.stopPropagation()}>
                         <AssignedEmployee value={p.assignedUserId} displayName={p.assignedName ?? p.responsibleEmployee} compact

@@ -28,6 +28,13 @@ export const practicesTable = pgTable("practices", {
   // future-project specific
   expectedValue:        numeric("expected_value", { precision: 15, scale: 3 }),
   finalBondValue:       numeric("final_bond_value", { precision: 15, scale: 3 }),
+  // الكفالة الأولية — نفس حزمة المناقصات
+  bondValue:            numeric("bond_value", { precision: 15, scale: 3 }),
+  initialBondIssued:    boolean("initial_bond_issued").notNull().default(false),
+  initialBondNumber:    text("initial_bond_number"),
+  initialBondIssueDate: date("initial_bond_issue_date"),
+  initialBondBank:      text("initial_bond_bank"),
+  initialBondGuaranteeId: integer("initial_bond_guarantee_id"),
   notes:                text("notes"),
   // Assigned team member
   responsibleEmployee:  text("responsible_employee"),

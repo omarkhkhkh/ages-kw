@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { tendersExtraApi, apiFetch } from "@/lib/api";
+import { tendersExtraApi, practicesExtraApi, apiFetch } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Users, ShieldCheck, AlertTriangle } from "lucide-react";
@@ -16,16 +16,17 @@ const head: CSSProperties = { padding: "12px 18px", background: "#fdf8ec", borde
 const ROLES = ["المستشار المسؤول", "منسق مشتريات", "منسق مالي", "منسق نقل"] as const;
 
 /** المسؤوليات الحقيقية: أدوار لأشخاص — تقود الرؤية («كل مسؤول يرى مالته») والإشعار والأحمال */
-export function AssignmentsCard({ tenderId }: { tenderId: number }) {
+export function AssignmentsCard({ tenderId, entityType = "tender" }: { tenderId: number; entityType?: "tender" | "practice" }) {
+  const xApi = entityType === "practice" ? practicesExtraApi : tendersExtraApi;
   const { user } = useAuth();
   const qc = useQueryClient(); const { toast } = useToast();
   const positions = user?.positions ?? [];
   const canManage = user?.role === "admin" || ["general_manager", "executive_manager", "financial_manager"].some((k) => positions.includes(k));
-  const { data: assignments = [] } = useQuery<any[]>({ queryKey: ["tender-assignments", tenderId], queryFn: () => tendersExtraApi.assignments(tenderId) });
+  const { data: assignments = [] } = useQuery<any[]>({ queryKey: ["entity-assignments", entityType, tenderId], queryFn: () => xApi.assignments(tenderId) });
   const { data: directory = [] } = useQuery<any[]>({ queryKey: ["users-directory"], queryFn: () => apiFetch<any[]>("/api/users/directory") });
   const setM = useMutation({
-    mutationFn: ({ role, userId }: { role: string; userId: number }) => tendersExtraApi.assign(tenderId, role, userId),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["tender-assignments", tenderId] }); toast({ title: "✅ أُسند الدور — وصل الإشعار لصاحبه" }); },
+    mutationFn: ({ role, userId }: { role: string; userId: number }) => xApi.assign(tenderId, role, userId),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["entity-assignments", entityType, tenderId] }); toast({ title: "✅ أُسند الدور — وصل الإشعار لصاحبه" }); },
     onError: (e: any) => toast({ title: "تعذّر الإسناد", description: e.message, variant: "destructive" }),
   });
   const byRole = (r: string) => assignments.find((a) => a.role === r);
@@ -58,7 +59,8 @@ export function AssignmentsCard({ tenderId }: { tenderId: number }) {
 }
 
 /** الكفالة الأولية: التتبع + التسجيل في الضمانات البنكية + إنذار ≤٣ أيام */
-export function BondCard({ tender, onChanged }: { tender: any; onChanged: () => void }) {
+export function BondCard({ tender, onChanged, entityType = "tender" }: { tender: any; onChanged: () => void; entityType?: "tender" | "practice" }) {
+  const xApi = entityType === "practice" ? practicesExtraApi : tendersExtraApi;
   const { user } = useAuth();
   const { toast } = useToast();
   const [f, setF] = useState({ guaranteeNumber: "", bankName: "", issueDate: "", expiryDate: "" });
@@ -68,7 +70,7 @@ export function BondCard({ tender, onChanged }: { tender: any; onChanged: () => 
   const daysLeft = tender.deadline ? Math.ceil((new Date(tender.deadline).getTime() - Date.now()) / 86400000) : null;
   const alert = !issued && tender.bondValue && daysLeft != null && daysLeft <= 3 && daysLeft >= -30;
   const issueM = useMutation({
-    mutationFn: () => tendersExtraApi.issueBond(tender.id, { guaranteeNumber: f.guaranteeNumber, bankName: f.bankName, issueDate: f.issueDate || undefined, expiryDate: f.expiryDate || undefined }),
+    mutationFn: () => xApi.issueBond(tender.id, { guaranteeNumber: f.guaranteeNumber, bankName: f.bankName, issueDate: f.issueDate || undefined, expiryDate: f.expiryDate || undefined }),
     onSuccess: () => { onChanged(); toast({ title: "✅ سُجّلت الكفالة في الضمانات البنكية" }); },
     onError: (e: any) => toast({ title: "تعذّر التسجيل", description: e.message, variant: "destructive" }),
   });

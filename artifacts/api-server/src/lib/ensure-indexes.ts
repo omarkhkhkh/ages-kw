@@ -874,6 +874,24 @@ const MIGRATIONS = [
   `ALTER TABLE tenders ADD COLUMN IF NOT EXISTS initial_bond_bank text`,
   `ALTER TABLE tenders ADD COLUMN IF NOT EXISTS initial_bond_guarantee_id integer REFERENCES bank_guarantees(id) ON DELETE SET NULL`,
 
+
+  /* ═══ حزمة الممارسات — نفس حزمة المناقصات: إسنادات + كفالة أولية ═══ */
+  `CREATE TABLE IF NOT EXISTS practice_assignments (
+     id serial PRIMARY KEY,
+     practice_id integer NOT NULL REFERENCES practices(id) ON DELETE CASCADE,
+     role text NOT NULL CHECK (role IN ('المستشار المسؤول','منسق مشتريات','منسق مالي','منسق نقل')),
+     user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     created_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_practice_role UNIQUE (practice_id, role))`,
+  `CREATE INDEX IF NOT EXISTS idx_pa_user ON practice_assignments (user_id)`,
+  `ALTER TABLE practices ADD COLUMN IF NOT EXISTS bond_value numeric(15,3)`,
+  `ALTER TABLE practices ADD COLUMN IF NOT EXISTS initial_bond_issued boolean NOT NULL DEFAULT false`,
+  `ALTER TABLE practices ADD COLUMN IF NOT EXISTS initial_bond_number text`,
+  `ALTER TABLE practices ADD COLUMN IF NOT EXISTS initial_bond_issue_date date`,
+  `ALTER TABLE practices ADD COLUMN IF NOT EXISTS initial_bond_bank text`,
+  `ALTER TABLE practices ADD COLUMN IF NOT EXISTS initial_bond_guarantee_id integer REFERENCES bank_guarantees(id) ON DELETE SET NULL`,
+  `ALTER TABLE bank_guarantees ADD COLUMN IF NOT EXISTS practice_id integer REFERENCES practices(id) ON DELETE SET NULL`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

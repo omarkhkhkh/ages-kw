@@ -1,6 +1,22 @@
 import { Router, type Request, type Response } from "express";
 import { desc, ilike, eq, or, sql, and, getTableColumns } from "drizzle-orm";
-import { db, practicesTable, insertPracticeSchema, updatePracticeSchema, usersTable } from "@workspace/db";
+import { db, pool, practicesTable, insertPracticeSchema, updatePracticeSchema, usersTable } from "@workspace/db";
+
+/* حزمة الممارسات: نفس حزمة المناقصات — المديرون يرون الكل وغيرهم «كل مسؤول يرى مالته» */
+async function isManagerHat(req: Request): Promise<boolean> {
+  if (req.session.role === "admin") return true;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM user_positions up JOIN positions p ON p.id = up.position_id
+     WHERE up.user_id = $1 AND p.key IN ('general_manager','executive_manager','financial_manager') LIMIT 1`,
+    [req.session.userId]);
+  return rows.length > 0;
+}
+async function isPracticeConsultant(req: Request, practiceId: number): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM practice_assignments WHERE practice_id = $1 AND role = 'المستشار المسؤول' AND user_id = $2`,
+    [practiceId, req.session.userId]);
+  return rows.length > 0;
+}
 import { ownRecordsOnly } from "../middleware/auth";
 
 const router = Router();
@@ -11,9 +27,12 @@ router.get("/", async (req: Request, res: Response) => {
     const { status, search } = req.query as Record<string, string>;
 
     const conditions: any[] = [];
-    // خصوصية السجلات: الموظف بنطاق 'own' يرى ما هو مُسنَد إليه فقط (وغير المُسنَد للمدير فقط)
-    if (ownRecordsOnly(req)) {
-      conditions.push(sql`${practicesTable.assignedUserId} = ${req.session.userId}`);
+    // «كل مسؤول يرى مالته»: الإسناد بالأدوار أو المسنَد القديم أو المنشئ — والمديرون يرون الكل
+    if (!(await isManagerHat(req))) {
+      const uid = req.session.userId;
+      conditions.push(sql`(${practicesTable.assignedUserId} = ${uid}
+        OR ${practicesTable.createdByUserId} = ${uid}
+        OR EXISTS (SELECT 1 FROM practice_assignments pa WHERE pa.practice_id = ${practicesTable.id} AND pa.user_id = ${uid}))`);
     }
     if (status && status !== "all") conditions.push(eq(practicesTable.status, status));
     if (search) conditions.push(or(
@@ -30,7 +49,28 @@ router.get("/", async (req: Request, res: Response) => {
     if (conditions.length > 0) query = query.where(and(...conditions));
 
     const rows = await query.orderBy(desc(practicesTable.createdAt));
-    return res.json(rows);
+    // إثراء: المستشار المسؤول (الأدوار) + حالة الملف + إنذار الكفالة
+    const ids = rows.map((r: any) => r.id);
+    const consultantOf = new Map<number, string>();
+    const caseStatusOf = new Map<number, string>();
+    if (ids.length) {
+      const { rows: cons } = await pool.query(
+        `SELECT pa.practice_id AS id, u.full_name AS name FROM practice_assignments pa
+         JOIN users u ON u.id = pa.user_id WHERE pa.role = 'المستشار المسؤول' AND pa.practice_id = ANY($1::int[])`, [ids]);
+      for (const c of cons) consultantOf.set(Number(c.id), c.name);
+      const { rows: cases } = await pool.query(
+        `SELECT entity_id AS id, status FROM case_files WHERE entity_type = 'practice' AND entity_id = ANY($1::int[])`, [ids]);
+      for (const c of cases) caseStatusOf.set(Number(c.id), c.status);
+    }
+    const today = Date.now();
+    return res.json(rows.map((r: any) => ({
+      ...r,
+      consultantName: consultantOf.get(r.id) ?? null,
+      caseStatus: caseStatusOf.get(r.id) ?? null,
+      bondAlert: !!(r.bondValue && !r.initialBondIssued && r.deadline
+        && (new Date(r.deadline).getTime() - today) / 86400000 <= 3
+        && !["submitted", "under_evaluation", "won", "lost", "cancelled"].includes(r.status)),
+    })));
   } catch {
     return res.status(500).json({ error: "فشل في جلب الممارسات" });
   }
@@ -135,6 +175,17 @@ router.patch("/:id", async (req: Request, res: Response) => {
       }
     }
 
+    // تغيير الحالة يدويًا: للمديرين الثلاثة والمستشار المسؤول (والمسنَد القديم) — ويُقيَّد في السيرة
+    if (req.body.status !== undefined && req.body.status !== existing.status) {
+      const allowed = (await isManagerHat(req)) || (await isPracticeConsultant(req, id))
+        || existing.assignedUserId === req.session.userId;
+      if (!allowed) return res.status(403).json({ error: "تغيير حالة الممارسة للمديرين أو المستشار المسؤول عنها" });
+      pool.query(
+        `INSERT INTO case_file_events (case_file_id, event, details, actor_user_id)
+         SELECT cf.id, 'تغيير حالة الممارسة يدويًا', $1, $2 FROM case_files cf
+         WHERE cf.entity_type = 'practice' AND cf.entity_id = $3`,
+        [`← ${req.body.status}`, req.session.userId ?? null, id]).catch(() => {});
+    }
     const data = updatePracticeSchema.parse(req.body) as Record<string, any>;
     // إعادة تعيين الموظف المسؤول للمدير فقط
     if (!isAdmin) delete data.assignedUserId;
@@ -148,6 +199,70 @@ router.patch("/:id", async (req: Request, res: Response) => {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
     return res.status(500).json({ error: "فشل في تحديث الممارسة" });
   }
+});
+
+/* ── الإسنادات الحقيقية (نفس أدوار المناقصات) ── */
+router.get("/:id/assignments", async (req: Request, res: Response) => {
+  const { rows } = await pool.query(
+    `SELECT pa.id, pa.role, pa.user_id AS "userId", u.full_name AS "userName"
+     FROM practice_assignments pa JOIN users u ON u.id = pa.user_id WHERE pa.practice_id = $1 ORDER BY pa.role`,
+    [Number(req.params.id)]);
+  return res.json(rows);
+});
+router.post("/:id/assignments", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const role = String(req.body?.role ?? "");
+  const userId = Number(req.body?.userId);
+  if (!["المستشار المسؤول", "منسق مشتريات", "منسق مالي", "منسق نقل"].includes(role) || !userId) {
+    return res.status(400).json({ error: "الدور والموظف مطلوبان" });
+  }
+  if (!(await isManagerHat(req))) return res.status(403).json({ error: "الإسناد للمديرين" });
+  const { rows: u } = await pool.query(`SELECT 1 FROM users WHERE id = $1 AND is_active = true`, [userId]);
+  if (!u.length) return res.status(404).json({ error: "الموظف غير موجود أو موقوف" });
+  await pool.query(
+    `INSERT INTO practice_assignments (practice_id, role, user_id) VALUES ($1,$2,$3)
+     ON CONFLICT (practice_id, role) DO UPDATE SET user_id = EXCLUDED.user_id, created_at = now()`, [id, role, userId]);
+  const { createNotification } = await import("./notifications");
+  createNotification({ recipientUserId: userId, type: "practice_assigned", message: `أُسندت إليك ممارسة بدور «${role}»`, link: `/practices/${id}` }).catch(() => {});
+  return res.status(201).json({ ok: true });
+});
+router.delete("/:id/assignments/:role", async (req: Request, res: Response) => {
+  if (!(await isManagerHat(req))) return res.status(403).json({ error: "الإسناد للمديرين" });
+  await pool.query(`DELETE FROM practice_assignments WHERE practice_id = $1 AND role = $2`,
+    [Number(req.params.id), String(req.params.role)]);
+  return res.status(204).send();
+});
+
+/* ── تسجيل الكفالة الأولية — ضمان «ابتدائية» مربوط بالممارسة ── */
+router.post("/:id/issue-bond", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const guaranteeNumber = String(req.body?.guaranteeNumber ?? "").trim();
+  const bankName = String(req.body?.bankName ?? "").trim();
+  if (!guaranteeNumber || !bankName) return res.status(400).json({ error: "رقم الكفالة والبنك مطلوبان" });
+  if (!(await isManagerHat(req)) && !(await isPracticeConsultant(req, id))) {
+    return res.status(403).json({ error: "تسجيل الكفالة للمديرين أو المستشار المسؤول" });
+  }
+  const { rows: tr } = await pool.query(`SELECT bond_value, initial_bond_issued FROM practices WHERE id = $1`, [id]);
+  if (!tr.length) return res.status(404).json({ error: "الممارسة غير موجودة" });
+  if (tr[0].initial_bond_issued) return res.status(409).json({ error: "الكفالة مسجَّلة بالفعل" });
+  const issueDate = req.body?.issueDate ? String(req.body.issueDate) : new Date().toISOString().slice(0, 10);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: g } = await client.query(
+      `INSERT INTO bank_guarantees (practice_id, guarantee_number, type, bank_name, amount, issue_date, expiry_date, status, assigned_user_id)
+       VALUES ($1,$2,'ابتدائية',$3,$4,$5,$6,'active',$7) RETURNING id`,
+      [id, guaranteeNumber, bankName, tr[0].bond_value, issueDate, req.body?.expiryDate || null, req.session.userId ?? null]);
+    await client.query(
+      `UPDATE practices SET initial_bond_issued = true, initial_bond_number = $1, initial_bond_bank = $2,
+              initial_bond_issue_date = $3, initial_bond_guarantee_id = $4, updated_at = now() WHERE id = $5`,
+      [guaranteeNumber, bankName, issueDate, g[0].id, id]);
+    await client.query("COMMIT");
+    return res.status(201).json({ ok: true, guaranteeId: g[0].id });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch { /* قد لا تكون بدأت */ }
+    console.error(e); return res.status(500).json({ error: "فشل تسجيل الكفالة" });
+  } finally { client.release(); }
 });
 
 /* ── DELETE ── */

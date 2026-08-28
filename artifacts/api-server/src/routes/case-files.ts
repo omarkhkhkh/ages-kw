@@ -5,8 +5,10 @@ import { createNotification } from "./notifications";
 
 /* دورة حياة المناقصة تمشي مع الملف: أحداث الملف تحدّث حالة المناقصة تلقائيًا */
 async function syncTenderStatus(entityType: string, entityId: number, status: string) {
-  if (entityType !== "tender") return; // الممارسات في حزمتها القادمة
-  try { await pool.query(`UPDATE tenders SET status = $1, updated_at = now() WHERE id = $2`, [status, entityId]); }
+  // الممارسات تشارك المناقصات دورة الحياة نفسها (وُحّدت قيمها سابقًا) — المزامنة للاثنتين
+  const table = entityType === "tender" ? "tenders" : entityType === "practice" ? "practices" : null;
+  if (!table) return;
+  try { await pool.query(`UPDATE ${table} SET status = $1, updated_at = now() WHERE id = $2`, [status, entityId]); }
   catch (err) { console.error(err); }
 }
 
@@ -20,7 +22,7 @@ const router = Router();
 
 const ENTITY: Record<string, { table: string; titleExpr: string }> = {
   tender:   { table: "tenders",   titleExpr: "tender_number || ' — ' || project_name" },
-  practice: { table: "practices", titleExpr: "practice_number || ' — ' || COALESCE(title,'')" },
+  practice: { table: "practices", titleExpr: "practice_number || ' — ' || COALESCE(project_name,'')" },
 };
 
 const ACTIVE = ["مفتوح", "قيد العمل"];
@@ -171,11 +173,14 @@ router.post("/declare-sourcing", async (req: Request, res: Response) => {
          researcherId, req.session.userId ?? null, type, id]);
       await client.query(`UPDATE case_files SET research_assignment_id = $1 WHERE id = $2`, [ra[0].id, caseId]);
     }
-    // المستشار الرافع يُسند تلقائيًا بدوره على المناقصة (يقود الرؤية والقائمة)
-    if (type === "tender" && req.session.userId) {
+    // المستشار الرافع يُسند تلقائيًا بدوره (مناقصة أو ممارسة) — يقود الرؤية والقائمة
+    if (req.session.userId) {
+      const at = type === "tender"
+        ? { table: "tender_assignments", col: "tender_id" }
+        : { table: "practice_assignments", col: "practice_id" };
       await client.query(
-        `INSERT INTO tender_assignments (tender_id, role, user_id) VALUES ($1,'المستشار المسؤول',$2)
-         ON CONFLICT (tender_id, role) DO NOTHING`, [id, req.session.userId]);
+        `INSERT INTO ${at.table} (${at.col}, role, user_id) VALUES ($1,'المستشار المسؤول',$2)
+         ON CONFLICT (${at.col}, role) DO NOTHING`, [id, req.session.userId]);
     }
     await client.query("COMMIT");
     // الحالة تمشي مع الملف: فتحٌ ← جاري الدراسة، ومسار البحث ← طلب تسعير الموردين
@@ -283,13 +288,16 @@ async function decide(req: Request, res: Response, approve: boolean) {
     if (approve) {
       await syncTenderStatus(cf.entity_type, cf.entity_id, "ready_to_submit");
       // مهمة «تجهيز ملف التسليم» للمستشار الرافع بموعد المناقصة النهائي
-      if (cf.entity_type === "tender" && cf.raised_by) {
-        const { rows: t } = await pool.query(`SELECT deadline, tender_number FROM tenders WHERE id = $1`, [cf.entity_id]);
+      if (cf.raised_by) {
+        const isT = cf.entity_type === "tender";
+        const { rows: t } = await pool.query(
+          isT ? `SELECT deadline, tender_number AS num FROM tenders WHERE id = $1`
+              : `SELECT deadline, practice_number AS num FROM practices WHERE id = $1`, [cf.entity_id]);
         await insertAutomationTask({
-          title: `تجهيز ملف التسليم — مناقصة ${t[0]?.tender_number ?? cf.entity_id}`,
+          title: `تجهيز ملف التسليم — ${isT ? "مناقصة" : "ممارسة"} ${t[0]?.num ?? cf.entity_id}`,
           description: "اعتُمد الملف نهائيًا — جهّز مستندات التسليم قبل الموعد النهائي.",
           sourceType: "case_file", sourceId: caseId, triggerKey: "prep_submission",
-          linkedEntityType: "tender", linkedEntityId: cf.entity_id,
+          linkedEntityType: cf.entity_type, linkedEntityId: cf.entity_id,
           priority: "high", dueDate: t[0]?.deadline ?? null, assignedTo: cf.raised_by, proofType: "none",
         });
       }
@@ -390,11 +398,13 @@ router.post("/:id/close", async (req: Request, res: Response) => {
       req.session.userId ?? null);
     // النتيجة الواحدة: إغلاق الملف يحدّث حالة المناقصة (فوز←رست علينا، خسارة←رست على منافس، انسحاب←ملغاة)
     await syncTenderStatus(cf.entity_type, cf.entity_id, outcome === "فوز" ? "won" : outcome === "خسارة" ? "lost" : "cancelled");
-    if (outcome === "فوز" && cf.entity_type === "tender" && cf.raised_by) {
-      const { rows: t } = await pool.query(`SELECT tender_number FROM tenders WHERE id = $1`, [cf.entity_id]);
-      const num = t[0]?.tender_number ?? cf.entity_id;
-      await insertAutomationTask({ title: `توقيع العقد — مناقصة ${num}`, sourceType: "case_file", sourceId: caseId, triggerKey: "sign_contract", linkedEntityType: "tender", linkedEntityId: cf.entity_id, priority: "high", assignedTo: cf.raised_by });
-      await insertAutomationTask({ title: `إصدار الكفالة النهائية — مناقصة ${num}`, sourceType: "case_file", sourceId: caseId, triggerKey: "final_bond", linkedEntityType: "tender", linkedEntityId: cf.entity_id, priority: "high", assignedTo: cf.raised_by });
+    if (outcome === "فوز" && cf.raised_by) {
+      const isT = cf.entity_type === "tender";
+      const { rows: t } = await pool.query(
+        isT ? `SELECT tender_number AS num FROM tenders WHERE id = $1` : `SELECT practice_number AS num FROM practices WHERE id = $1`, [cf.entity_id]);
+      const label = `${isT ? "مناقصة" : "ممارسة"} ${t[0]?.num ?? cf.entity_id}`;
+      await insertAutomationTask({ title: `توقيع العقد — ${label}`, sourceType: "case_file", sourceId: caseId, triggerKey: "sign_contract", linkedEntityType: cf.entity_type, linkedEntityId: cf.entity_id, priority: "high", assignedTo: cf.raised_by });
+      await insertAutomationTask({ title: `إصدار الكفالة النهائية — ${label}`, sourceType: "case_file", sourceId: caseId, triggerKey: "final_bond", linkedEntityType: cf.entity_type, linkedEntityId: cf.entity_id, priority: "high", assignedTo: cf.raised_by });
     }
     // تلميح تقييم الموردين: مصدر الملف الخاص إن وُجد
     return res.json({

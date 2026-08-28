@@ -229,6 +229,32 @@ export async function runAutomationChecks(): Promise<void> {
       }
     }
 
+    // حزمة الممارسات: نفس إنذارَي المناقصات (الموعد ≤٧ أيام + الكفالة ≤٣ أيام)
+    const { rows: nearPractices } = await pool.query(
+      `SELECT p.id, p.practice_number AS num, p.deadline, p.bond_value AS bond, p.initial_bond_issued AS issued,
+              COALESCE((SELECT pa.user_id FROM practice_assignments pa WHERE pa.practice_id = p.id AND pa.role = 'المستشار المسؤول'), p.assigned_user_id) AS consultant
+       FROM practices p
+       WHERE p.deadline IS NOT NULL AND p.deadline BETWEEN CURRENT_DATE AND CURRENT_DATE + 7
+         AND p.status NOT IN ('submitted','under_evaluation','won','lost','cancelled')`);
+    for (const t of nearPractices) {
+      await insertAutomationTask({
+        title: `⏰ اقتراب إغلاق ممارسة ${t.num} — جهّز التسليم`,
+        sourceType: "practice_deadline", sourceId: t.id, triggerKey: `deadline_${t.deadline}`,
+        linkedEntityType: "practice", linkedEntityId: t.id, priority: "urgent", dueDate: t.deadline,
+        assignedTo: t.consultant ?? null,
+      });
+      const daysLeft = Math.ceil((new Date(t.deadline).getTime() - Date.now()) / 86400000);
+      if (t.bond != null && !t.issued && daysLeft <= 3) {
+        await insertAutomationTask({
+          title: `⚠ كفالة ممارسة ${t.num} لم تصدر والإغلاق بعد ${daysLeft} يوم`,
+          sourceType: "practice_bond", sourceId: t.id, triggerKey: `bond_${t.deadline}`,
+          linkedEntityType: "practice", linkedEntityId: t.id, priority: "urgent", dueDate: t.deadline,
+          assignedTo: t.consultant ?? null,
+          notificationMessage: `⚠ الكفالة الأولية لممارسة ${t.num} لم تصدر — الإغلاق بعد ${daysLeft} يوم`,
+        });
+      }
+    }
+
     // تأخر مورد (استدلالي) — أمر شراء بلا تقدّم في مراحله منذ فترة، وحالته غير نهائية
     const { rows: delayedPOs } = await pool.query(
       `SELECT po.id, po.order_number AS "orderNumber", po.execution_stage AS "executionStage", MAX(h.changed_at) AS "lastChange"

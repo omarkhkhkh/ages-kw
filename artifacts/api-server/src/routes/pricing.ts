@@ -145,6 +145,22 @@ router.patch("/sheets/:id", async (req: Request, res: Response) => {
 
     // حزمة المناقصات: اعتماد الورقة المربوطة بمناقصة يملأ قيمة عرضها تلقائيًا (Σ سعر البيع × الكمية)،
     // والربح ونسبته يُحسبان من التكلفة التقديرية إن وُجدت — ويبقى التعديل اليدوي متاحًا ومُقيَّدًا في سيرة الملف.
+    // الممارسة: نفس التدفق (لا تكلفة تقديرية عندها — القيمة فقط)
+    if (data.status === "approved" && sheet.practiceId) {
+      try {
+        const { rows: tot } = await pool.query(
+          `SELECT COALESCE(SUM(quantity * sell_price_unit),0)::numeric AS offer FROM pricing_items WHERE sheet_id = $1`, [id]);
+        const offer = Number(tot[0].offer);
+        if (offer > 0) {
+          await pool.query(`UPDATE practices SET offer_value = $1, updated_at = now() WHERE id = $2`, [String(offer), sheet.practiceId]);
+          await pool.query(
+            `INSERT INTO case_file_events (case_file_id, event, details, actor_user_id)
+             SELECT cf.id, 'اعتماد ورقة تسعير — قيمة العرض تحدثت تلقائيًا', $1, $2 FROM case_files cf
+             WHERE cf.entity_type = 'practice' AND cf.entity_id = $3`,
+            [`الورقة #${id} — العرض ${offer.toFixed(3)} د.ك`, req.session.userId ?? null, sheet.practiceId]);
+        }
+      } catch (err) { console.error(err); }
+    }
     if (data.status === "approved" && sheet.tenderId) {
       try {
         const { rows: tot } = await pool.query(

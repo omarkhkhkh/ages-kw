@@ -285,6 +285,13 @@ export const financialCenterApi = {
 };
 
 // ── حزمة المناقصات: الإسنادات + الكفالة + قناة التبادل ─────────────────────
+export const practicesExtraApi = {
+  assignments: (id: number) => apiFetch<any[]>(`/api/practices/${id}/assignments`),
+  assign: (id: number, role: string, userId: number) => apiFetch<any>(`/api/practices/${id}/assignments`, { method: "POST", body: JSON.stringify({ role, userId }) }),
+  unassign: (id: number, role: string) => apiFetch<void>(`/api/practices/${id}/assignments/${encodeURIComponent(role)}`, { method: "DELETE" }),
+  issueBond: (id: number, d: { guaranteeNumber: string; bankName: string; issueDate?: string; expiryDate?: string }) =>
+    apiFetch<any>(`/api/practices/${id}/issue-bond`, { method: "POST", body: JSON.stringify(d) }),
+};
 export const tendersExtraApi = {
   assignments: (tenderId: number) => apiFetch<any[]>(`/api/tenders/${tenderId}/assignments`),
   assign: (tenderId: number, role: string, userId: number) => apiFetch<any>(`/api/tenders/${tenderId}/assignments`, { method: "POST", body: JSON.stringify({ role, userId }) }),

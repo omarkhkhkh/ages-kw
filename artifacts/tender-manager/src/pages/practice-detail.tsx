@@ -13,6 +13,7 @@ import BidResultPanel from "@/components/bid-result-panel";
 import CorrespondenceListPanel from "@/components/correspondence/correspondence-list-panel";
 import { useAuth } from "@/contexts/auth";
 import CaseFilePanel from "@/components/case-file-panel";
+import { AssignmentsCard, BondCard } from "@/components/tender-side-cards";
 import EntityDirectoryPicker from "@/components/entity-directory-picker";
 import LinkedPricingSheets from "@/components/linked-pricing-sheets";
 import LinkedTasks from "@/components/linked-tasks";
@@ -77,7 +78,7 @@ export default function PracticeDetail() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const { data: practice, isLoading } = useQuery<any>({
+  const { data: practice, isLoading, refetch } = useQuery<any>({
     queryKey: ["practice", id],
     queryFn: () => apiFetch(`/api/practices/${id}`),
     enabled: !!id,
@@ -365,7 +366,15 @@ export default function PracticeDetail() {
       )}
 
       {/* ══ TASKS TAB ══ */}
-      {activeTab === "case" && <CaseFilePanel entityType="practice" entityId={id} />}
+      {activeTab === "case" && (
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+            <AssignmentsCard tenderId={id} entityType="practice" />
+            <BondCard tender={practice ?? { id }} onChanged={() => refetch()} entityType="practice" />
+          </div>
+          <CaseFilePanel entityType="practice" entityId={id} />
+        </div>
+      )}
 
       {activeTab === "tasks" && (
         <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "18px 20px" }}>

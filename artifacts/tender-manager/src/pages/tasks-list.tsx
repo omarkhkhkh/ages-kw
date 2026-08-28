@@ -4,7 +4,7 @@ import { tasksApi } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import {
   ClipboardList, Plus, X, Save, Loader2,
-  List, KanbanSquare, Calendar as CalendarIcon, History, GanttChartSquare, CalendarCheck, MessageSquare,
+  List, KanbanSquare, Calendar as CalendarIcon, History, GanttChartSquare, CalendarCheck, MessageSquare, Scale, Tags,
 } from "lucide-react";
 import { PRIORITY_MAP, STATUS_MAP, OpTask, G, GD, GR } from "./operations/shared";
 import DailyView from "./operations/daily-view";
@@ -15,6 +15,8 @@ import TimelineView from "./operations/timeline-view";
 import GanttView from "./operations/gantt-view";
 import TaskDetailDrawer from "./operations/task-detail-drawer";
 import { ChatTab } from "@/pages/research";
+import WorkloadPage from "@/pages/workload";
+import AdminTaskTypes from "@/pages/admin-task-types";
 
 const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "9px 12px", borderRadius: 9, border: "1.5px solid #e5e7eb", fontSize: 12.5, color: "#1e2a1e", background: "#fafaf8", outline: "none", fontFamily: "inherit" };
 const lbl: React.CSSProperties = { display: "block", fontSize: 11.5, fontWeight: 700, color: GR, marginBottom: 5 };
@@ -27,6 +29,9 @@ const VIEW_MODES = [
   { key: "calendar", label: "تقويم", icon: CalendarIcon },
   { key: "timeline", label: "Timeline", icon: History },
   { key: "gantt", label: "Gantt", icon: GanttChartSquare },
+  // الرقابة والقوالب في بيت التنفيذ نفسه — يظهران بقاعدة الإخفاء أدناه
+  { key: "workload", label: "الأحمال والنقل", icon: Scale },
+  { key: "types", label: "أنواع المهام", icon: Tags },
 ] as const;
 type ViewMode = typeof VIEW_MODES[number]["key"];
 
@@ -92,6 +97,10 @@ export default function TasksList() {
   const { user } = useAuth();
   const isAdminUser = user?.role === "admin";
   const canApprove = isAdminUser || !!user?.taskCanApprove;
+  // قاعدة الإخفاء: الأحمال للتنفيذي والعام؛ أنواع المهام للأدمن
+  const canWorkload = isAdminUser || (((user as any)?.positions) ?? []).includes("executive_manager");
+  const visibleViews = VIEW_MODES.filter(v =>
+    v.key === "workload" ? canWorkload : v.key === "types" ? isAdminUser : true);
 
   const [view, setView] = useState<ViewMode>(() => {
     const q = new URLSearchParams(window.location.search).get("view");
@@ -160,7 +169,7 @@ export default function TasksList() {
       {/* View mode tabs + filters */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", gap: 4, background: "white", borderRadius: 12, border: "1.5px solid #f0ead8", padding: 4, flexWrap: "wrap" }}>
-          {VIEW_MODES.map(v => (
+          {visibleViews.map(v => (
             <button key={v.key} onClick={() => setView(v.key)}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "none", background: view === v.key ? `linear-gradient(135deg,${G},${GD})` : "transparent", color: view === v.key ? "white" : "#6b7280" }}>
               <v.icon size={13} /> {v.label}
@@ -191,6 +200,8 @@ export default function TasksList() {
           {view === "calendar" && <CalendarView tasks={tasks} />}
           {view === "timeline" && <TimelineView />}
           {view === "gantt" && <GanttView tasks={tasks} onOpen={t => setOpenTaskId(t.id)} />}
+          {view === "workload" && canWorkload && <WorkloadPage embedded />}
+          {view === "types" && isAdminUser && <AdminTaskTypes embedded />}
         </>
       )}
 

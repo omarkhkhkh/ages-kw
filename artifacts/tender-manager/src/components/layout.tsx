@@ -155,11 +155,6 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       show: isAdmin || ["executive_manager", "financial_manager", "general_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), href: "/case-files",
     },
     {
-      // قاعدة الإخفاء الكامل: المدخل غير موجود أصلًا لغير الأدمن وحامل قبعة التنفيذي
-      id: "workload", label: "لوحة الأحمال", icon: Scale,
-      show: isAdmin || ((user as any)?.positions ?? []).includes("executive_manager"), href: "/workload",
-    },
-    {
       id: "pricing", label: t("nav.pricing"), icon: Calculator,
       show: can("accessPricing"), href: "/pricing",
     },
@@ -197,8 +192,6 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       items: [
         { href: "/admin/users",         label: t("nav.adminUsers"),   show: isAdmin },
         { href: "/admin/activity-log",  label: t("nav.activityLog"),  show: isAdmin },
-        { href: "/admin/service-types", label: t("nav.serviceTypes"), show: isAdmin },
-        { href: "/admin/task-types",    label: t("nav.taskTypes"),    show: isAdmin },
       ].filter(i => i.show),
     },
   ].filter(g => g.show);

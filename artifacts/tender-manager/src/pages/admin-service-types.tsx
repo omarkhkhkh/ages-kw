@@ -11,7 +11,7 @@ const GR = "#132a18";
 
 const inp: React.CSSProperties = { padding: "9px 12px", borderRadius: 9, border: "1.5px solid #e5e7eb", fontSize: 13, color: "#1e2a1e", background: "white", outline: "none", fontFamily: "inherit" };
 
-export default function AdminServiceTypes() {
+export default function AdminServiceTypes({ embedded = false }: { embedded?: boolean }) {
   const { user: me } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -40,11 +40,13 @@ export default function AdminServiceTypes() {
 
   return (
     <div style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif", direction: "rtl" }}>
+      {!embedded && (
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <div style={{ width: 4, height: 26, borderRadius: 2, background: `linear-gradient(180deg,#E8BE55,${GD})` }} />
         <h1 style={{ fontSize: 20, fontWeight: 800, color: GR, margin: 0 }}>أنواع التعامل</h1>
       </div>
-      <p style={{ color: "#6b7280", fontSize: 13, margin: "4px 0 18px 14px" }}>القائمة المركزية لأنواع التعامل المتاحة لإدارات الجهات الحكومية</p>
+      )}
+      <p style={{ color: "#6b7280", fontSize: 13, margin: "4px 0 18px 14px" }}>أنواع التعامل المتاحة لإدارات الجهات الحكومية — المرجع بجوار مستهلكه</p>
 
       <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "18px 20px" }}>
         <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>

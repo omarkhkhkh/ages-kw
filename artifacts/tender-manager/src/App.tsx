@@ -8,7 +8,6 @@ import { Layout } from '@/components/layout';
 import Landing from '@/pages/landing';
 import Login from '@/pages/login';
 import Dashboard from '@/pages/dashboard';
-import WorkloadPage from '@/pages/workload';
 import CaseFilesPage from '@/pages/case-files';
 import ObligationsPage from '@/pages/obligations';
 import FinancialCenterPage from '@/pages/financial-center';
@@ -18,7 +17,6 @@ import TenderDetail from '@/pages/tender-detail';
 import EntitiesList from '@/pages/entities-list';
 import EntityDetail from '@/pages/entity-detail';
 import DepartmentDetail from '@/pages/department-detail';
-import AdminServiceTypes from '@/pages/admin-service-types';
 import SuppliersList from '@/pages/suppliers-list';
 import PurchaseOrdersList from '@/pages/purchase-orders-list';
 import PurchaseOrderDetail from '@/pages/purchase-order-detail';
@@ -31,7 +29,6 @@ import CalendarPage from '@/pages/calendar';
 import ActivityLog from '@/pages/activity-log';
 import TransportationList from '@/pages/transportation-list';
 import TasksList from '@/pages/tasks-list';
-import AdminTaskTypes from '@/pages/admin-task-types';
 import PracticesList from '@/pages/practices-list';
 import PracticeDetail from '@/pages/practice-detail';
 import OpportunitiesList from '@/pages/opportunities/index';
@@ -122,7 +119,7 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || ["executive_manager","financial_manager","general_manager"].some(k => (user.positions ?? []).includes(k))}><CaseFilesPage /></ModuleGuard>
         </Route>
         <Route path="/workload">
-          <ModuleGuard access={isAdmin || (user.positions ?? []).includes("executive_manager")}><WorkloadPage /></ModuleGuard>
+          <Redirect to="/tasks?view=workload" />
         </Route>
         <Route path="/tenders">
           <ModuleGuard access={isAdmin || user.accessTenders}><TendersList /></ModuleGuard>
@@ -239,10 +236,10 @@ function AppRouter() {
         <Route path="/calendar" component={CalendarPage} />
         <Route path="/admin/users" component={AdminUsers} />
         <Route path="/admin/activity-log" component={ActivityLog} />
-        <Route path="/admin/service-types" component={AdminServiceTypes} />
+        <Route path="/admin/service-types"><Redirect to="/entities" /></Route>
         <Route path="/admin/cost-centers"><Redirect to="/financial-center?door=centers" /></Route>
         <Route path="/admin/pricing-book"><Redirect to="/pricing?tab=book" /></Route>
-        <Route path="/admin/task-types" component={AdminTaskTypes} />
+        <Route path="/admin/task-types"><Redirect to="/tasks?view=types" /></Route>
         <Route component={NotFound} />
       </Switch>
     </Layout>

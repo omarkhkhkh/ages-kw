@@ -8,6 +8,7 @@ import {
   ExternalLink, Users,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
+import AdminServiceTypes from "@/pages/admin-service-types";
 import { exportEntitiesToExcel } from "@/lib/export";
 import { useToast } from "@/hooks/use-toast";
 import CorrespondenceSheet from "@/components/correspondence/correspondence-sheet";
@@ -496,6 +497,14 @@ export default function EntitiesList() {
           recordLabel={correspondenceFor.label}
           governmentEntityId={correspondenceFor.id}
         />
+      )}
+
+      {/* أنواع التعامل — انتقلت من الإعدادات: المرجع بجوار مستهلكه (للأدمن) */}
+      {user?.role === "admin" && (
+        <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 16, padding: "16px 18px", marginTop: 22 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: "#132a18", marginBottom: 4 }}>🏷 أنواع التعامل (إعدادات الدليل)</div>
+          <AdminServiceTypes embedded />
+        </div>
       )}
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
     </div>

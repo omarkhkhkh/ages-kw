@@ -75,7 +75,7 @@ function TransferModal({ fromUser, onClose }: { fromUser: { id: number; fullName
   );
 }
 
-export default function WorkloadPage() {
+export default function WorkloadPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
   const qc = useQueryClient(); const { toast } = useToast();
   const canSee = user?.role === "admin" || (user?.positions ?? []).includes("executive_manager");
@@ -105,12 +105,16 @@ export default function WorkloadPage() {
     <div dir="rtl" style={{ fontFamily: "'Cairo','Segoe UI',Tahoma,sans-serif" }}>
       {transferFrom && <TransferModal fromUser={transferFrom} onClose={() => setTransferFrom(null)} />}
 
+      {!embedded && (
+      <>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <div style={{ width: 4, height: 28, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
         <Scale size={22} color={GD} />
         <h1 style={{ fontSize: 21, fontWeight: 800, color: GR, margin: 0 }}>لوحة الأحمال والنقل</h1>
       </div>
       <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 18px 14px" }}>الأعمال المفتوحة عند كل موظف · النقل الموحّد بسبب مسجَّل · طلبات النقل الواردة · آخر التحركات.</p>
+      </>
+      )}
 
       {/* طلبات النقل المعلقة */}
       {requests.length > 0 && (

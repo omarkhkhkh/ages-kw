@@ -8,6 +8,8 @@ export const bankGuaranteesTable = pgTable("bank_guarantees", {
   id: serial("id").primaryKey(),
   assignedUserId: integer("assigned_user_id"), // الموظف المسؤول (يُسنده المدير) — يقود الخصوصية
   tenderId: integer("tender_id").references(() => tendersTable.id, { onDelete: "set null" }),
+  practiceId: integer("practice_id"), // الممارسة المرتبطة (FK في DDL — بلا reference لتجنب الدوران)
+  contractId: integer("contract_id"), // العقد المرتبط (FK في DDL)
   companyId: integer("company_id").references(() => companiesTable.id, { onDelete: "set null" }), // الشركة المشاركة
   guaranteeNumber: text("guarantee_number"),
   type: text("type"), // ابتدائية، نهائية، دفعة مقدمة

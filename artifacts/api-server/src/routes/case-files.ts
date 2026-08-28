@@ -426,6 +426,14 @@ router.post("/:id/close", async (req: Request, res: Response) => {
           await pool.query(`UPDATE case_files SET contract_id = $1, updated_at = now() WHERE id = $2`, [autoContractId, caseId]);
           await logEvent(caseId, "تحوّل تلقائيًا إلى عقد نشط",
             `العقد ${autoContractNumber} — ملف التشغيل «توريد فقط» مبدئيًا، أكّده من غرفة العقود`, req.session.userId ?? null);
+          // الكفالة الابتدائية تتبع العقد الفائز — تظهر في تبويب كفالته حتى الإفراج عنها
+          await pool.query(
+            isT
+              ? `UPDATE bank_guarantees SET contract_id = $1::int, updated_at = now()
+                 WHERE id = (SELECT initial_bond_guarantee_id FROM tenders WHERE id = $2)`
+              : `UPDATE bank_guarantees SET contract_id = $1::int, updated_at = now()
+                 WHERE id = (SELECT initial_bond_guarantee_id FROM practices WHERE id = $2)`,
+            [autoContractId, cf.entity_id]).catch((err) => console.error("initial bond follow failed", err));
         } catch (err) { console.error(err); }
       }
 

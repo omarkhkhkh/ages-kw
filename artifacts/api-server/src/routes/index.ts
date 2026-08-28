@@ -127,7 +127,12 @@ router.use("/direct-purchase-orders", (req, res, next) => {
   return requireModule("accessPo")(req, res, () => directPurchaseOrdersRouter(req, res, next));
 });
 router.use("/projects", requireModule("accessProjects"), projectsRouter);
-router.use("/bank-guarantees", requireModule("accessGuarantees"), bankGuaranteesRouter);
+// سجل الكفالات: سياسته «المدراء الثلاثة حصرًا» محروسة داخل المسار نفسه —
+// مصفوفة الوحدات لا تنطبق هنا (إدخالهم وتعديلهم اليدوي حق قبعة لا حق مصفوفة)
+router.use("/bank-guarantees", (req, res, next) => {
+  if (!req.session?.userId) return res.status(401).json({ error: "غير مصرح. يرجى تسجيل الدخول." });
+  return bankGuaranteesRouter(req, res, next);
+});
 router.use("/contracts", requireModule("accessContracts"), contractsRouter);
 router.use("/transportation", requireModule("accessTransportation"), transportationRouter);
 router.use("/vehicles", requireModule("accessTransportation"), vehiclesRouter);

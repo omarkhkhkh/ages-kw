@@ -917,6 +917,11 @@ const MIGRATIONS = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_po_pricing_po ON po_pricing_items(purchase_order_id)`,
 
+  // ربط الكفالات الثلاثي: العقد + قيد النهائية الواحد المتزامن من حقول العقد
+  `ALTER TABLE bank_guarantees ADD COLUMN IF NOT EXISTS contract_id integer REFERENCES contracts(id) ON DELETE SET NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_bg_contract ON bank_guarantees(contract_id)`,
+  `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS final_bond_guarantee_id integer REFERENCES bank_guarantees(id) ON DELETE SET NULL`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

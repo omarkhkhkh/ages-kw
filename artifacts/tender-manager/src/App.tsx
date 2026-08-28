@@ -161,7 +161,7 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || user.accessProjects}><ProjectsList /></ModuleGuard>
         </Route>
         <Route path="/guarantees">
-          <ModuleGuard access={isAdmin || user.accessGuarantees}><GuaranteesList /></ModuleGuard>
+          <ModuleGuard access={isAdmin || ["general_manager", "executive_manager", "financial_manager"].some(k => (((user as any)?.positions) ?? []).includes(k))}><GuaranteesList /></ModuleGuard>
         </Route>
         <Route path="/contracts">
           <ModuleGuard access={isAdmin || user.accessContracts}><ContractsList /></ModuleGuard>

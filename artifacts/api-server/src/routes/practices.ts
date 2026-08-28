@@ -254,10 +254,15 @@ router.post("/:id/issue-bond", async (req: Request, res: Response) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    // المستشار يعبي البيانات؛ المسؤولية في السجل للمدير المالي (وإلا التنفيذي)
+    const { rows: own } = await client.query(
+      `SELECT up.user_id FROM user_positions up JOIN positions p ON p.id = up.position_id
+       WHERE p.key IN ('financial_manager','executive_manager')
+       ORDER BY CASE p.key WHEN 'financial_manager' THEN 0 ELSE 1 END LIMIT 1`);
     const { rows: g } = await client.query(
       `INSERT INTO bank_guarantees (practice_id, guarantee_number, type, bank_name, amount, issue_date, expiry_date, status, assigned_user_id)
        VALUES ($1,$2,'ابتدائية',$3,$4,$5,$6,'active',$7) RETURNING id`,
-      [id, guaranteeNumber, bankName, tr[0].bond_value, issueDate, req.body?.expiryDate || null, req.session.userId ?? null]);
+      [id, guaranteeNumber, bankName, tr[0].bond_value, issueDate, req.body?.expiryDate || null, own[0]?.user_id ?? req.session.userId ?? null]);
     await client.query(
       `UPDATE practices SET initial_bond_issued = true, initial_bond_number = $1, initial_bond_bank = $2,
               initial_bond_issue_date = $3, initial_bond_guarantee_id = $4, updated_at = now() WHERE id = $5`,

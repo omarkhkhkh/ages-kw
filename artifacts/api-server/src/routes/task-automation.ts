@@ -141,18 +141,33 @@ const SUPPLIER_DELAY_DAYS = 10;
 /** فحوصات دورية: اقتراب انتهاء الضمانات/التسجيلات + تأخر مورد استدلالي */
 export async function runAutomationChecks(): Promise<void> {
   try {
-    // اقتراب انتهاء ضمان بنكي
+    // اقتراب انتهاء ضمان بنكي — المهمة للمسؤول عن الكفالة (المالي) + إشعار موازٍ للتنفيذي
     const { rows: guarantees } = await pool.query(
-      `SELECT id, guarantee_number AS "num", expiry_date AS "expiryDate" FROM bank_guarantees
-       WHERE expiry_date IS NOT NULL AND expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + $1::int`,
+      `SELECT id, guarantee_number AS "num", expiry_date AS "expiryDate", assigned_user_id AS "assignedTo"
+       FROM bank_guarantees
+       WHERE expiry_date IS NOT NULL AND status = 'active'
+         AND expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + $1::int`,
       [EXPIRY_WINDOW_DAYS]
     );
+    let execWatcherId: number | null = null;
+    if (guarantees.length) {
+      const { rows: ex } = await pool.query(
+        `SELECT up.user_id FROM user_positions up JOIN positions p ON p.id = up.position_id
+         WHERE p.key = 'executive_manager' LIMIT 1`);
+      execWatcherId = ex[0]?.user_id ?? null;
+    }
     for (const g of guarantees) {
       await insertAutomationTask({
         title: `متابعة اقتراب انتهاء ضمان بنكي رقم ${g.num ?? g.id}`,
         sourceType: "guarantee_expiry", sourceId: g.id, triggerKey: `expiry_${EXPIRY_WINDOW_DAYS}d`,
         linkedEntityType: "bankGuarantee", linkedEntityId: g.id, priority: "high", dueDate: g.expiryDate,
+        assignedTo: g.assignedTo ?? null,
       });
+      if (execWatcherId && execWatcherId !== g.assignedTo) {
+        const link = `/guarantees?id=${g.id}`;
+        const { rows: seen } = await pool.query(`SELECT 1 FROM notifications WHERE link=$1 AND type='guarantee_expiry' LIMIT 1`, [link]);
+        if (!seen.length) await createNotification({ recipientUserId: execWatcherId, type: "guarantee_expiry", message: `⚠ ضمان بنكي رقم ${g.num ?? g.id} يقترب انتهاؤه`, link });
+      }
     }
 
     // اقتراب انتهاء تسجيل جهة حكومية

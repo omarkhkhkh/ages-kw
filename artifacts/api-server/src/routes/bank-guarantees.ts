@@ -1,17 +1,31 @@
 import { Router, type Request, type Response } from "express";
-import { eq, and, sql } from "drizzle-orm";
-import { ownRecordsOnly } from "../middleware/auth";
+import { eq, and } from "drizzle-orm";
 import {
   db,
+  pool,
   bankGuaranteesTable,
   insertBankGuaranteeSchema,
   updateBankGuaranteeSchema,
   tendersTable,
+  practicesTable,
+  contractsTable,
   companiesTable,
   usersTable,
 } from "@workspace/db";
 
 const router = Router();
+
+/* قاعدة الإخفاء الكامل: سجل الكفالات للمدراء الثلاثة حصرًا — قراءةً وكتابةً.
+   الإدخال عند المصدر (بطاقات المناقصة/الممارسة وحقول العقد) يمر من مساراته هو. */
+router.use(async (req: Request, res: Response, next) => {
+  if (req.session.role === "admin") return next();
+  const { rows } = await pool.query(
+    `SELECT 1 FROM user_positions up JOIN positions p ON p.id = up.position_id
+     WHERE up.user_id = $1 AND p.key IN ('general_manager','executive_manager','financial_manager') LIMIT 1`,
+    [req.session.userId]);
+  if (!rows.length) return res.status(403).json({ error: "سجل الكفالات للمديرين الثلاثة" });
+  return next();
+});
 
 router.get("/", async (req: Request, res: Response) => {
   try {
@@ -34,20 +48,28 @@ router.get("/", async (req: Request, res: Response) => {
         notes: bankGuaranteesTable.notes,
         createdAt: bankGuaranteesTable.createdAt,
         updatedAt: bankGuaranteesTable.updatedAt,
+        practiceId: bankGuaranteesTable.practiceId,
+        contractId: bankGuaranteesTable.contractId,
         tenderNumber: tendersTable.tenderNumber,
         projectName: tendersTable.projectName,
+        practiceNumber: practicesTable.practiceNumber,
+        contractNumber: contractsTable.contractNumber,
         companyName: companiesTable.name,
       })
       .from(bankGuaranteesTable)
       .leftJoin(tendersTable, eq(bankGuaranteesTable.tenderId, tendersTable.id))
+      .leftJoin(practicesTable, eq(bankGuaranteesTable.practiceId, practicesTable.id))
+      .leftJoin(contractsTable, eq(bankGuaranteesTable.contractId, contractsTable.id))
       .leftJoin(companiesTable, eq(bankGuaranteesTable.companyId, companiesTable.id))
       .leftJoin(usersTable, eq(bankGuaranteesTable.assignedUserId, usersTable.id))
       .orderBy(bankGuaranteesTable.expiryDate);
 
+    const practiceIdQ = req.query.practiceId ? parseInt(req.query.practiceId as string) : undefined;
+    const contractIdQ = req.query.contractId ? parseInt(req.query.contractId as string) : undefined;
     const conditions: any[] = [];
-    // خصوصية السجلات: الموظف بنطاق 'own' يرى ما هو مُسنَد إليه فقط (وغير المُسنَد للمدير فقط)
-    if (ownRecordsOnly(req)) conditions.push(sql`${bankGuaranteesTable.assignedUserId} = ${req.session.userId}`);
     if (tenderId) conditions.push(eq(bankGuaranteesTable.tenderId, tenderId));
+    if (practiceIdQ) conditions.push(eq(bankGuaranteesTable.practiceId, practiceIdQ));
+    if (contractIdQ) conditions.push(eq(bankGuaranteesTable.contractId, contractIdQ));
     if (status) conditions.push(eq(bankGuaranteesTable.status, status as string));
 
     const results = conditions.length

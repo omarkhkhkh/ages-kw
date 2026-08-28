@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { guaranteesApi, companiesApi } from "@/lib/api";
+import { guaranteesApi, companiesApi, apiFetch } from "@/lib/api";
+import { useLocation } from "wouter";
 import {
   ShieldCheck, Plus, Pencil, Trash2, X, Check, AlertTriangle,
   Download, Search, Landmark, Clock, FileCheck2, Shield, ShieldAlert,
@@ -61,7 +62,7 @@ const LOCATION_OPTIONS = [
 ];
 
 const emptyForm = {
-  tenderId: "", guaranteeNumber: "", type: "",
+  tenderId: "", practiceId: "", contractId: "", guaranteeNumber: "", type: "",
   bankName: "", amount: "", issueDate: "", expiryDate: "",
   status: "active", location: "", notes: "", companyId: "",
 };
@@ -90,6 +91,20 @@ const S = {
 /* ════════════════════════════════════════════════════
    GUARANTEE TABLE — shared between tabs
 ════════════════════════════════════════════════════ */
+function LinkedChip({ g }: { g: any }) {
+  const [, navigate] = useLocation();
+  const chip = (label: string, href: string, bg: string, color: string) => (
+    <span onClick={(e) => { e.stopPropagation(); navigate(href); }}
+      style={{ display: "inline-flex", padding: "2px 10px", borderRadius: 20, fontSize: 10.5, fontWeight: 800, background: bg, color, cursor: "pointer", whiteSpace: "nowrap" }}>
+      {label}
+    </span>
+  );
+  if (g.contractNumber) return chip(`📜 عقد ${g.contractNumber}`, `/contracts?open=${g.contractId}`, "#f0fdf4", "#16a34a");
+  if (g.tenderNumber) return chip(`📋 مناقصة ${g.tenderNumber}`, `/tenders/${g.tenderId}`, "#eff6ff", "#2563eb");
+  if (g.practiceNumber) return chip(`📋 ممارسة ${g.practiceNumber}`, `/practices/${g.practiceId}`, "#faf5ff", "#7c3aed");
+  return <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>;
+}
+
 function GuaranteeTable({
   rows, isLoading, emptyMsg, canEdit, onEdit, onDelete, onReassign, typeDef,
 }: {
@@ -104,7 +119,7 @@ function GuaranteeTable({
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "right" }}>
           <thead style={{ background: typeDef.bg, borderBottom: `1.5px solid ${typeDef.border}` }}>
             <tr>
-              {["رقم الكفالة / الشيك", "الجهة / البنك", "الموضوع", "مكان الكفالة", "المبلغ (د.ك)", "تاريخ الإصدار", "تاريخ الانتهاء", "الموظف المسؤول", "الحالة", ""].map(h => (
+              {["رقم الكفالة / الشيك", "الجهة / البنك", "الموضوع", "المرتبط بـ", "مكان الكفالة", "المبلغ (د.ك)", "تاريخ الإصدار", "تاريخ الانتهاء", "الموظف المسؤول", "الحالة", ""].map(h => (
                 <th key={h} style={S.th}>{h}</th>
               ))}
             </tr>
@@ -113,7 +128,7 @@ function GuaranteeTable({
             {isLoading
               ? [...Array(4)].map((_, i) => (
                   <tr key={i}>
-                    {[...Array(9)].map((_, j) => (
+                    {[...Array(10)].map((_, j) => (
                       <td key={j} style={S.td}>
                         <div style={{ height: 13, background: "#f3f0e6", borderRadius: 4, width: j === 2 ? 160 : 80, animation: "pulse 1.5s infinite" }} />
                       </td>
@@ -123,7 +138,7 @@ function GuaranteeTable({
               : rows.length === 0
               ? (
                 <tr>
-                  <td colSpan={9} style={{ padding: 52, textAlign: "center", color: "#94a3b8" }}>
+                  <td colSpan={10} style={{ padding: 52, textAlign: "center", color: "#94a3b8" }}>
                     <typeDef.icon size={42} color="#e2d5b0" style={{ margin: "0 auto 12px", display: "block" }} />
                     <p style={{ margin: 0, fontSize: 14 }}>{emptyMsg}</p>
                   </td>
@@ -157,6 +172,10 @@ function GuaranteeTable({
                       {/* notes/subject */}
                       <td style={{ ...S.td, color: "#6b7280", fontSize: 11, maxWidth: 220 }}>
                         <span title={g.notes || ""} style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{notesShort}</span>
+                      </td>
+                      {/* linked entity */}
+                      <td style={{ ...S.td, whiteSpace: "nowrap" }}>
+                        <LinkedChip g={g} />
                       </td>
                       {/* location */}
                       <td style={{ ...S.td, whiteSpace: "nowrap" }}>
@@ -225,7 +244,7 @@ function GuaranteeTable({
                 <td style={{ ...S.td, fontFamily: "monospace", fontWeight: 900, color: typeDef.color, whiteSpace: "nowrap" }}>
                   {formatCurrency(rows.reduce((s: number, g: any) => s + (Number(g.amount) || 0), 0))}
                 </td>
-                <td colSpan={5} style={{ ...S.td }}>
+                <td colSpan={6} style={{ ...S.td }}>
                   <div style={{ display: "flex", gap: 14, fontSize: 11 }}>
                     {Object.entries(STATUS_MAP).map(([k, v]) => {
                       const cnt = rows.filter((g: any) => g.status === k).length;
@@ -267,10 +286,14 @@ export default function GuaranteesList() {
   });
   const { data: tenders = [] } = useListTenders({});
   const { data: companies = [] } = useQuery<any[]>({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
+  const { data: practices = [] } = useQuery<any[]>({ queryKey: ["practices", "for-guarantees"], queryFn: () => apiFetch<any[]>("/api/practices").catch(() => []) });
+  const { data: contracts = [] } = useQuery<any[]>({ queryKey: ["contracts", "for-guarantees"], queryFn: () => apiFetch<any[]>("/api/contracts").catch(() => []) });
 
-  const isAdmin    = user?.role === "admin";
-  const canEdit    = isAdmin || !!user?.canEdit;
-  const canDownload = isAdmin || !!user?.canDownload;
+  const isAdmin = user?.role === "admin";
+  // قاعدة الإخفاء الكامل: السجل للمدراء الثلاثة حصرًا — والإدخال والتعديل لهم
+  const isManager = isAdmin || ["general_manager", "executive_manager", "financial_manager"].some((k) => (((user as any)?.positions) ?? []).includes(k));
+  const canEdit = isManager;
+  const canDownload = isManager;
 
   /* mutations */
   const inv = () => qc.invalidateQueries({ queryKey: ["guarantees"] });
@@ -281,7 +304,7 @@ export default function GuaranteesList() {
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
   const openEdit  = (g: any) => {
     setEditId(g.id);
-    setForm({ tenderId: g.tenderId || "", guaranteeNumber: g.guaranteeNumber || "", type: g.type || "", bankName: g.bankName || "", amount: g.amount || "", issueDate: g.issueDate || "", expiryDate: g.expiryDate || "", status: g.status, location: g.location || "", notes: g.notes || "", companyId: g.companyId || "" });
+    setForm({ tenderId: g.tenderId || "", practiceId: g.practiceId || "", contractId: g.contractId || "", guaranteeNumber: g.guaranteeNumber || "", type: g.type || "", bankName: g.bankName || "", amount: g.amount || "", issueDate: g.issueDate || "", expiryDate: g.expiryDate || "", status: g.status, location: g.location || "", notes: g.notes || "", companyId: g.companyId || "" });
     setShowForm(true);
   };
   const openAdd = (preType?: string) => {
@@ -296,8 +319,10 @@ export default function GuaranteesList() {
     const data = {
       ...form,
       // integer FK must be a number; empty = null
-      tenderId:  form.tenderId  ? Number(form.tenderId)  : null,
-      companyId: form.companyId ? Number(form.companyId) : null,
+      tenderId:   form.tenderId   ? Number(form.tenderId)   : null,
+      practiceId: form.practiceId ? Number(form.practiceId) : null,
+      contractId: form.contractId ? Number(form.contractId) : null,
+      companyId:  form.companyId  ? Number(form.companyId)  : null,
       // numeric column — Drizzle-Zod expects string, not JS number
       amount:    form.amount    ? String(form.amount)    : null,
       // date columns — keep as string (YYYY-MM-DD) or null
@@ -329,6 +354,11 @@ export default function GuaranteesList() {
 
   const currentTypeDef = TYPE_TABS.find(t => t.id === typeTab)!;
 
+  // قاعدة الإخفاء الكامل: لا شيء يُعرض لغير المدراء الثلاثة
+  if (!isManager) {
+    return <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", fontFamily: "'Cairo',sans-serif" }}>سجل الكفالات للمدير العام والتنفيذي والمالي.</div>;
+  }
+
   /* per-type counts for tab badges */
   const countOf = (t: TypeTab) => t === "all" ? allArr.length : allArr.filter(g => g.type === t).length;
   const amountOf = (t: TypeTab) => {
@@ -346,7 +376,9 @@ export default function GuaranteesList() {
             <div style={S.accentBar} />
             <h1 style={S.title}>إدارة الكفالات والشيكات</h1>
           </div>
-          <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>متابعة الكفالات البنكية والشيكات المصدقة المرتبطة بالمناقصات</p>
+          <p style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
+            🧭 سجل المدراء الثلاثة — الابتدائية تصل تلقائيًا من بطاقة المناقصة/الممارسة، والنهائية من حقول العقد، والإدخال اليدوي هنا لكم
+          </p>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           {canDownload && (
@@ -478,6 +510,24 @@ export default function GuaranteesList() {
                     <select style={S.select} value={form.tenderId} onChange={e => setForm(p => ({ ...p, tenderId: e.target.value }))}>
                       <option value="">— غير مرتبط بمناقصة —</option>
                       {(tenders as any[]).map((t: any) => <option key={t.id} value={t.id}>{t.tenderNumber} — {t.projectName}</option>)}
+                    </select>
+                  </div>
+
+                  {/* practice */}
+                  <div style={{ gridColumn: "1/-1" }}>
+                    <label style={S.label}>الممارسة المرتبطة</label>
+                    <select style={S.select} value={form.practiceId} onChange={e => setForm(p => ({ ...p, practiceId: e.target.value }))}>
+                      <option value="">— غير مرتبط بممارسة —</option>
+                      {(practices as any[]).map((pr: any) => <option key={pr.id} value={pr.id}>{pr.practiceNumber} — {pr.projectName}</option>)}
+                    </select>
+                  </div>
+
+                  {/* contract */}
+                  <div style={{ gridColumn: "1/-1" }}>
+                    <label style={S.label}>العقد المرتبط</label>
+                    <select style={S.select} value={form.contractId} onChange={e => setForm(p => ({ ...p, contractId: e.target.value }))}>
+                      <option value="">— غير مرتبط بعقد —</option>
+                      {(contracts as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.contractNumber}</option>)}
                     </select>
                   </div>
 

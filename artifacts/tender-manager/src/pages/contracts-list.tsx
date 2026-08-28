@@ -212,6 +212,51 @@ function ProfitSection({ title, icon: Icon, empty, isEmpty, children }: { title:
   );
 }
 
+/* كفالات العقد من السجل — للمدراء الثلاثة: النهائية المتزامنة + الابتدائية المتبعة + أي كفالات أخرى */
+function ContractGuarantees({ contractId }: { contractId: number }) {
+  const { user } = useAuth();
+  const isManager = user?.role === "admin" || ["general_manager", "executive_manager", "financial_manager"].some((k) => (((user as any)?.positions) ?? []).includes(k));
+  const { data: rows = [] } = useQuery({
+    queryKey: ["contract-guarantees", contractId],
+    queryFn: () => apiFetch<any[]>(`/api/bank-guarantees?contractId=${contractId}`).catch(() => []),
+    enabled: isManager,
+  });
+  if (!isManager || !(rows as any[]).length) return null;
+  const typeChip: Record<string, { bg: string; color: string }> = {
+    "نهائية": { bg: "#f0fdf4", color: "#16a34a" },
+    "ابتدائية": { bg: "#fffbeb", color: "#d97706" },
+  };
+  const stChip: Record<string, string> = { active: "فعّالة", expired: "منتهية", released: "مُفرج عنها" };
+  const hasFinal = (rows as any[]).some((g: any) => g.type === "نهائية" && g.status === "active");
+  const openInitial = (rows as any[]).some((g: any) => g.type === "ابتدائية" && g.status === "active");
+  return (
+    <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "12px 14px" }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: "#9ca3af", marginBottom: 8 }}>كفالات هذا العقد في السجل ({(rows as any[]).length})</div>
+      {(rows as any[]).map((g: any) => {
+        const tc = typeChip[g.type] ?? { bg: "#f3f4f6", color: "#374151" };
+        return (
+          <div key={g.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #f9fafb", fontSize: 12 }}>
+            <span style={{ color: "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span style={{ padding: "1px 8px", borderRadius: 20, fontSize: 10.5, fontWeight: 800, background: tc.bg, color: tc.color, marginLeft: 6 }}>{g.type}</span>
+              <b style={{ fontFamily: "monospace" }}>{g.guaranteeNumber ?? `BG-${g.id}`}</b>{g.bankName ? ` · ${g.bankName}` : ""}
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, color: "#6b7280", fontSize: 11 }}>
+              {g.amount && <b style={{ fontFamily: "monospace", color: GR }}>{formatCurrency(Number(g.amount))}</b>}
+              {g.expiryDate && <span>حتى {formatDate(g.expiryDate)}</span>}
+              <span style={{ fontWeight: 700 }}>{stChip[g.status] ?? g.status}</span>
+            </span>
+          </div>
+        );
+      })}
+      {hasFinal && openInitial && (
+        <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: "#d97706" }}>
+          💡 صدرت الكفالة النهائية والابتدائية ما زالت فعّالة — أفرج عنها من سجل الكفالات
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* طلبات الأسعار المرتبطة بالعقد — نافذة صغيرة داخل تبويب التسعير */
 function ContractRfqs({ contractId }: { contractId: number }) {
   const { data: rfqs = [] } = useQuery({ queryKey: ["contract-rfqs", contractId], queryFn: () => apiFetch<any[]>(`/api/rfq-requests?contractId=${contractId}`) });
@@ -627,6 +672,7 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
                     </div>
                   </>
                 )}
+                <ContractGuarantees contractId={contract.id} />
               </div>
             );
           })()}

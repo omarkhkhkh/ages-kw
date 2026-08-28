@@ -38,6 +38,41 @@ async function canAccessContract(contractId: number, userId: number, isAdmin: bo
   return rows[0].blocked === 0;
 }
 
+/* المسؤولية عن الكفالات المنتقلة تلقائيًا: المدير المالي، وإن غاب فالتنفيذي */
+async function financialOwner(): Promise<number | null> {
+  const { rows } = await pool.query(
+    `SELECT up.user_id FROM user_positions up JOIN positions p ON p.id = up.position_id
+     WHERE p.key IN ('financial_manager','executive_manager')
+     ORDER BY CASE p.key WHEN 'financial_manager' THEN 0 ELSE 1 END LIMIT 1`);
+  return rows[0]?.user_id ?? null;
+}
+
+/* حقول الكفالة النهائية على العقد (يعبيها المستشار) تنعكس تلقائيًا قيدًا واحدًا في سجل الكفالات */
+async function syncFinalBondGuarantee(c: any): Promise<void> {
+  try {
+    const has = c.finalBondNumber || c.finalBondValue || c.finalBondBank || c.finalBondIssueDate || c.finalBondExpiryDate;
+    if (!has) return;
+    const statusMap: Record<string, string> = { active: "active", released: "released", confiscated: "released" };
+    const status = statusMap[c.finalBondStatus ?? "active"] ?? "active";
+    const notes = `كفالة نهائية للعقد ${c.contractNumber} — تنتقل تلقائيًا من حقول العقد${c.finalBondStatus === "confiscated" ? " (مُصادرة)" : ""}`;
+    if (c.finalBondGuaranteeId) {
+      await pool.query(
+        `UPDATE bank_guarantees SET guarantee_number=$1, bank_name=$2, amount=$3, issue_date=$4, expiry_date=$5,
+                status=$6, notes=$7, contract_id=$8, type='نهائية', updated_at=now() WHERE id=$9`,
+        [c.finalBondNumber ?? null, c.finalBondBank ?? null, c.finalBondValue ?? null,
+         c.finalBondIssueDate ?? null, c.finalBondExpiryDate ?? null, status, notes, c.id, c.finalBondGuaranteeId]);
+    } else {
+      const owner = await financialOwner();
+      const { rows } = await pool.query(
+        `INSERT INTO bank_guarantees (contract_id, guarantee_number, type, bank_name, amount, issue_date, expiry_date, status, assigned_user_id, notes)
+         VALUES ($1,$2,'نهائية',$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+        [c.id, c.finalBondNumber ?? null, c.finalBondBank ?? null, c.finalBondValue ?? null,
+         c.finalBondIssueDate ?? null, c.finalBondExpiryDate ?? null, status, owner, notes]);
+      await pool.query(`UPDATE contracts SET final_bond_guarantee_id = $1 WHERE id = $2`, [rows[0].id, c.id]);
+    }
+  } catch (err) { console.error("final bond sync failed", err); }
+}
+
 /* ═══════════════════════════════════════════
    CONTRACTS CRUD
 ═══════════════════════════════════════════ */
@@ -144,6 +179,7 @@ router.post("/", async (req: Request, res: Response) => {
   try {
     const data = insertContractSchema.parse(req.body);
     const [contract] = await db.insert(contractsTable).values({ ...data, createdByUserId: req.session.userId ?? null, assignedUserId: req.session.userId ?? null }).returning();
+    await syncFinalBondGuarantee(contract);
     if (contract.signDate) {
       insertAutomationTask({
         title: `متابعة تنفيذ عقد موقّع: ${contract.contractNumber}`,
@@ -166,6 +202,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
     if (!await canAccessContract(id, userId, isAdmin))
       return res.status(403).json({ error: "لا تملك صلاحية تعديل هذا العقد" });
     const data = updateContractSchema.parse(req.body) as Record<string, any>;
+    delete data.finalBondGuaranteeId; // يُدار خادميًا عبر المزامنة فقط
     if (req.session.role !== "admin") delete data.assignedUserId; // إعادة التعيين للمدير فقط
     const [contract] = await db
       .update(contractsTable)
@@ -173,6 +210,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
       .where(eq(contractsTable.id, id))
       .returning();
     if (!contract) return res.status(404).json({ error: "العقد غير موجود" });
+    await syncFinalBondGuarantee(contract);
     if (contract.signDate) {
       insertAutomationTask({
         title: `متابعة تنفيذ عقد موقّع: ${contract.contractNumber}`,

@@ -119,7 +119,7 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       items: [
         { href: "/entities",          label: t("nav.entities"),         show: can("accessEntities") },
         { href: "/gov-registrations", label: t("nav.govRegistrations"), show: isAdmin || can("accessTenders") },
-        { href: "/guarantees",        label: t("nav.guarantees"),       show: can("accessGuarantees"), badge: expiringCount || 0 },
+        { href: "/guarantees",        label: t("nav.guarantees"),       show: isAdmin || ["general_manager", "executive_manager", "financial_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), badge: expiringCount || 0 },
       ].filter(i => i.show),
     },
     {
@@ -637,7 +637,7 @@ export function Layout({ children }: LayoutProps) {
   const { dir } = useI18n();
   const isMobile = useIsMobile();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const canSeeGuarantees = user?.role === "admin" || !!user?.accessGuarantees;
+  const canSeeGuarantees = user?.role === "admin" || ["general_manager", "executive_manager", "financial_manager"].some(k => (((user as any)?.positions) ?? []).includes(k));
   const expiringCount = useExpiringCount(canSeeGuarantees);
   const { t } = useI18n();
   const groups = buildNavGroups(user ?? null, expiringCount, t);

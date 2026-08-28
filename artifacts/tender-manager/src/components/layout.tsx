@@ -83,104 +83,68 @@ type NavGroup = {
   items?: NavItem[];
 };
 
+/* المرحلة ٨ — ترتيب البيت: ست مجموعات نظيفة بدل البنود المبعثرة.
+   قاعدة الإخفاء تسري داخل كل مجموعة: البند المحجوب غير موجود أصلًا. */
 const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: string) => string): NavGroup[] => {
   if (!user) return [];
   const isAdmin = user.role === "admin";
   const can = (f: keyof AuthUser) => isAdmin || !!user[f];
+  const positions: string[] = (((user as any)?.positions) ?? []);
+  const manager = isAdmin || ["general_manager", "executive_manager", "financial_manager"].some(k => positions.includes(k));
   return [
     {
       id: "home", label: t("nav.home"), icon: LayoutDashboard,
       show: true, href: "/",
     },
     {
-      id: "tenders", label: t("nav.tendersGroup"), icon: FileText,
-      show: can("accessTenders") || can("accessProjects"),
+      id: "caseFiles", label: "الملفات والاعتمادات", icon: FolderOpen,
+      show: manager, href: "/case-files",
+    },
+    {
+      id: "business", label: "الأعمال والمناقصات", icon: FileText,
+      show: can("accessTenders") || can("accessContracts") || can("accessPo") || can("accessResearch") || can("accessPricing") || can("accessOpportunities" as any) || can("accessProjects"),
       items: [
-        { href: "/tenders",   label: t("nav.tenders"),   show: can("accessTenders") },
-        { href: "/practices", label: t("nav.practices"), show: can("accessTenders") },
-        { href: "/projects",  label: t("nav.projects"),  show: can("accessProjects") },
+        { href: "/tenders",                 label: t("nav.tenders"),            show: can("accessTenders") },
+        { href: "/practices",               label: t("nav.practices"),          show: can("accessTenders") },
+        { href: "/opportunities",           label: "بورصة الفرص",               show: can("accessOpportunities" as any) },
+        { href: "/contracts",               label: "غرفة العقود وعروض الأسعار", show: can("accessContracts") },
+        { href: "/purchase-orders",         label: "أوامر الشراء — السوق المحلي", show: can("accessPo") || can("accessResearch") },
+        { href: "/pricing",                 label: "غرفة التسعير",              show: can("accessPricing") },
+        { href: "/competitor-intelligence", label: t("nav.competitorBoard"),    show: can("accessTenders") },
+        { href: "/competitor-intelligence/predict", label: t("nav.competitorPredict"), show: can("accessTenders") },
+        { href: "/projects",                label: t("nav.projects"),           show: can("accessProjects") },
       ].filter(i => i.show),
     },
     {
-      id: "contracts", label: t("nav.contractsGroup"), icon: FileSignature,
-      show: can("accessContracts") || can("accessPo") || can("accessRfq") || can("accessResearch"),
+      id: "operations", label: "العمليات", icon: ListChecks,
+      show: true,
       items: [
-        { href: "/contracts",       label: t("nav.contracts"),      show: can("accessContracts") },
-        { href: "/purchase-orders", label: t("nav.purchaseOrders"), show: can("accessPo") || can("accessResearch") },
+        { href: "/tasks",                        label: "مركز العمليات",        show: can("accessTasks") },
+        { href: "/calendar",                     label: t("nav.calendar"),      show: true },
+        { href: "/transportation",               label: t("nav.transport"),     show: can("accessTransportation") },
+        { href: "/maintenance",                  label: t("nav.maintenance"),   show: can("accessMaintenance") },
+        { href: "/maintenance/report-templates", label: t("nav.maintenanceReports"), show: isAdmin || can("accessMaintenance") },
+        { href: "/correspondence",               label: t("nav.correspondence"), show: can("accessCorrespondence") },
+        { href: "/residency",                    label: t("nav.residency"),     show: can("accessResidency") },
       ].filter(i => i.show),
     },
     {
-      id: "suppliers", label: t("nav.suppliers"), icon: Users,
-      show: can("accessSuppliers"), href: "/suppliers",
+      id: "finance", label: "المالية", icon: Landmark,
+      show: manager,
+      items: [
+        { href: "/financial-center", label: "المركز المالي",   show: manager },
+        { href: "/guarantees",       label: t("nav.guarantees"), show: manager, badge: expiringCount || 0 },
+      ].filter(i => i.show),
     },
     {
-      id: "entities", label: t("nav.entitiesGroup"), icon: Building2,
-      show: can("accessEntities") || isAdmin,
+      id: "directory", label: "الدلائل والمستندات", icon: Building2,
+      show: can("accessEntities") || can("accessSuppliers") || can("accessTenders") || isAdmin,
       items: [
         { href: "/entities",          label: t("nav.entities"),         show: can("accessEntities") },
         { href: "/gov-registrations", label: t("nav.govRegistrations"), show: isAdmin || can("accessTenders") },
-        { href: "/guarantees",        label: t("nav.guarantees"),       show: isAdmin || ["general_manager", "executive_manager", "financial_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), badge: expiringCount || 0 },
+        { href: "/suppliers",         label: t("nav.suppliers"),        show: can("accessSuppliers") },
+        { href: "/company-docs",      label: t("nav.docs"),             show: isAdmin || can("accessTenders") },
       ].filter(i => i.show),
-    },
-    {
-      id: "docs", label: t("nav.docs"), icon: FileCheck,
-      show: isAdmin || can("accessTenders"), href: "/company-docs",
-    },
-    {
-      id: "correspondence", label: t("nav.correspondence"), icon: Mail,
-      show: can("accessCorrespondence"), href: "/correspondence",
-    },
-    {
-      id: "residency", label: t("nav.residency"), icon: IdCard,
-      show: can("accessResidency"), href: "/residency",
-    },
-    {
-      id: "maintenance", label: t("nav.maintenanceGroup"), icon: Wrench,
-      show: can("accessMaintenance") || isAdmin,
-      items: [
-        { href: "/maintenance",                  label: t("nav.maintenance"),        show: can("accessMaintenance") },
-        { href: "/maintenance/report-templates", label: t("nav.maintenanceReports"), show: isAdmin || can("accessMaintenance") },
-      ].filter(i => i.show),
-    },
-    {
-      id: "financialCenter", label: "المركز المالي", icon: Landmark,
-      show: isAdmin || ["executive_manager", "financial_manager", "general_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), href: "/financial-center",
-    },
-    {
-      id: "caseFiles", label: "الملفات والاعتمادات", icon: FolderOpen,
-      show: isAdmin || ["executive_manager", "financial_manager", "general_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), href: "/case-files",
-    },
-    {
-      id: "pricing", label: t("nav.pricing"), icon: Calculator,
-      show: can("accessPricing"), href: "/pricing",
-    },
-    {
-      id: "opportunities", label: "قسم البحث والتسعير", icon: Compass,
-      show: can("accessOpportunities" as any), href: "/opportunities",
-    },
-    {
-      id: "transport", label: t("nav.transport"), icon: Truck,
-      show: can("accessTransportation"), href: "/transportation",
-    },
-    {
-      id: "tasks", label: t("nav.tasksGroup"), icon: ListChecks,
-      show: true,
-      items: [
-        { href: "/tasks",    label: t("nav.operations"), show: can("accessTasks") },
-        { href: "/calendar", label: t("nav.calendar"),   show: true },
-      ].filter(i => i.show),
-    },
-    {
-      id: "competitor-intelligence", label: t("nav.competitorGroup"), icon: Trophy,
-      show: can("accessTenders"),
-      items: [
-        { href: "/competitor-intelligence",         label: t("nav.competitorBoard"),   show: can("accessTenders") },
-        { href: "/competitor-intelligence/predict", label: t("nav.competitorPredict"), show: can("accessTenders") },
-      ].filter(i => i.show),
-    },
-    {
-      id: "analytics", label: t("nav.analytics"), icon: BarChart3,
-      show: false, href: "/",        // placeholder — no dedicated route yet
     },
     {
       id: "settings", label: t("nav.settings"), icon: Settings,
@@ -190,7 +154,7 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
         { href: "/admin/activity-log",  label: t("nav.activityLog"),  show: isAdmin },
       ].filter(i => i.show),
     },
-  ].filter(g => g.show);
+  ].filter(g => g.show && (g.href || (g.items && g.items.length > 0)));
 };
 
 function getActiveGroupId(groups: NavGroup[], path: string) {

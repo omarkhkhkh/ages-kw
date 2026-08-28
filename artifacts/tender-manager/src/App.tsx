@@ -8,6 +8,19 @@ import { Layout } from '@/components/layout';
 import Landing from '@/pages/landing';
 import Login from '@/pages/login';
 import Dashboard from '@/pages/dashboard';
+
+/* هبوط القبعات: المالي على مركزه، والتنفيذي على الأحمال، والمستشار على مناقصاته،
+   والباحث على مكتبه، والمندوب والعمال على مهامهم — والعام والأدمن على اللوحة الشاملة */
+function HatLanding({ user }: { user: any }) {
+  const positions: string[] = user?.positions ?? [];
+  if (user?.role === "admin" || positions.includes("general_manager")) return <Dashboard />;
+  if (positions.includes("financial_manager")) return <Redirect to="/financial-center" />;
+  if (positions.includes("executive_manager")) return <Redirect to="/tasks?view=workload" />;
+  if (positions.includes("consultant")) return <Redirect to="/tenders" />;
+  if (positions.includes("researcher")) return <Redirect to="/purchase-orders?tab=research" />;
+  if (["delegate", "transport_worker", "maintenance_worker"].some(k => positions.includes(k))) return <Redirect to="/tasks" />;
+  return <Dashboard />;
+}
 import CaseFilesPage from '@/pages/case-files';
 import FinancialCenterPage from '@/pages/financial-center';
 import TendersList from '@/pages/tenders-list';
@@ -105,7 +118,8 @@ function AppRouter() {
   return (
     <Layout>
       <Switch>
-        <Route path="/" component={Dashboard} />
+        {/* المرحلة ٨: كل قبعة تهبط على غرفتها — العام والأدمن على لوحة التحكم */}
+        <Route path="/"><HatLanding user={user} /></Route>
         {/* بعد تسجيل الدخول، /login تعيد التوجيه للوحة التحكم بدل صفحة 404 */}
         <Route path="/login"><Redirect to="/" /></Route>
         <Route path="/financial-center">

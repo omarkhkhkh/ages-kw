@@ -374,7 +374,9 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
         method: "POST",
         body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type || "application/octet-stream" }),
       });
-      const put = await fetch(ticket.uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+      // نحوّل هدف الرفع لمسار على الأصل الحالي — يقي من بروتوكول/مضيف خاطئ خلف وكيل النشر
+      const putTarget = (() => { try { const u = new URL(ticket.uploadURL, window.location.origin); return u.pathname + u.search; } catch { return ticket.uploadURL; } })();
+      const put = await fetch(putTarget, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
       if (!put.ok) throw new Error("فشل رفع الملف إلى المخزن");
       await contractsApi.uploadDocument(contract.id, { fileName: file.name, fileSize: file.size, mimeType: file.type, objectPath: ticket.objectPath });
       qc.invalidateQueries({ queryKey: ["contract-docs", contract.id] });

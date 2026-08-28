@@ -63,6 +63,7 @@ export function useUpload(options: UseUploadOptions = {}) {
     async (file: File): Promise<UploadResponse> => {
       const response = await fetch(`${basePath}/uploads/request-url`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -85,7 +86,16 @@ export function useUpload(options: UseUploadOptions = {}) {
 
   const uploadToPresignedUrl = useCallback(
     async (file: File, uploadURL: string): Promise<void> => {
-      const response = await fetch(uploadURL, {
+      // التخزين يخدمه التطبيق نفسه — نحوّل الهدف لمسار على الأصل الحالي كي لا يكسر الرفعَ
+      // بروتوكولٌ أو مضيف خاطئ قادم من خلف وكيل (مشكلة «لا أقدر أن أرفق»)
+      let target = uploadURL;
+      try {
+        const u = new URL(uploadURL, window.location.origin);
+        target = u.pathname + u.search;
+      } catch {
+        /* رابط غير قابل للتحليل — نستخدمه كما هو */
+      }
+      const response = await fetch(target, {
         method: 'PUT',
         body: file,
         headers: {

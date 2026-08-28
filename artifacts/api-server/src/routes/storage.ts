@@ -86,7 +86,11 @@ router.post(
 
     try {
       const { token, objectPath } = objectStorageService.createUploadTicket();
-      const uploadURL = `${req.protocol}://${req.get('host')}/api/storage/local-upload/${token}`;
+      // خلف وكيل HTTPS (Coolify/Traefik) بروتوكول Express يبقى http — فيصير الرابط محتوى مختلطًا
+      // يحجبه المتصفح ويفشل الإرفاق؛ نحترم ترويسات التمرير أولًا
+      const fwdProto = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0].trim();
+      const fwdHost = String(req.headers['x-forwarded-host'] ?? '').split(',')[0].trim();
+      const uploadURL = `${fwdProto || req.protocol}://${fwdHost || req.get('host')}/api/storage/local-upload/${token}`;
 
       res.json(
         RequestUploadUrlResponse.parse({

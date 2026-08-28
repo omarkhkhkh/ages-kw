@@ -10,16 +10,17 @@ const inp: React.CSSProperties = { padding: "8px 10px", borderRadius: 8, border:
 
 const EMPTY = { itemCode: "", itemName: "", category: "", unit: "", standardCost: "", standardPrice: "" };
 
-export default function AdminPricingBook() {
+export default function AdminPricingBook({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const isAdmin = user?.role === "admin";
+  // ذاكرة الأسعار: التحرير للمدراء الثلاثة — والقراءة لكل من يفتح غرفة التسعير (المستشار يسعّر منها)
+  const canEdit = user?.role === "admin" || ["general_manager", "executive_manager", "financial_manager"].some((k) => (((user as any)?.positions) ?? []).includes(k));
 
   const [search, setSearch] = useState("");
   const [form, setForm] = useState(EMPTY);
 
-  const { data: items = [], isLoading } = useQuery({ queryKey: ["pricing-book", search], queryFn: () => pricingBookApi.list(search.trim() || undefined), enabled: isAdmin });
+  const { data: items = [], isLoading } = useQuery({ queryKey: ["pricing-book", search], queryFn: () => pricingBookApi.list(search.trim() || undefined) });
   const inv = () => qc.invalidateQueries({ queryKey: ["pricing-book"] });
 
   const createM = useMutation({
@@ -35,20 +36,23 @@ export default function AdminPricingBook() {
   const fmt = (n: any) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 3 });
   const margin = (it: PricingBookItem) => { const c = Number(it.standardCost), p = Number(it.standardPrice); return p > 0 ? ((p - c) / p) * 100 : 0; };
 
-  if (!isAdmin) return <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>هذه الصفحة للمدير فقط.</div>;
-
   return (
     <div style={{ fontFamily: "'Segoe UI', Tahoma, sans-serif", direction: "rtl", maxWidth: 1000, margin: "0 auto", padding: "8px 4px" }}>
+      {!embedded && (
+      <>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
         <div style={{ width: 4, height: 28, borderRadius: 2, background: `linear-gradient(180deg, ${GL}, ${GD})` }} />
         <BookMarked size={22} color={GD} />
         <h1 style={{ fontSize: 20, fontWeight: 800, color: "#132a18", margin: 0 }}>دفتر التسعير المرجعي</h1>
       </div>
+      </>
+      )}
       <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 20px 14px" }}>
-        كتالوج مركزي للأصناف بأسعار تكلفة وبيع قياسية — مرجع موحّد للتسعير عبر النظام.
+        📖 ذاكرة الأسعار — تتغذى تلقائيًا من كل ورقة تسعير تُعتمد{canEdit ? "، والإضافة اليدوية لك" : "؛ اقرأ منها وسعّر — التحرير للمدراء"}.
       </p>
 
-      {/* Add form */}
+      {/* Add form — للمدراء الثلاثة */}
+      {canEdit && (
       <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 16, marginBottom: 16 }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: GD, marginBottom: 12 }}>إضافة صنف جديد</div>
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr 1.4fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
@@ -70,6 +74,7 @@ export default function AdminPricingBook() {
           </button>
         </div>
       </div>
+      )}
 
       {/* Search */}
       <div style={{ position: "relative", marginBottom: 12, maxWidth: 340 }}>
@@ -103,9 +108,11 @@ export default function AdminPricingBook() {
                     <td style={{ padding: "8px 12px", fontFamily: "monospace", color: "#16a34a" }}>{fmt(it.standardPrice)}</td>
                     <td style={{ padding: "8px 12px", fontFamily: "monospace", fontWeight: 700, color: m < 0 ? "#dc2626" : m < 10 ? "#d97706" : "#166534" }}>{m.toFixed(1)}%</td>
                     <td style={{ padding: "8px 12px" }}>
-                      <button onClick={() => { if (confirm(`حذف الصنف "${it.itemName}"؟`)) delM.mutate(it.id); }} style={{ background: "#fff1f2", border: "1px solid #fecaca", borderRadius: 6, padding: 5, cursor: "pointer", display: "flex" }}>
-                        <Trash2 size={13} color="#dc2626" />
-                      </button>
+                      {canEdit && (
+                        <button onClick={() => { if (confirm(`حذف الصنف "${it.itemName}"؟`)) delM.mutate(it.id); }} style={{ background: "#fff1f2", border: "1px solid #fecaca", borderRadius: 6, padding: 5, cursor: "pointer", display: "flex" }}>
+                          <Trash2 size={13} color="#dc2626" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

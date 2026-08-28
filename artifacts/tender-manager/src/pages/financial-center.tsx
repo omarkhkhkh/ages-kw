@@ -163,7 +163,7 @@ function LedgerDoor() {
         <FinancesList embedded />
       </div>
       <div style={{ ...card, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <Link href="/admin/pricing-book"><button style={{ ...btn, background: "white", color: GD, border: `1.5px solid ${G}55` }}>دفتر التسعير المرجعي ←</button></Link>
+        <Link href="/pricing?tab=book"><button style={{ ...btn, background: "white", color: GD, border: `1.5px solid ${G}55` }}>الدفتر المرجعي (في غرفة التسعير) ←</button></Link>
       </div>
     </>
   );

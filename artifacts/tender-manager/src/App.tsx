@@ -19,7 +19,6 @@ import EntitiesList from '@/pages/entities-list';
 import EntityDetail from '@/pages/entity-detail';
 import DepartmentDetail from '@/pages/department-detail';
 import AdminServiceTypes from '@/pages/admin-service-types';
-import AdminPricingBook from '@/pages/admin-pricing-book';
 import SuppliersList from '@/pages/suppliers-list';
 import PurchaseOrdersList from '@/pages/purchase-orders-list';
 import PurchaseOrderDetail from '@/pages/purchase-order-detail';
@@ -242,7 +241,7 @@ function AppRouter() {
         <Route path="/admin/activity-log" component={ActivityLog} />
         <Route path="/admin/service-types" component={AdminServiceTypes} />
         <Route path="/admin/cost-centers"><Redirect to="/financial-center?door=centers" /></Route>
-        <Route path="/admin/pricing-book" component={AdminPricingBook} />
+        <Route path="/admin/pricing-book"><Redirect to="/pricing?tab=book" /></Route>
         <Route path="/admin/task-types" component={AdminTaskTypes} />
         <Route component={NotFound} />
       </Switch>

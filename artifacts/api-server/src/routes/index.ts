@@ -138,7 +138,11 @@ router.use("/transportation", requireModule("accessTransportation"), transportat
 router.use("/vehicles", requireModule("accessTransportation"), vehiclesRouter);
 router.use("/finance", requireModule("accessFinance"), financeRouter);
 router.use("/cost-centers", requireModule("accessFinance"), costCentersRouter);
-router.use("/pricing-book", requireModule("accessFinance"), pricingBookRouter);
+// دفتر التسعير المرجعي: أهل التسعير (accessPricing) يقرؤونه من غرفتهم، وأهل المالية من بيتهم
+router.use("/pricing-book", (req, res, next) => {
+  if (req.session?.userId && hasModuleAction(req, "accessPricing", "view")) return pricingBookRouter(req, res, next);
+  return requireModule("accessFinance")(req, res, () => pricingBookRouter(req, res, next));
+});
 router.use("/company-documents", requireModule("accessTenders"), companyDocumentsRouter);
 router.use("/government-registrations", requireModule("accessTenders"), governmentRegistrationsRouter);
 router.use("/competitors", requireModule("accessTenders"), competitorsRouter);

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { pricingApi } from "@/lib/api";
+import PricingBook from "@/pages/admin-pricing-book";
 import { Calculator, Plus, Search, X, FileSignature, ClipboardList, ShoppingCart, Users, Landmark, Trash2 } from "lucide-react";
 
 const G  = "#D4A534";
@@ -42,6 +43,8 @@ export default function PricingList() {
   const [, navigate] = useLocation();
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
+  const [roomTab, setRoomTab] = useState<"sheets" | "book">(() =>
+    new URLSearchParams(window.location.search).get("tab") === "book" ? "book" : "sheets");
 
   const { data: sheets = [], isLoading } = useQuery({
     queryKey: ["pricing-sheets", status, search],
@@ -66,15 +69,34 @@ export default function PricingList() {
         <div>
           <div style={S.titleRow}>
             <div style={S.accentBar} />
-            <h1 style={S.title}>التسعير</h1>
+            <h1 style={S.title}>غرفة التسعير</h1>
           </div>
-          <p style={S.subtitle}>حاسبة تسعير احترافية بديلة لملف Excel — شحن، تخليص، جمرك، وتوزيع مصاريف تلقائي</p>
+          <p style={S.subtitle}>
+            {roomTab === "sheets"
+              ? "حاسبة تسعير احترافية — شحن، تخليص، جمرك، وتوزيع مصاريف تلقائي · كل اعتماد يغذي الدفتر المرجعي"
+              : "📖 ذاكرة أسعار الشركة — تتغذى تلقائيًا من الأوراق المعتمدة"}
+          </p>
         </div>
-        <button style={S.btnPrimary} onClick={() => createM.mutate()} disabled={createM.isPending}>
-          <Plus size={15} /> تسعير جديد
-        </button>
+        {roomTab === "sheets" && (
+          <button style={S.btnPrimary} onClick={() => createM.mutate()} disabled={createM.isPending}>
+            <Plus size={15} /> تسعير جديد
+          </button>
+        )}
       </div>
 
+      {/* غرفة واحدة: الأوراق الحية + الذاكرة المرجعية */}
+      <div style={{ display: "flex", gap: 6, background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 6, marginBottom: 18, width: "fit-content" }}>
+        {([["sheets", "📋 أوراق التسعير"], ["book", "📖 الدفتر المرجعي"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setRoomTab(id)}
+            style={{ padding: "9px 22px", borderRadius: 10, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", border: "none", transition: "all 0.15s", background: roomTab === id ? `linear-gradient(135deg,${GL},${GD})` : "transparent", color: roomTab === id ? "white" : "#6b7280", boxShadow: roomTab === id ? `0 4px 12px ${G}44` : "none" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {roomTab === "book" && <PricingBook embedded />}
+
+      {roomTab === "sheets" && (<>
       <div style={{ display: "flex", gap: 12, marginBottom: 18, flexWrap: "wrap" as const, alignItems: "center" }}>
         <div style={{ display: "flex", gap: 4, background: "white", border: "1.5px solid #f0ead8", borderRadius: 12, padding: "5px 6px" }}>
           {tabs.map(t => (
@@ -148,6 +170,7 @@ export default function PricingList() {
           </table>
         </div>
       </div>
+      </>)}
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
     </div>
   );

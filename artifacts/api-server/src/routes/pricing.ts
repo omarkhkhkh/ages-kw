@@ -180,6 +180,37 @@ router.patch("/sheets/:id", async (req: Request, res: Response) => {
         }
       } catch (err) { console.error(err); }
     }
+    // الذاكرة تكبر من العمل نفسه: الاعتماد يغذي دفتر التسعير المرجعي —
+    // الصنف الموجود بالاسم تُحدَّث أسعاره، والجديد يُدرج برمز تلقائي
+    if (data.status === "approved" && existing.status !== "approved") {
+      try {
+        const { rows: its } = await pool.query(
+          `SELECT id, item_name, unit_cost_usd, sell_price_unit FROM pricing_items
+           WHERE sheet_id = $1 AND COALESCE(TRIM(item_name), '') <> ''`, [id]);
+        const rate = Number(sheet.exchangeRate) || 0.307;
+        for (const it of its) {
+          const cost = Math.round((Number(it.unit_cost_usd) || 0) * rate * 1000) / 1000; // تكلفة المنتج الأساسية بالدينار (دون شحن/جمرك)
+          const price = Number(it.sell_price_unit) || 0;
+          if (cost <= 0 && price <= 0) continue;
+          const name = String(it.item_name).trim();
+          const { rows: ex } = await pool.query(`SELECT id FROM pricing_book WHERE lower(item_name) = lower($1) LIMIT 1`, [name]);
+          if (ex.length) {
+            await pool.query(
+              `UPDATE pricing_book SET
+                 standard_cost = CASE WHEN $1::numeric > 0 THEN $1 ELSE standard_cost END,
+                 standard_price = CASE WHEN $2::numeric > 0 THEN $2 ELSE standard_price END,
+                 notes = $3, updated_at = now() WHERE id = $4`,
+              [cost, price, `آخر تغذية: ورقة ${sheet.sheetNumber} المعتمدة`, ex[0].id]);
+          } else {
+            await pool.query(
+              `INSERT INTO pricing_book (item_code, item_name, category, unit, standard_cost, standard_price, currency, notes, is_active)
+               VALUES ($1,$2,NULL,NULL,$3,$4,'KWD',$5,true) ON CONFLICT DO NOTHING`,
+              [`AUTO-${id}-${it.id}`, name, cost, price, `أُدرج تلقائيًا من ورقة ${sheet.sheetNumber} المعتمدة`]);
+          }
+        }
+      } catch (err) { console.error("pricing book feed failed", err); }
+    }
+
     return res.json(sheet);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });

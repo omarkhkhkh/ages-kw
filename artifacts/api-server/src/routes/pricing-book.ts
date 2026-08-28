@@ -1,17 +1,22 @@
 import { Router, type Request, type Response } from "express";
 import { pool } from "@workspace/db";
 
-/* المرحلة ٧: دفتر التسعير المرجعي (كتالوج أصناف بأسعار تكلفة/بيع قياسية). للمدير فقط. */
+/* دفتر التسعير المرجعي: ذاكرة الأسعار — يقرؤه كل من يسعّر (المستشار)، ويحرره المدراء الثلاثة.
+   يتغذى تلقائيًا من أوراق التسعير المعتمدة. */
 
 const router = Router();
-const isAdmin = (req: Request) => req.session.role === "admin";
+const isManager = (req: Request) => {
+  if (req.session.role === "admin") return true;
+  const hats = (req.session.positions ?? []) as string[];
+  return ["general_manager", "executive_manager", "financial_manager"].some((k) => hats.includes(k));
+};
 
 const COLS = `id, item_code AS "itemCode", item_name AS "itemName", category, unit,
   standard_cost AS "standardCost", standard_price AS "standardPrice", currency, notes,
   is_active AS "isActive", created_at AS "createdAt", updated_at AS "updatedAt"`;
 
 router.get("/", async (req: Request, res: Response) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  // القراءة لكل من عبر بوابة الوحدة (أهل التسعير والمالية) — الذاكرة تصل يد من يسعّر
   try {
     const search = (req.query.search as string | undefined)?.trim();
     const params: any[] = [];
@@ -25,7 +30,7 @@ router.get("/", async (req: Request, res: Response) => {
 });
 
 router.post("/", async (req: Request, res: Response) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  if (!isManager(req)) return res.status(403).json({ error: "تحرير الدفتر المرجعي للمديرين الثلاثة" });
   try {
     const b = req.body ?? {};
     if (!b.itemCode?.trim() || !b.itemName?.trim()) return res.status(400).json({ error: "رمز الصنف واسمه مطلوبان" });
@@ -44,7 +49,7 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 router.patch("/:id", async (req: Request, res: Response) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  if (!isManager(req)) return res.status(403).json({ error: "تحرير الدفتر المرجعي للمديرين الثلاثة" });
   try {
     const b = req.body ?? {};
     const sets: string[] = [];
@@ -69,7 +74,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
 });
 
 router.delete("/:id", async (req: Request, res: Response) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  if (!isManager(req)) return res.status(403).json({ error: "تحرير الدفتر المرجعي للمديرين الثلاثة" });
   try {
     await pool.query(`DELETE FROM pricing_book WHERE id = $1`, [Number(req.params.id)]);
     return res.status(204).send();

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, numeric, timestamp, date, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, timestamp, date, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { tendersTable } from "./tenders";
@@ -23,6 +23,11 @@ export const contractsTable = pgTable("contracts", {
   startDate: date("start_date"),
   endDate: date("end_date"),
   status: text("status").notNull().default("active"), // active, completed, terminated
+  // ملف التشغيل (الخارطة م٥ — كان DDL خامًا فقط) + الفاتورة وموعد الاستلام (غرفة العقود)
+  opsProfile: text("ops_profile").notNull().default("توريد فقط"),
+  expectedPaymentDate: date("expected_payment_date"),
+  invoiceSent: boolean("invoice_sent").notNull().default(false),
+  invoiceSentDate: date("invoice_sent_date"),
   notes: text("notes"),
   // Final bond (كفالة نهائية)
   finalBondValue:      numeric("final_bond_value",       { precision: 15, scale: 3 }),

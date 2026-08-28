@@ -892,6 +892,12 @@ const MIGRATIONS = [
   `ALTER TABLE practices ADD COLUMN IF NOT EXISTS initial_bond_guarantee_id integer REFERENCES bank_guarantees(id) ON DELETE SET NULL`,
   `ALTER TABLE bank_guarantees ADD COLUMN IF NOT EXISTS practice_id integer REFERENCES practices(id) ON DELETE SET NULL`,
 
+
+  /* ═══ غرفة العقود: الفاتورة وموعد الاستلام (يغذي تقويم السيولة) ═══ */
+  `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS expected_payment_date date`,
+  `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS invoice_sent boolean NOT NULL DEFAULT false`,
+  `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS invoice_sent_date date`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

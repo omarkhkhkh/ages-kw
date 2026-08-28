@@ -8,6 +8,7 @@ const router = Router();
 router.get("/", async (req: Request, res: Response) => {
   try {
     const tenderId = req.query.tenderId ? parseInt(req.query.tenderId as string) : undefined;
+    const contractId = req.query.contractId ? parseInt(req.query.contractId as string) : undefined;
     const base = db
       .select({
         id: rfqRequestsTable.id,
@@ -42,6 +43,7 @@ router.get("/", async (req: Request, res: Response) => {
       conditions.push(sql`${rfqRequestsTable.assignedUserId} = ${req.session.userId}`);
     }
     if (tenderId) conditions.push(eq(rfqRequestsTable.tenderId, tenderId));
+    if (contractId) conditions.push(eq(rfqRequestsTable.contractId, contractId));
 
     const results = conditions.length
       ? await base.where(and(...conditions))

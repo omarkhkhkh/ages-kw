@@ -162,7 +162,7 @@ function ConvertModal({ cf, onClose }: { cf: any; onClose: () => void }) {
 }
 
 /* ── شاشة العقد الحية: الهامش والنزيف والانحرافات والتزام الموردين ── */
-function ContractMonitor({ contractId }: { contractId: number }) {
+export function ContractMonitor({ contractId }: { contractId: number }) {
   const qc = useQueryClient(); const { toast } = useToast();
   const { data: m } = useQuery({ queryKey: ["contract-monitor", contractId], queryFn: () => caseFilesApi.contractMonitor(contractId) });
   const { data: suppliers = [] } = useQuery<any[]>({ queryKey: ["suppliers-brief"], queryFn: () => apiFetch<any[]>("/api/suppliers").catch(() => []) });
@@ -278,6 +278,9 @@ function ExchangePanel({ cf }: { cf: any }) {
       <div style={{ fontSize: 13, fontWeight: 800, color: GR, display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
         <MessagesSquare size={15} color={GD} /> قناة التبادل — مواصفات وعروض
       </div>
+      <p style={{ fontSize: 11, color: "#9ca3af", margin: "0 0 8px", lineHeight: 1.8 }}>
+        🧭 هذه قناة المستشار ⇄ الباحث داخل الملف. طلبات الأسعار الرسمية للموردين لها غرفة العقود، وعروض الفرص في بورصتها.
+      </p>
 
       {/* جدول مقارنة العروض */}
       {offers.length > 0 && (

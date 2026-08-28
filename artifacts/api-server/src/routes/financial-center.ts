@@ -45,6 +45,7 @@ router.get("/liquidity", async (req: Request, res: Response) => {
     // الداخل المتوقع: المتبقي من كل عقد نشط موزعًا على أشهره المتبقية حتى نهايته
     const { rows: contracts } = await pool.query(
       `SELECT c.id, c.contract_number AS "contractNumber", c.contract_value::numeric AS value, c.end_date AS "endDate",
+              c.expected_payment_date AS "expectedPaymentDate", c.invoice_sent AS "invoiceSent",
               ge.name AS "entityName",
               COALESCE((SELECT SUM(amount) FROM finance_income fi WHERE fi.contract_id = c.id),0)::numeric AS collected
        FROM contracts c LEFT JOIN government_entities ge ON ge.id = c.government_entity_id
@@ -55,6 +56,14 @@ router.get("/liquidity", async (req: Request, res: Response) => {
     for (const c of contracts) {
       const remaining = Number(c.value) - Number(c.collected);
       if (remaining <= 0) continue;
+      // موعد استلام المبلغ المسجّل على العقد يضع المتبقي كله في شهره — وإلا التوزيع على الأشهر المتبقية
+      if (c.expectedPaymentDate) {
+        const d = new Date(c.expectedPaymentDate);
+        const idx = Math.max(0, Math.min(months - 1, (d.getFullYear() - now.getFullYear()) * 12 + (d.getMonth() - now.getMonth())));
+        inflow[idx] += remaining;
+        receivables.push({ contractId: c.id, contractNumber: c.contractNumber, entityName: c.entityName, remaining: Math.round(remaining * 1000) / 1000, monthsLeft: idx + 1, expectedPaymentDate: c.expectedPaymentDate, invoiceSent: !!c.invoiceSent });
+        continue;
+      }
       let monthsLeft = 1;
       if (c.endDate) {
         const end = new Date(c.endDate);
@@ -62,7 +71,7 @@ router.get("/liquidity", async (req: Request, res: Response) => {
       }
       const per = remaining / monthsLeft;
       for (let m = 0; m < Math.min(months, monthsLeft); m++) inflow[m] += per;
-      receivables.push({ contractId: c.id, contractNumber: c.contractNumber, entityName: c.entityName, remaining: Math.round(remaining * 1000) / 1000, monthsLeft });
+      receivables.push({ contractId: c.id, contractNumber: c.contractNumber, entityName: c.entityName, remaining: Math.round(remaining * 1000) / 1000, monthsLeft, expectedPaymentDate: null, invoiceSent: !!c.invoiceSent });
     }
     const outflow = new Array(months).fill(0);
     for (const r of out) outflow[Number(r.m)] += Number(r.total);

@@ -53,6 +53,7 @@ router.get("/", async (req: Request, res: Response) => {
     const ids = rows.map((r: any) => r.id);
     const consultantOf = new Map<number, string>();
     const caseStatusOf = new Map<number, string>();
+    const contractOf = new Map<number, number>();
     if (ids.length) {
       const { rows: cons } = await pool.query(
         `SELECT pa.practice_id AS id, u.full_name AS name FROM practice_assignments pa
@@ -61,12 +62,16 @@ router.get("/", async (req: Request, res: Response) => {
       const { rows: cases } = await pool.query(
         `SELECT entity_id AS id, status FROM case_files WHERE entity_type = 'practice' AND entity_id = ANY($1::int[])`, [ids]);
       for (const c of cases) caseStatusOf.set(Number(c.id), c.status);
+      const { rows: cts } = await pool.query(
+        `SELECT practice_id AS id, MAX(id) AS cid FROM contracts WHERE practice_id = ANY($1::int[]) GROUP BY practice_id`, [ids]);
+      for (const c of cts) contractOf.set(Number(c.id), Number(c.cid));
     }
     const today = Date.now();
     return res.json(rows.map((r: any) => ({
       ...r,
       consultantName: consultantOf.get(r.id) ?? null,
       caseStatus: caseStatusOf.get(r.id) ?? null,
+      contractId: contractOf.get(r.id) ?? null,
       bondAlert: !!(r.bondValue && !r.initialBondIssued && r.deadline
         && (new Date(r.deadline).getTime() - today) / 86400000 <= 3
         && !["submitted", "under_evaluation", "won", "lost", "cancelled"].includes(r.status)),

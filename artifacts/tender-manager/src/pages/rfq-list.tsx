@@ -45,7 +45,7 @@ const S = {
   iconBtn: { background: "transparent", border: "none", cursor: "pointer", padding: "6px 8px", borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center" },
 };
 
-export default function RfqList() {
+export default function RfqList({ embedded = false }: { embedded?: boolean }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showForm, setShowForm] = useState(false);
@@ -80,19 +80,30 @@ export default function RfqList() {
 
   return (
     <div style={S.page}>
-      {/* Header */}
+      {/* Header — يختصر داخل غرفة العقود */}
+      {embedded ? (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+          <button style={S.btnPrimary} onClick={() => { closeForm(); setShowForm(true); }}>
+            <Plus size={15} /> طلب عرض جديد
+          </button>
+        </div>
+      ) : (
       <div style={S.header}>
         <div>
           <div style={S.titleRow}>
             <div style={S.accentBar} />
             <h1 style={S.title}>طلبات عروض الأسعار</h1>
           </div>
-          <p style={S.subtitle}>تتبع طلبات الأسعار المرسلة للموردين لكل مناقصة</p>
+          <p style={S.subtitle}>
+            تتبع طلبات الأسعار المرسلة للموردين لكل عقد ·
+            🧭 هذه قناة المندوب ومنسق المشتريات — تبادل المستشار⇄الباحث داخل ملف الحالة، وعروض الفرص في بورصتها
+          </p>
         </div>
         <button style={S.btnPrimary} onClick={() => { closeForm(); setShowForm(true); }}>
           <Plus size={15} /> طلب عرض جديد
         </button>
       </div>
+      )}
 
       {/* Stats */}
       <div style={{ display: "flex", gap: 14, marginBottom: 22, flexWrap: "wrap" as const }}>

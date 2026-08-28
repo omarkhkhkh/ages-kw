@@ -147,6 +147,7 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
   const ids = rows.map((r) => r.id);
   const consultantOf = new Map<number, string>();
   const caseStatusOf = new Map<number, string>();
+  const contractOf = new Map<number, number>();
   if (ids.length) {
     const { rows: cons } = await pool.query(
       `SELECT ta.tender_id AS id, u.full_name AS name FROM tender_assignments ta
@@ -155,12 +156,16 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
     const { rows: cases } = await pool.query(
       `SELECT entity_id AS id, status FROM case_files WHERE entity_type = 'tender' AND entity_id = ANY($1::int[])`, [ids]);
     for (const c of cases) caseStatusOf.set(Number(c.id), c.status);
+    const { rows: cts } = await pool.query(
+      `SELECT tender_id AS id, MAX(id) AS cid FROM contracts WHERE tender_id = ANY($1::int[]) GROUP BY tender_id`, [ids]);
+    for (const c of cts) contractOf.set(Number(c.id), Number(c.cid));
   }
   const today = new Date();
   res.json(rows.map((t) => ({
     ...formatTender(t),
     consultantName: consultantOf.get(t.id) ?? null,
     caseStatus: caseStatusOf.get(t.id) ?? null,
+    contractId: contractOf.get(t.id) ?? null,
     initialBondIssued: (t as any).initialBondIssued ?? false,
     bondAlert: !!(t.bondValue && !((t as any).initialBondIssued) && t.deadline
       && (new Date(t.deadline).getTime() - today.getTime()) / 86400000 <= 3

@@ -107,7 +107,6 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       items: [
         { href: "/contracts",       label: t("nav.contracts"),      show: can("accessContracts") },
         { href: "/purchase-orders", label: t("nav.purchaseOrders"), show: can("accessPo") },
-        { href: "/rfq",             label: t("nav.rfq"),            show: can("accessRfq") },
       ].filter(i => i.show),
     },
     {

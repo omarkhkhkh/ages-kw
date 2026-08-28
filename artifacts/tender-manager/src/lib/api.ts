@@ -360,7 +360,7 @@ export const contractsApi = {
 
   // Documents
   listDocuments: (contractId: number) => apiFetch<any[]>(`/api/contracts/${contractId}/documents`),
-  uploadDocument: (contractId: number, data: { fileName: string; fileSize?: number; mimeType?: string; fileData: string }) =>
+  uploadDocument: (contractId: number, data: { fileName: string; fileSize?: number; mimeType?: string; fileData?: string; objectPath?: string }) =>
     apiFetch<any>(`/api/contracts/${contractId}/documents`, { method: "POST", body: JSON.stringify(data) }),
   deleteDocument: (contractId: number, docId: number) =>
     apiFetch<void>(`/api/contracts/${contractId}/documents/${docId}`, { method: "DELETE" }),

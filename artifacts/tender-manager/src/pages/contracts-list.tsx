@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { contractsApi, companiesApi, apiFetch } from "@/lib/api";
 import {
@@ -6,7 +6,7 @@ import {
   Building2, Banknote, CalendarDays, CheckCircle2, XCircle, Clock,
   LayoutGrid, Paperclip, Upload, Shield, MessageSquare, ChevronDown,
   AlertTriangle, Eye, EyeOff, Send, FileText, Trash,
-  Landmark, Save, Mail, TrendingUp, TrendingDown, Truck, ShoppingCart, Loader2,
+  Landmark, Save, Mail, TrendingUp, Truck, ShoppingCart, Loader2,
   Info, Users, UserCheck, StickyNote, ClipboardList, Calculator,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
@@ -19,6 +19,8 @@ import EntityDirectoryPicker from "@/components/entity-directory-picker";
 import LinkedPricingSheets from "@/components/linked-pricing-sheets";
 import LinkedTasks from "@/components/linked-tasks";
 import { AssignedEmployee } from "@/components/assigned-employee";
+import RfqList from "@/pages/rfq-list";
+import { ContractMonitor } from "@/components/case-file-panel";
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -37,10 +39,13 @@ const STAT_CARDS = [
   { id: "terminated", label: "مُفسوخة",       icon: XCircle,      color: "#dc2626", bg: "#fff1f2" },
 ];
 
+const OPS_OPTIONS = ["توريد فقط", "توريد + صيانة", "توريد + نقل", "توريد + صيانة + نقل"];
+
 const emptyForm = {
   tenderId: "", practiceId: "", contractNumber: "", governmentEntityId: "" as string | number | null, departmentId: "" as string | number | null, contactId: "" as string | number | null, companyId: "",
   contractValue: "", signDate: "", startDate: "", endDate: "",
   status: "active", notes: "",
+  opsProfile: "توريد فقط", expectedPaymentDate: "", invoiceSent: false, invoiceSentDate: "",
   // final bond
   finalBondValue: "", finalBondNumber: "", finalBondBank: "",
   finalBondIssueDate: "", finalBondExpiryDate: "", finalBondStatus: "active",
@@ -119,6 +124,35 @@ function ContractModal({ open, editId, form, setForm, onClose, onSubmit, isPendi
             </div>
           </div>
           <div style={{ height: 1, background: "linear-gradient(90deg,transparent,#f0ead8,transparent)", marginBottom: 22 }} />
+          {/* ── ملف التشغيل + الفاتورة وموعد الاستلام ── */}
+          <div style={{ marginBottom: 22 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+              <div style={{ width: 3, height: 18, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
+              <span style={{ fontSize: 13, fontWeight: 800, color: GR }}>ملف التشغيل والفاتورة</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div style={{ gridColumn: "1/-1" }}>
+                <label style={lbl}>ملف التشغيل — يحدد أي أقسام تعمل تحت هذا العقد</label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  {OPS_OPTIONS.map((o: string) => (
+                    <button type="button" key={o} onClick={() => setForm((p: any) => ({ ...p, opsProfile: o }))}
+                      style={{ padding: "9px 0", borderRadius: 9, fontSize: 12.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", border: `1.5px solid ${form.opsProfile === o ? G : "#e5dfc8"}`, background: form.opsProfile === o ? "#fdf8ec" : "white", color: form.opsProfile === o ? GD : "#6b7280" }}>{o}</button>
+                  ))}
+                </div>
+              </div>
+              <div><label style={lbl}>موعد استلام المبلغ (المتوقع)</label><input type="date" value={form.expectedPaymentDate} onChange={f("expectedPaymentDate")} style={inp} onFocus={focus} onBlur={blur} /></div>
+              <div><label style={lbl}>هل أُرسلت الفاتورة للجهة؟</label>
+                <select value={form.invoiceSent ? "yes" : "no"} onChange={(e) => setForm((p: any) => ({ ...p, invoiceSent: e.target.value === "yes" }))} style={{ ...inp, height: 42 }} onFocus={focus} onBlur={blur}>
+                  <option value="no">لا — لم تُرسل بعد</option>
+                  <option value="yes">نعم — أُرسلت</option>
+                </select>
+              </div>
+              {form.invoiceSent && (
+                <div><label style={lbl}>تاريخ إرسال الفاتورة للصرف</label><input type="date" value={form.invoiceSentDate} onChange={f("invoiceSentDate")} style={inp} onFocus={focus} onBlur={blur} /></div>
+              )}
+            </div>
+          </div>
+          <div style={{ height: 1, background: "linear-gradient(90deg,transparent,#f0ead8,transparent)", marginBottom: 22 }} />
           {/* ── Final Bond Section ── */}
           <div style={{ marginBottom: 22 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
@@ -166,18 +200,6 @@ function ContractModal({ open, editId, form, setForm, onClose, onSubmit, isPendi
 }
 
 /* ─── Profitability tab helpers ─── */
-function ProfitStat({ label, value, color, icon: Icon }: { label: string; value: number; color: string; icon: any }) {
-  return (
-    <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "12px 14px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-        <Icon size={13} color={color} />
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280" }}>{label}</span>
-      </div>
-      <div style={{ fontSize: 15, fontWeight: 900, color, direction: "ltr" as const, textAlign: "right" as const }}>{formatCurrency(value)}</div>
-    </div>
-  );
-}
-
 function ProfitSection({ title, icon: Icon, empty, isEmpty, children }: { title: string; icon: any; empty: string; isEmpty: boolean; children: React.ReactNode }) {
   return (
     <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "12px 14px" }}>
@@ -186,6 +208,36 @@ function ProfitSection({ title, icon: Icon, empty, isEmpty, children }: { title:
         <span style={{ fontSize: 12, fontWeight: 800, color: "#9ca3af" }}>{title}</span>
       </div>
       {isEmpty ? <div style={{ textAlign: "center", padding: "12px 0", color: "#94a3b8", fontSize: 12 }}>{empty}</div> : children}
+    </div>
+  );
+}
+
+/* طلبات الأسعار المرتبطة بالعقد — نافذة صغيرة داخل تبويب التسعير */
+function ContractRfqs({ contractId }: { contractId: number }) {
+  const { data: rfqs = [] } = useQuery({ queryKey: ["contract-rfqs", contractId], queryFn: () => apiFetch<any[]>(`/api/rfq-requests?contractId=${contractId}`) });
+  if (!(rfqs as any[]).length) return null;
+  const chip: Record<string, { label: string; bg: string; color: string }> = {
+    pending: { label: "بانتظار الرد", bg: "#fef9c3", color: "#854d0e" },
+    received: { label: "تم الاستلام", bg: "#dcfce7", color: "#166534" },
+    rejected: { label: "مرفوض", bg: "#fee2e2", color: "#991b1b" },
+  };
+  return (
+    <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "12px 14px" }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: "#9ca3af", marginBottom: 8 }}>طلبات عروض الأسعار المرتبطة ({(rfqs as any[]).length})</div>
+      {(rfqs as any[]).map((r: any) => {
+        const c = chip[r.status] ?? chip.pending;
+        return (
+          <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #f9fafb", fontSize: 12 }}>
+            <span style={{ color: "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <b style={{ fontFamily: "monospace" }}>{r.rfqNumber || `RFQ-${r.id}`}</b> — {r.itemDescription}{r.supplierName ? ` · ${r.supplierName}` : ""}
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+              {r.quotedPrice && <b style={{ fontFamily: "monospace", color: "#132a18" }}>{formatCurrency(r.quotedPrice)}</b>}
+              <span style={{ padding: "2px 10px", borderRadius: 20, fontSize: 10.5, fontWeight: 700, background: c.bg, color: c.color }}>{c.label}</span>
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -266,33 +318,28 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "خطأ", description: "حجم الملف كبير جداً (الحد الأقصى 5 ميغابايت)", variant: "destructive" });
+    if (file.size > 20 * 1024 * 1024) {
+      toast({ title: "خطأ", description: "حجم الملف كبير جداً (الحد الأقصى 20 ميغابايت)", variant: "destructive" });
       return;
     }
     setUploading(true);
     try {
-      const reader = new FileReader();
-      reader.onload = async (ev) => {
-        const base64 = (ev.target?.result as string).split(",")[1];
-        await contractsApi.uploadDocument(contract.id, {
-          fileName: file.name,
-          fileSize: file.size,
-          mimeType: file.type,
-          fileData: base64,
-        });
-        qc.invalidateQueries({ queryKey: ["contract-docs", contract.id] });
-        toast({ title: "✅ تم رفع الملف بنجاح" });
-        setUploading(false);
-      };
-      reader.onerror = () => { toast({ title: "خطأ في قراءة الملف", variant: "destructive" }); setUploading(false); };
-      reader.readAsDataURL(file);
+      // مساران: تذكرة رفع ← PUT للمخزن الكائني ← تسجيل المسار (القديم base64 يبقى مقروءًا للتنزيل)
+      const ticket = await apiFetch<any>("/api/storage/uploads/request-url", {
+        method: "POST",
+        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type || "application/octet-stream" }),
+      });
+      const put = await fetch(ticket.uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type || "application/octet-stream" } });
+      if (!put.ok) throw new Error("فشل رفع الملف إلى المخزن");
+      await contractsApi.uploadDocument(contract.id, { fileName: file.name, fileSize: file.size, mimeType: file.type, objectPath: ticket.objectPath });
+      qc.invalidateQueries({ queryKey: ["contract-docs", contract.id] });
+      toast({ title: "✅ تم رفع الملف بنجاح" });
     } catch (err: any) {
       toast({ title: "خطأ", description: err.message, variant: "destructive" });
+    } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
-    // Reset input
-    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const unreadCount = (comments as any[]).filter((c: any) => !c.is_read && c.to_user_id === currentUserId).length;
@@ -424,12 +471,15 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
                   <InfoRow icon={Users}         label="الشركة المشاركة" value={contract.companyName} />
                   <InfoRow icon={FileSignature} label="المناقصة المرتبطة" value={contract.tenderNumber} />
                   <InfoRow icon={FileSignature} label="الممارسة المرتبطة" value={contract.practiceNumber} />
+                  <InfoRow icon={ClipboardList} label="ملف التشغيل" value={contract.opsProfile} />
                 </div>
 
                 <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "4px 14px" }}>
                   <InfoRow icon={CalendarDays} label="تاريخ التوقيع" value={contract.signDate ? formatDate(contract.signDate) : null} />
                   <InfoRow icon={CalendarDays} label="تاريخ البدء"   value={contract.startDate ? formatDate(contract.startDate) : null} />
                   <InfoRow icon={CalendarDays} label="تاريخ الانتهاء" value={contract.endDate ? formatDate(contract.endDate) : null} />
+                  <InfoRow icon={Banknote} label="موعد استلام المبلغ" value={contract.expectedPaymentDate ? formatDate(contract.expectedPaymentDate) : "لم يُحدَّد"} />
+                  <InfoRow icon={FileText} label="الفاتورة" value={contract.invoiceSent ? `✅ أُرسلت للجهة${contract.invoiceSentDate ? " — " + formatDate(contract.invoiceSentDate) : ""}` : "⏳ لم تُرسل بعد"} />
                 </div>
 
                 {contract.notes && (
@@ -458,24 +508,10 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
               const isProfit = p.profit >= 0;
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  {/* Stat cards */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <ProfitStat label="قيمة العقد" value={p.contractValue} color={GR} icon={FileSignature} />
-                    <ProfitStat label="المشتريات" value={p.purchases.total} color="#7c3aed" icon={ShoppingCart} />
-                    <ProfitStat label="النقل" value={p.transport.total} color="#2563eb" icon={Truck} />
-                    <ProfitStat label="المصروفات" value={p.expenses.total} color="#d97706" icon={Banknote} />
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                    <ProfitStat label="إجمالي التكلفة" value={p.totalCost} color="#dc2626" icon={TrendingDown} />
-                    <div style={{ background: isProfit ? "#f0fdf4" : "#fff1f2", border: `1.5px solid ${isProfit ? "#bbf7d0" : "#fecaca"}`, borderRadius: 14, padding: "12px 14px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                        {isProfit ? <TrendingUp size={13} color="#16a34a" /> : <TrendingDown size={13} color="#dc2626" />}
-                        <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280" }}>الربح ({p.profitPct.toFixed(1)}%)</span>
-                      </div>
-                      <div style={{ fontSize: 15, fontWeight: 900, color: isProfit ? "#16a34a" : "#dc2626", direction: "ltr" as const, textAlign: "right" as const }}>
-                        {formatCurrency(p.profit)}
-                      </div>
-                    </div>
+                  {/* عدسة الربحية الواحدة: الشاشة الحية نفسها التي في ملف الحالة (هامش حي + انحرافات + التزام الموردين) */}
+                  <ContractMonitor contractId={contract.id} />
+                  <div style={{ fontSize: 11.5, color: isProfit ? "#16a34a" : "#dc2626", fontWeight: 800 }}>
+                    صافي الربح المحاسبي: {formatCurrency(p.profit)} ({p.profitPct.toFixed(1)}%) — القيمة {formatCurrency(p.contractValue)} − التكاليف {formatCurrency(p.totalCost)}
                   </div>
 
                   {/* Expense category breakdown */}
@@ -597,7 +633,10 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
 
           {/* ── Pricing Tab ── */}
           {activeTab === "pricing" && (
-            <LinkedPricingSheets entityType="contract" entityId={contract.id} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <ContractRfqs contractId={contract.id} />
+              <LinkedPricingSheets entityType="contract" entityId={contract.id} />
+            </div>
           )}
 
           {/* ── Tasks Tab ── */}
@@ -623,7 +662,7 @@ function ContractDrawer({ contract, onClose, isAdmin, currentUserId, employees }
                   }}
                 >
                   <Upload size={15} />
-                  {uploading ? "جارٍ الرفع..." : "رفع ملف جديد (حد أقصى 5 ميغابايت)"}
+                  {uploading ? "جارٍ الرفع..." : "رفع ملف جديد (حد أقصى 20 ميغابايت)"}
                 </button>
               </div>
 
@@ -847,6 +886,9 @@ export default function ContractsList() {
   const [form,        setForm]        = useState({ ...emptyForm });
   const [tab,         setTab]         = useState("all");
   const [openDrawer,  setOpenDrawer]  = useState<any | null>(null);
+  const [roomTab, setRoomTab] = useState<"contracts" | "rfq">(() =>
+    new URLSearchParams(window.location.search).get("tab") === "rfq" ? "rfq" : "contracts");
+  const autoOpenedRef = useRef(false);
   const [correspondenceFor, setCorrespondenceFor] = useState<{ id: number; label: string; governmentEntityId: number | null } | null>(null);
 
   const { data: allContracts = [] } = useQuery({ queryKey: ["contracts", "all"], queryFn: () => contractsApi.list(undefined) });
@@ -894,6 +936,8 @@ export default function ContractsList() {
       companyId: c.companyId || "", contractValue: c.contractValue || "",
       signDate: c.signDate || "", startDate: c.startDate || "", endDate: c.endDate || "",
       status: c.status, notes: c.notes || "",
+      opsProfile: c.opsProfile || "توريد فقط", expectedPaymentDate: c.expectedPaymentDate || "",
+      invoiceSent: !!c.invoiceSent, invoiceSentDate: c.invoiceSentDate || "",
       finalBondValue: c.finalBondValue || "", finalBondNumber: c.finalBondNumber || "",
       finalBondBank: c.finalBondBank || "", finalBondIssueDate: c.finalBondIssueDate || "",
       finalBondExpiryDate: c.finalBondExpiryDate || "", finalBondStatus: c.finalBondStatus || "active",
@@ -915,6 +959,10 @@ export default function ContractsList() {
       signDate:            form.signDate             || null,
       startDate:           form.startDate            || null,
       endDate:             form.endDate              || null,
+      opsProfile:          form.opsProfile           || "توريد فقط",
+      expectedPaymentDate: form.expectedPaymentDate  || null,
+      invoiceSent:         !!form.invoiceSent,
+      invoiceSentDate:     form.invoiceSent ? (form.invoiceSentDate || null) : null,
       finalBondValue:      form.finalBondValue       ? String(form.finalBondValue)       : null,
       finalBondNumber:     form.finalBondNumber      || null,
       finalBondBank:       form.finalBondBank        || null,
@@ -924,6 +972,15 @@ export default function ContractsList() {
     };
     editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data);
   };
+
+  // «← عقدها» من المناقصات/الممارسات يفتح العقد مباشرة عبر ?open=<id>
+  useEffect(() => {
+    if (autoOpenedRef.current || !(allContracts as any[]).length) return;
+    const openId = Number(new URLSearchParams(window.location.search).get("open"));
+    if (!openId) { autoOpenedRef.current = true; return; }
+    const c = (allContracts as any[]).find((x: any) => x.id === openId);
+    if (c) { setOpenDrawer(c); autoOpenedRef.current = true; }
+  }, [allContracts]);
 
   const activeCard = STAT_CARDS.find(c => c.id === tab)!;
 
@@ -958,11 +1015,13 @@ export default function ContractsList() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
             <div style={{ width: 4, height: 26, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
-            <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>إدارة العقود</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>غرفة العقود وعروض الأسعار</h1>
           </div>
-          <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>اختر تصنيفاً أدناه لعرض العقود · انقر على صف لعرض الملفات والتعليقات</p>
+          <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>
+            {roomTab === "contracts" ? "العقود النشطة والمنتهية · انقر على صف لعرض الملفات والتعليقات" : "🧭 طلبات الأسعار الرسمية للموردين — قناة المندوب ومنسق المشتريات، وكل طلب يُربط بعقده"}
+          </p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: roomTab === "contracts" ? "flex" : "none", gap: 10 }}>
           {(isAdmin || user?.canDownload) && (
             <button onClick={() => exportContractsToExcel(contracts as any[])} style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 18px", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", background: "white", border: "1.5px solid #e5e7eb", color: "#374151", fontFamily: "inherit" }}>
               <Download size={15} /> تصدير
@@ -976,6 +1035,19 @@ export default function ContractsList() {
         </div>
       </div>
 
+      {/* ── غرفة واحدة: تبويبا العقود وطلبات عروض الأسعار ── */}
+      <div style={{ display: "flex", gap: 6, background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 6, alignSelf: "flex-start" }}>
+        {([["contracts", "📜 العقود"], ["rfq", "📋 طلبات عروض الأسعار"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setRoomTab(id)}
+            style={{ padding: "9px 22px", borderRadius: 10, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", border: "none", transition: "all 0.15s", background: roomTab === id ? `linear-gradient(135deg,${G},${GD})` : "transparent", color: roomTab === id ? "white" : "#6b7280", boxShadow: roomTab === id ? `0 4px 12px ${G}44` : "none" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {roomTab === "rfq" && <RfqList embedded />}
+
+      {roomTab === "contracts" && (<>
       {/* ── Stat cards ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 14 }}>
         {STAT_CARDS.map(card => {
@@ -1067,6 +1139,10 @@ export default function ContractsList() {
                         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                           <span style={{ fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: GD }}>{c.contractNumber}</span>
                         </div>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
+                          {c.opsProfile && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: "#fdf8ec", color: GD, border: `1px solid ${G}30`, whiteSpace: "nowrap" }}>{c.opsProfile}</span>}
+                          {(c.notes || "").includes("تحوّل تلقائيًا") && <span title="عقد أنشئ تلقائيًا من ملف فائز — أكّد بياناته" style={{ fontSize: 10, fontWeight: 800, padding: "1px 8px", borderRadius: 20, background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", whiteSpace: "nowrap" }}>⚠ أكّد ملف التشغيل</span>}
+                        </div>
                       </td>
                       <td style={{ padding: "14px 16px", color: "#374151", fontSize: 12 }}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><Building2 size={13} color="#9ca3af" />{c.entityName || "—"}</div></td>
                       <td style={{ padding: "14px 16px", fontSize: 11, color: "#9ca3af", fontFamily: "monospace" }}>{c.tenderNumber || "—"}</td>
@@ -1077,6 +1153,12 @@ export default function ContractsList() {
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.color, border: `1px solid ${st.color}22` }}>
                           <st.icon size={11} />{st.label}
                         </span>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 4 }}>
+                          {c.status === "active" && (c.invoiceSent
+                            ? <span style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", whiteSpace: "nowrap" }}>🧾 أُرسلت الفاتورة{c.invoiceSentDate ? ` ${formatDate(c.invoiceSentDate)}` : ""}</span>
+                            : <span style={{ fontSize: 10, fontWeight: 700, color: "#d97706", whiteSpace: "nowrap" }}>🧾 لم تُرسل الفاتورة</span>)}
+                          {c.expectedPaymentDate && <span style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", whiteSpace: "nowrap" }}>💰 الاستلام {formatDate(c.expectedPaymentDate)}</span>}
+                        </div>
                       </td>
                       <td style={{ padding: "14px 16px" }} onClick={e => e.stopPropagation()}>
                         <AssignedEmployee value={c.assignedUserId} displayName={c.assignedName} compact
@@ -1134,6 +1216,7 @@ export default function ContractsList() {
           </table>
         </div>
       </div>
+      </>)}
 
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
     </div>

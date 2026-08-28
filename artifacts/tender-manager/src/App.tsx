@@ -22,7 +22,6 @@ import AdminServiceTypes from '@/pages/admin-service-types';
 import AdminCostCenters from '@/pages/admin-cost-centers';
 import AdminPricingBook from '@/pages/admin-pricing-book';
 import SuppliersList from '@/pages/suppliers-list';
-import RfqList from '@/pages/rfq-list';
 import PurchaseOrdersList from '@/pages/purchase-orders-list';
 import PurchaseOrderDetail from '@/pages/purchase-order-detail';
 import ProjectsList from '@/pages/projects-list';
@@ -151,7 +150,7 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || user.accessSuppliers}><SuppliersList /></ModuleGuard>
         </Route>
         <Route path="/rfq">
-          <ModuleGuard access={isAdmin || user.accessRfq}><RfqList /></ModuleGuard>
+          <Redirect to="/contracts?tab=rfq" />
         </Route>
         <Route path="/purchase-orders">
           <ModuleGuard access={isAdmin || user.accessPo}><PurchaseOrdersList /></ModuleGuard>

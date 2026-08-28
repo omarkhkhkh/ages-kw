@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { eq, and, sql } from "drizzle-orm";
-import { ownRecordsOnly } from "../middleware/auth";
+import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import {
   db,
   contractsTable,
@@ -14,6 +14,17 @@ import { requireAdmin } from "../middleware/auth";
 import { insertAutomationTask } from "./task-automation";
 
 const router = Router();
+const objectStorage = new ObjectStorageService();
+
+/* غرفة العقود: المديرون الثلاثة يرون الكل؛ وغيرهم المسند إليه أو المنشئ («كل مسؤول يرى مالته») */
+async function isManagerHat(req: Request): Promise<boolean> {
+  if (req.session.role === "admin") return true;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM user_positions up JOIN positions p ON p.id = up.position_id
+     WHERE up.user_id = $1 AND p.key IN ('general_manager','executive_manager','financial_manager') LIMIT 1`,
+    [req.session.userId]);
+  return rows.length > 0;
+}
 
 /* ─── Helper: check employee can access a contract ─── */
 async function canAccessContract(contractId: number, userId: number, isAdmin: boolean): Promise<boolean> {
@@ -44,6 +55,9 @@ router.get("/", async (req: Request, res: Response) => {
         c.government_entity_id as "governmentEntityId", c.contract_value as "contractValue",
         c.sign_date as "signDate", c.start_date as "startDate", c.end_date as "endDate",
         c.status, c.notes, c.created_at as "createdAt", c.updated_at as "updatedAt",
+        c.ops_profile as "opsProfile", c.expected_payment_date as "expectedPaymentDate",
+        c.invoice_sent as "invoiceSent", c.invoice_sent_date as "invoiceSentDate",
+        c.created_by_user_id as "createdByUserId",
         c.final_bond_value as "finalBondValue", c.final_bond_number as "finalBondNumber",
         c.final_bond_bank as "finalBondBank",
         c.final_bond_issue_date as "finalBondIssueDate",
@@ -80,13 +94,14 @@ router.get("/", async (req: Request, res: Response) => {
       `);
     }
 
-    // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
-    // + العقود التي وجّه له المدير ملاحظات/تعليقات فيها — وإلا لا يستطيع
-    //   الاطلاع على ملاحظات المدير الموجهة إليه إطلاقًا
-    if (ownRecordsOnly(req)) {
+    // «كل مسؤول يرى مالته»: غير المديرين يرون المسند إليهم أو ما أنشؤوه
+    // (والقديم بلا مسؤول ولا منشئ يبقى ظاهرًا) + ما وُجّهت لهم فيه تعليقات
+    if (!isAdmin && !(await isManagerHat(req))) {
       params.push(userId);
       conditions.push(`(
         c.assigned_user_id = $${params.length}
+        OR c.created_by_user_id = $${params.length}
+        OR (c.assigned_user_id IS NULL AND c.created_by_user_id IS NULL)
         OR EXISTS (SELECT 1 FROM contract_comments cc WHERE cc.contract_id = c.id AND cc.to_user_id = $${params.length})
       )`);
     }
@@ -310,20 +325,22 @@ router.post("/:id/documents", async (req: Request, res: Response) => {
     const isAdmin = req.session.role === "admin";
     if (!await canAccessContract(contractId, userId, isAdmin))
       return res.status(403).json({ error: "لا تملك صلاحية الوصول إلى هذا العقد" });
-    const { fileName, fileSize, mimeType, fileData } = req.body;
+    const { fileName, fileSize, mimeType, fileData, objectPath } = req.body;
 
-    if (!fileName || !fileData) {
+    // الجديد يذهب للتخزين الكائني (علامة objpath:)؛ وbase64 القديم يبقى مقبولًا ومقروءًا
+    if (!fileName || (!fileData && !objectPath)) {
       return res.status(400).json({ error: "اسم الملف والبيانات مطلوبة" });
     }
-    if (fileData.length > 8 * 1024 * 1024 * 1.4) { // ~8MB base64 limit
+    if (fileData && fileData.length > 8 * 1024 * 1024 * 1.4) { // ~8MB base64 limit
       return res.status(413).json({ error: "حجم الملف كبير جداً (الحد الأقصى 5 ميغابايت)" });
     }
+    const stored = objectPath ? `objpath:${objectPath}` : fileData;
 
     const { rows } = await pool.query(
       `INSERT INTO contract_documents (contract_id, uploaded_by, file_name, file_size, mime_type, file_data)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, contract_id, uploaded_by, file_name, file_size, mime_type, created_at`,
-      [contractId, userId, fileName, fileSize || null, mimeType || null, fileData]
+      [contractId, userId, fileName, fileSize || null, mimeType || null, stored]
     );
     return res.status(201).json(rows[0]);
   } catch (err) {
@@ -354,6 +371,22 @@ router.get("/:id/documents/:docId/download", async (req: Request, res: Response)
       return res.status(403).json({ error: "لا تملك صلاحية تنزيل هذا الملف" });
     }
 
+    if (typeof doc.file_data === "string" && doc.file_data.startsWith("objpath:")) {
+      try {
+        const abs = await objectStorage.getPrivateObjectPath(doc.file_data.slice("objpath:".length));
+        const { stream, contentType, size } = await objectStorage.streamObject(abs);
+        res.set({
+          "Content-Type": doc.mime_type || contentType || "application/octet-stream",
+          "Content-Disposition": `attachment; filename="${encodeURIComponent(doc.file_name)}"`,
+          "Content-Length": String(size),
+        });
+        stream.pipe(res);
+        return;
+      } catch (err) {
+        if (err instanceof ObjectNotFoundError) return res.status(404).json({ error: "الملف غير موجود في المخزن" });
+        throw err;
+      }
+    }
     const buffer = Buffer.from(doc.file_data, "base64");
     res.set({
       "Content-Type": doc.mime_type || "application/octet-stream",

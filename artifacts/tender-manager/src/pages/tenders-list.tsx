@@ -11,7 +11,7 @@ import { caseFilesApi } from "@/lib/api";
 import {
   Search, Plus, Download, AlertCircle, FileText,
   Clock, CheckCircle2, Loader2, Trophy, Eye,
-  Building2, User2, Banknote, LayoutGrid, ChevronDown, UserCog,
+  Building2, User2, Banknote, LayoutGrid, ChevronDown, UserCog, Archive,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth";
 import { exportTendersToExcel } from "@/lib/export";
@@ -234,13 +234,17 @@ const GD = "#A87C20";
 const GR = "#132a18";
 
 const STAT_CARDS = [
-  { id: "all",                            label: "إجمالي المناقصات", icon: LayoutGrid,   color: "#64748b", bg: "#f8fafc" },
+  { id: "all",                            label: "النشطة",            icon: LayoutGrid,   color: "#64748b", bg: "#f8fafc" },
   { id: "urgent",                         label: "عاجلة",             icon: AlertCircle,  color: "#dc2626", bg: "#fff1f2" },
   { id: TenderStatus.studying,            label: "جاري الدراسة",     icon: Loader2,      color: "#2563eb", bg: "#eff6ff" },
   { id: TenderStatus.preparing_technical, label: "إعداد العروض",     icon: Clock,        color: "#d97706", bg: "#fffbeb" },
   { id: TenderStatus.under_evaluation,    label: "تحت التقييم",      icon: CheckCircle2, color: "#7c3aed", bg: "#f5f3ff" },
   { id: "won",                            label: "رست علينا",         icon: Trophy,       color: "#16a34a", bg: "#f0fdf4" },
+  { id: "archive",                        label: "المؤرشفة",          icon: Archive,      color: "#78716c", bg: "#fafaf9" },
 ];
+
+/* المحسومة تختفي من «النشطة» — العقود صارت بيتها (رست علينا/خسرنا/ملغاة تُطالَع من بطاقتي رست علينا والمؤرشفة) */
+const DECIDED = ["won", "lost", "cancelled"];
 
 export default function TendersList() {
   const { user } = useAuth();
@@ -252,20 +256,26 @@ export default function TendersList() {
   /* counts per card */
   const getCount = (id: string) => {
     if (!stats) return null;
-    if (id === "all")    return stats.total;
-    if (id === "urgent") return stats.urgentCount;
-    if (id === "won")    return stats.wonCount;
-    return stats.byStatus.find(s => s.status === id)?.count ?? 0;
+    const byS = (st: string) => stats.byStatus.find(s => s.status === st)?.count ?? 0;
+    if (id === "all")     return stats.total - byS("won") - byS("lost") - byS("cancelled");
+    if (id === "archive") return byS("won") + byS("lost") + byS("cancelled");
+    if (id === "urgent")  return stats.urgentCount;
+    if (id === "won")     return stats.wonCount;
+    return byS(id);
   };
 
   const queryParams: any = {};
   if (search)   queryParams.search = search;
   if (activeTab === "urgent") queryParams.urgent = true;
   if (activeTab === "won")    queryParams.won    = true;
-  if (activeTab !== "all" && activeTab !== "urgent" && activeTab !== "won")
+  if (!["all", "urgent", "won", "archive"].includes(activeTab))
     queryParams.status = activeTab;
 
-  const { data: tenders, isLoading } = useListTenders(queryParams);
+  const { data: rawTenders, isLoading } = useListTenders(queryParams);
+  const tenders = rawTenders?.filter((t: any) =>
+    activeTab === "all" ? !DECIDED.includes(t.status as string)
+    : activeTab === "archive" ? DECIDED.includes(t.status as string)
+    : true);
   const activeCard = STAT_CARDS.find(c => c.id === activeTab)!;
 
   return (
@@ -487,6 +497,15 @@ export default function TendersList() {
                             <span style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 9px", borderRadius: 20, background: (tender as any).caseStatus === "موقوف ماليًا" ? "#fff1f2" : (tender as any).caseStatus === "معتمد" ? "#f0fdf4" : "#fdf8ec", color: (tender as any).caseStatus === "موقوف ماليًا" ? "#dc2626" : (tender as any).caseStatus === "معتمد" ? "#16a34a" : GD }}>
                               📁 {(tender as any).caseStatus}
                             </span>
+                          </div>
+                        )}
+                        {(tender as any).contractId && (
+                          <div style={{ marginTop: 4 }}>
+                            <Link href={`/contracts?open=${(tender as any).contractId}`}>
+                              <span style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 9px", borderRadius: 20, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", cursor: "pointer", whiteSpace: "nowrap" }}>
+                                ← عقدها
+                              </span>
+                            </Link>
                           </div>
                         )}
                       </td>

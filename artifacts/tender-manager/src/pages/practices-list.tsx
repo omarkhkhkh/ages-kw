@@ -37,13 +37,16 @@ const STATUS_HEX: Record<string, { color: string; bg: string; border: string }> 
 
 const ACTIVE_STATUSES = ["new", "studying", "requesting_quotes", "preparing_technical", "preparing_financial", "management_review", "ready_to_submit", "under_evaluation"];
 
+const DECIDED = ["won", "lost", "cancelled"];
+
 const STATUS_TABS = [
-  { id: "all", label: "الجميع" },
+  { id: "all", label: "النشطة" },
   { id: "new", label: "جديدة" },
   { id: "studying", label: "جاري الدراسة" },
   { id: "under_evaluation", label: "تحت التقييم" },
   { id: "won", label: "رست علينا" },
   { id: "lost", label: "رست على منافس" },
+  { id: "archive", label: "المؤرشفة" },
 ];
 
 const emptyForm = {
@@ -88,7 +91,7 @@ export default function PracticesList() {
 
   const { data: practices = [], isLoading } = useQuery<any[]>({
     queryKey: ["practices", statusTab],
-    queryFn: () => apiFetch(`/api/practices${statusTab !== "all" ? `?status=${statusTab}` : ""}`),
+    queryFn: () => apiFetch(`/api/practices${statusTab !== "all" && statusTab !== "archive" ? `?status=${statusTab}` : ""}`),
   });
   const { data: stats } = useQuery<any>({
     queryKey: ["practices-stats"],
@@ -129,10 +132,13 @@ export default function PracticesList() {
   });
 
   const filtered = practices.filter((p) =>
-    !search ||
+    (statusTab === "all" ? !DECIDED.includes(p.status)
+      : statusTab === "archive" ? DECIDED.includes(p.status)
+      : true) &&
+    (!search ||
     (p.practiceNumber || "").toLowerCase().includes(search.toLowerCase()) ||
     (p.projectName || "").toLowerCase().includes(search.toLowerCase()) ||
-    (p.governmentEntity || "").includes(search),
+    (p.governmentEntity || "").includes(search)),
   );
 
   const handleCreate = (ev: React.FormEvent) => {
@@ -310,6 +316,13 @@ export default function PracticesList() {
                           <div style={{ marginTop: 4 }}>
                             <span style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 9px", borderRadius: 20, background: (p as any).caseStatus === "موقوف ماليًا" ? "#fff1f2" : (p as any).caseStatus === "معتمد" ? "#f0fdf4" : "#fdf8ec", color: (p as any).caseStatus === "موقوف ماليًا" ? "#dc2626" : (p as any).caseStatus === "معتمد" ? "#16a34a" : "#A87C20", whiteSpace: "nowrap" }}>
                               📁 {(p as any).caseStatus}
+                            </span>
+                          </div>
+                        )}
+                        {(p as any).contractId && (
+                          <div style={{ marginTop: 4 }} onClick={(e) => { e.stopPropagation(); navigate(`/contracts?open=${(p as any).contractId}`); }}>
+                            <span style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 9px", borderRadius: 20, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", cursor: "pointer", whiteSpace: "nowrap" }}>
+                              ← عقدها
                             </span>
                           </div>
                         )}

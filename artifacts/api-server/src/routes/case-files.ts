@@ -398,19 +398,53 @@ router.post("/:id/close", async (req: Request, res: Response) => {
       req.session.userId ?? null);
     // النتيجة الواحدة: إغلاق الملف يحدّث حالة المناقصة (فوز←رست علينا، خسارة←رست على منافس، انسحاب←ملغاة)
     await syncTenderStatus(cf.entity_type, cf.entity_id, outcome === "فوز" ? "won" : outcome === "خسارة" ? "lost" : "cancelled");
+    let autoContractId: number | null = null;
+    let autoContractNumber: string | null = null;
     if (outcome === "فوز" && cf.raised_by) {
       const isT = cf.entity_type === "tender";
       const { rows: t } = await pool.query(
-        isT ? `SELECT tender_number AS num FROM tenders WHERE id = $1` : `SELECT practice_number AS num FROM practices WHERE id = $1`, [cf.entity_id]);
-      const label = `${isT ? "مناقصة" : "ممارسة"} ${t[0]?.num ?? cf.entity_id}`;
-      await insertAutomationTask({ title: `توقيع العقد — ${label}`, sourceType: "case_file", sourceId: caseId, triggerKey: "sign_contract", linkedEntityType: cf.entity_type, linkedEntityId: cf.entity_id, priority: "high", assignedTo: cf.raised_by });
+        isT ? `SELECT tender_number AS num, government_entity_id AS gid, contract_value AS cv, offer_value AS ov, execution_start_date AS sd, execution_end_date AS ed FROM tenders WHERE id = $1`
+            : `SELECT practice_number AS num, government_entity_id AS gid, contract_value AS cv, offer_value AS ov, NULL::date AS sd, NULL::date AS ed FROM practices WHERE id = $1`, [cf.entity_id]);
+      const src = t[0] ?? {};
+      const label = `${isT ? "مناقصة" : "ممارسة"} ${src.num ?? cf.entity_id}`;
+
+      // «رست علينا» = عقد نشط فورًا (اتفاق الخارطة) — رقمه المبدئي من المصدر وملف تشغيله «توريد فقط» بانتظار التأكيد
+      if (!cf.contract_id) {
+        try {
+          const { rows: c } = await pool.query(
+            `INSERT INTO contracts (tender_id, practice_id, government_entity_id, contract_number, contract_value,
+                                    start_date, end_date, status, ops_profile, assigned_user_id, created_by_user_id, notes,
+                                    expected_payment_date, invoice_sent)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'active','توريد فقط',$8,$9,$10,NULL,false) RETURNING id, contract_number`,
+            [isT ? cf.entity_id : null, isT ? null : cf.entity_id, src.gid ?? null,
+             String(src.num ?? `C-${cf.entity_id}`),
+             src.cv ?? src.ov ?? null, src.sd ?? null, src.ed ?? null,
+             cf.raised_by, req.session.userId ?? null,
+             "تحوّل تلقائيًا من الملف الفائز — أكّد ملف التشغيل والرقم الرسمي"]);
+          autoContractId = c[0].id;
+          autoContractNumber = c[0].contract_number;
+          await pool.query(`UPDATE case_files SET contract_id = $1, updated_at = now() WHERE id = $2`, [autoContractId, caseId]);
+          await logEvent(caseId, "تحوّل تلقائيًا إلى عقد نشط",
+            `العقد ${autoContractNumber} — ملف التشغيل «توريد فقط» مبدئيًا، أكّده من غرفة العقود`, req.session.userId ?? null);
+        } catch (err) { console.error(err); }
+      }
+
+      await insertAutomationTask({
+        title: autoContractId
+          ? `أكمل بيانات العقد ${autoContractNumber} — الرقم الرسمي وملف التشغيل والكفالة النهائية`
+          : `توقيع العقد — ${label}`,
+        sourceType: "case_file", sourceId: caseId, triggerKey: "sign_contract",
+        linkedEntityType: cf.entity_type, linkedEntityId: cf.entity_id, priority: "high", assignedTo: cf.raised_by });
       await insertAutomationTask({ title: `إصدار الكفالة النهائية — ${label}`, sourceType: "case_file", sourceId: caseId, triggerKey: "final_bond", linkedEntityType: cf.entity_type, linkedEntityId: cf.entity_id, priority: "high", assignedTo: cf.raised_by });
     }
     // تلميح تقييم الموردين: مصدر الملف الخاص إن وُجد
     return res.json({
       ok: true, outcome, knowledgeEntryId: ke[0].id, bidResultId: session?.id ?? null,
       evaluateSupplierId: cf.own_source_supplier_id ?? null,
-      nextStep: outcome === "فوز" ? "التحويل إلى عقد نشط يأتي في المرحلة الخامسة" : null,
+      contractId: autoContractId,
+      nextStep: outcome === "فوز"
+        ? (autoContractId ? `تحوّل تلقائيًا إلى العقد ${autoContractNumber} — أكّد ملف تشغيله من غرفة العقود` : null)
+        : null,
     });
   } catch (e) {
     try { await client.query("ROLLBACK"); } catch { /* قد لا تكون بدأت */ }

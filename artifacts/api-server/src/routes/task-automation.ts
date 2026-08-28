@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth";
 import { logger } from "../lib/logger";
 import { createNotification } from "./notifications";
+import { revokeExpiredPositions } from "./positions";
 
 const router = Router();
 
@@ -141,6 +142,9 @@ const SUPPLIER_DELAY_DAYS = 10;
 /** فحوصات دورية: اقتراب انتهاء الضمانات/التسجيلات + تأخر مورد استدلالي */
 export async function runAutomationChecks(): Promise<void> {
   try {
+    // الإنابات المؤقتة المنتهية تسقط أولًا — قبل أي فحص يعتمد على القبعات
+    await revokeExpiredPositions();
+
     // اقتراب انتهاء ضمان بنكي — المهمة للمسؤول عن الكفالة (المالي) + إشعار موازٍ للتنفيذي
     const { rows: guarantees } = await pool.query(
       `SELECT id, guarantee_number AS "num", expiry_date AS "expiryDate", assigned_user_id AS "assignedTo"

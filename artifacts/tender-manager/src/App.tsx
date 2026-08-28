@@ -8,6 +8,7 @@ import { Layout } from '@/components/layout';
 import Landing from '@/pages/landing';
 import Login from '@/pages/login';
 import Dashboard from '@/pages/dashboard';
+import ChangePasswordGate from '@/pages/change-password';
 
 /* هبوط القبعات: المالي على مركزه، والتنفيذي على الأحمال، والمستشار على مناقصاته،
    والباحث على مكتبه، والمندوب والعمال على مهامهم — والعام والأدمن على اللوحة الشاملة */
@@ -113,6 +114,9 @@ function AppRouter() {
   }
 
   const isAdmin = user.role === "admin";
+
+  // الأمان: الحساب الجديد/المُعاد تعيينه لا يدخل النظام قبل أن يستبدل كلمته المؤقتة
+  if ((user as any).mustChangePassword) return <ChangePasswordGate />;
 
   return (
     <Layout>

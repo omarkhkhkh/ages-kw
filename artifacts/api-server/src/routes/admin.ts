@@ -4,6 +4,7 @@ import { db, pool, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAdmin } from "../middleware/auth";
 import { activityLogger } from "../middleware/activity-logger";
+import { killUserSessions, passwordPolicyError } from "../lib/security";
 
 const router = Router();
 
@@ -81,12 +82,37 @@ const USER_SELECT = {
   isActive: usersTable.isActive,
   createdAt: usersTable.createdAt,
   lastLogin: usersTable.lastLogin,
+  lockedUntil: usersTable.lockedUntil,
+  mustChangePassword: usersTable.mustChangePassword,
 } as const;
 
-// GET /api/admin/users
+// GET /api/admin/users — مع قبعات كل مستخدم (تظهر شرائح في الجدول)
 router.get("/users", async (_req, res) => {
   const users = await db.select(USER_SELECT).from(usersTable).orderBy(usersTable.createdAt);
-  res.json(users);
+  try {
+    const { rows: hats } = await pool.query(
+      `SELECT up.user_id AS uid, p.key, p.name_ar AS name, up.expires_at AS "expiresAt"
+       FROM user_positions up JOIN positions p ON p.id = up.position_id`);
+    const byUser = new Map<number, any[]>();
+    for (const h of hats) {
+      if (!byUser.has(h.uid)) byUser.set(h.uid, []);
+      byUser.get(h.uid)!.push({ key: h.key, name: h.name, expiresAt: h.expiresAt });
+    }
+    return res.json(users.map((u: any) => ({ ...u, hats: byUser.get(u.id) ?? [] })));
+  } catch {
+    return res.json(users.map((u: any) => ({ ...u, hats: [] })));
+  }
+});
+
+// GET /api/admin/login-attempts — سجل محاولات الدخول (لتبويب سجل الإدارة)
+router.get("/login-attempts", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, username, success, ip, created_at AS "createdAt" FROM login_attempts ORDER BY id DESC LIMIT 100`);
+    res.json(rows);
+  } catch {
+    res.json([]);
+  }
 });
 
 // POST /api/admin/users — create a new user
@@ -106,10 +132,8 @@ router.post("/users", async (req, res) => {
     res.status(400).json({ error: "اسم المستخدم والاسم الكامل وكلمة المرور مطلوبة." });
     return;
   }
-  if (password.length < 6) {
-    res.status(400).json({ error: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." });
-    return;
-  }
+  const policy = passwordPolicyError(password);
+  if (policy) { res.status(400).json({ error: policy }); return; }
 
   const hashed = await bcrypt.hash(password, 12);
 
@@ -146,6 +170,8 @@ router.post("/users", async (req, res) => {
       correspondenceViewAll: correspondenceViewAll ?? false,
       permissions: sanitizePermissions(permissions),
       recordViewScope: recordViewScope === "all" ? "all" : "own",
+      // الأدمن لا يبقى عارفًا كلمة الموظف: تغييرها إجباري عند أول دخول
+      mustChangePassword: true,
       // إبقاء أعمدة accessX القديمة متزامنة مع "عرض" في المصفوفة (تغذي القائمة الجانبية)
       ...(permissions ? accessColumnsFromMatrix(sanitizePermissions(permissions)!) : {}),
     })
@@ -206,11 +232,11 @@ router.patch("/users/:id", async (req, res) => {
   }
 
   if (password) {
-    if (password.length < 6) {
-      res.status(400).json({ error: "كلمة المرور يجب أن تكون 6 أحرف على الأقل." });
-      return;
-    }
+    const policy = passwordPolicyError(password);
+    if (policy) { res.status(400).json({ error: policy }); return; }
     updates.password = await bcrypt.hash(password, 12);
+    // إعادة تعيين من الأدمن: الموظف يغيّرها إجباريًا عند دخوله التالي
+    updates.mustChangePassword = true;
   }
 
   const [user] = await db
@@ -223,9 +249,16 @@ router.patch("/users/:id", async (req, res) => {
     res.status(404).json({ error: "المستخدم غير موجود." });
     return;
   }
+
+  // سد الثغرة: التعطيل/تغيير الدور/تعديل الصلاحيات/إعادة الكلمة تنهي جلساته القائمة فورًا
+  if (isActive === false || role !== undefined || permissions !== undefined || password) {
+    await killUserSessions(id);
+  }
+
   res.json(user);
 });
 
+/* أثر أمني بعد كل PATCH: يعالجه المسار نفسه أدناه (قتل جلسات عند التعطيل/تغيير الدور/الصلاحيات/الكلمة) */
 // GET /api/admin/users/:id/profile — full employee profile (tenders, projects, income, sales)
 router.get("/users/:id/profile", async (req, res) => {
   const id = Number(req.params.id);
@@ -408,17 +441,34 @@ router.put("/users/:id/record-permissions", async (req, res) => {
   }
 });
 
-// DELETE /api/admin/users/:id
+// DELETE /api/admin/users/:id — أرشفة آمنة بدل الحذف: لا موظف يُمحى وله أعمال مفتوحة أو سجلات
 router.delete("/users/:id", async (req, res) => {
   const id = Number(req.params.id);
   const remaining = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.role, "admin"));
   const [target] = await db.select().from(usersTable).where(eq(usersTable.id, id));
-  if (target?.role === "admin" && remaining.length <= 1) {
-    res.status(400).json({ error: "لا يمكن حذف المدير الوحيد." });
+  if (!target) { res.status(404).json({ error: "المستخدم غير موجود." }); return; }
+  if (target.role === "admin" && remaining.length <= 1) {
+    res.status(400).json({ error: "لا يمكن أرشفة المدير الوحيد." });
     return;
   }
-  await db.delete(usersTable).where(eq(usersTable.id, id));
-  res.status(204).end();
+  // بوابة الأعمال المفتوحة: انقلها من لوحة الأحمال أولًا
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         (SELECT COUNT(*) FROM tasks WHERE assigned_to = $1 AND status NOT IN ('completed','cancelled'))
+       + (SELECT COUNT(*) FROM research_assignments WHERE assigned_to_user_id = $1 AND status <> 'completed')
+       + (SELECT COUNT(*) FROM procurement_opportunities WHERE claimed_by_user_id = $1 AND status NOT IN ('won','lost','cancelled','retendered'))
+       AS open`, [id]);
+    const open = Number(rows[0]?.open ?? 0);
+    if (open > 0) {
+      res.status(409).json({ error: `لديه ${open} عملًا مفتوحًا — انقلها من لوحة الأحمال (مركز العمليات ← الأحمال والنقل) ثم أرشفه`, openCount: open });
+      return;
+    }
+  } catch { /* عند تعذّر الفحص نُكمل بالأرشفة الآمنة */ }
+  // أرشفة: تعطيل + إنهاء جلساته — سجلاته التاريخية تبقى سليمة (لا حذف يترك يتيمًا)
+  await db.update(usersTable).set({ isActive: false }).where(eq(usersTable.id, id));
+  await killUserSessions(id);
+  res.json({ archived: true });
 });
 
 export default router;

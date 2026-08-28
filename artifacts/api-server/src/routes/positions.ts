@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from "express";
 import { pool } from "@workspace/db";
+import { killUserSessions } from "../lib/security";
 
 /* ═══ المناصب (القبعات) — الخارطة الموحّدة، المرحلة ١ ═══
    القبعة حزمة صلاحيات جاهزة تُطبَّق على مصفوفة المستخدم القائمة:
@@ -124,7 +125,7 @@ router.get("/", async (req: Request, res: Response) => {
   try {
     const { rows } = await pool.query(
       `SELECT p.id, p.key, p.name_ar AS "nameAr", p.tier, p.description, p.sort_order AS "sortOrder",
-              COALESCE(json_agg(json_build_object('userId', u.id, 'fullName', u.full_name, 'grantedAt', up.granted_at))
+              COALESCE(json_agg(json_build_object('userId', u.id, 'fullName', u.full_name, 'grantedAt', up.granted_at, 'expiresAt', up.expires_at))
                        FILTER (WHERE u.id IS NOT NULL), '[]') AS holders
        FROM positions p
        LEFT JOIN user_positions up ON up.position_id = p.id
@@ -177,10 +178,12 @@ router.post("/grant", async (req: Request, res: Response) => {
 
     const before = await positionsOfUser(userId);
     await client.query("BEGIN");
+    // الإنابة المؤقتة: تاريخ انتهاء اختياري — تسقط تلقائيًا في موعدها
+    const expiresAt = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.expiresAt ?? "")) ? String(req.body.expiresAt) : null;
     const ins = await client.query(
-      `INSERT INTO user_positions (user_id, position_id, granted_by) VALUES ($1,$2,$3)
+      `INSERT INTO user_positions (user_id, position_id, granted_by, expires_at) VALUES ($1,$2,$3,$4)
        ON CONFLICT (user_id, position_id) DO NOTHING RETURNING id`,
-      [userId, pr[0].id, req.session.userId ?? null]
+      [userId, pr[0].id, req.session.userId ?? null, expiresAt]
     );
     if (!ins.rows.length) { await client.query("ROLLBACK"); return res.status(409).json({ error: "المستخدم يحمل هذه القبعة بالفعل" }); }
     await client.query(
@@ -192,6 +195,8 @@ router.post("/grant", async (req: Request, res: Response) => {
     // خارج المعاملة: تطبيق الصلاحيات (أول قبعة = ضبط، غير ذلك = اتحاد الحزم كلها)
     const after = [...before, positionKey];
     await applyMatrix(userId, unionOf(after));
+    // القبعة الجديدة تعمل فورًا: جلساته القديمة بصلاحيات قديمة تُنهى
+    await killUserSessions(userId);
     return res.status(201).json({ ok: true, positions: after, reset: before.length === 0 });
   } catch (e) {
     try { await client.query("ROLLBACK"); } catch { /* قد لا تكون بدأت */ }
@@ -225,6 +230,8 @@ router.post("/revoke", async (req: Request, res: Response) => {
 
     const remaining = await positionsOfUser(userId);
     if (remaining.length) await applyMatrix(userId, unionOf(remaining));
+    // سد الثغرة: المسحوبة قبعته لا يبقى داخلًا بصلاحياتها
+    await killUserSessions(userId);
     // آخر قبعة سُحبت: تُترك المصفوفة كما هي — إدارة صلاحياته تعود يدوية بالكامل من شاشة المستخدمين
     return res.json({ ok: true, positions: remaining });
   } catch (e) {
@@ -232,6 +239,31 @@ router.post("/revoke", async (req: Request, res: Response) => {
     console.error(e); return res.status(500).json({ error: "فشل سحب القبعة" });
   } finally { client.release(); }
 });
+
+// حزم القبعات للواجهة — لعرض «الفرق عن الحزمة» بالألوان في مصفوفة الصلاحيات
+router.get("/bundles", (_req: Request, res: Response) => {
+  res.json(BUNDLES);
+});
+
+/** كنس الإنابات المنتهية: القبعة المؤقتة تسقط تلقائيًا في موعدها — بقيد في السجل وإعادة حساب الصلاحيات */
+export async function revokeExpiredPositions(): Promise<void> {
+  try {
+    const { rows } = await pool.query(
+      `SELECT up.user_id AS uid, up.position_id AS pid, p.key
+       FROM user_positions up JOIN positions p ON p.id = up.position_id
+       WHERE up.expires_at IS NOT NULL AND up.expires_at < CURRENT_DATE`);
+    for (const r of rows) {
+      await pool.query(`DELETE FROM user_positions WHERE user_id = $1 AND position_id = $2`, [r.uid, r.pid]);
+      await pool.query(
+        `INSERT INTO position_audit_log (action, user_id, position_id, actor_user_id) VALUES ('سحب', $1, $2, NULL)`,
+        [r.uid, r.pid]);
+      const remainingKeys = await positionsOfUser(r.uid);
+      if (remainingKeys.length) await applyMatrix(r.uid, unionOf(remainingKeys));
+      await killUserSessions(r.uid);
+      console.log(`⏳ انتهت إنابة ${r.key} للمستخدم #${r.uid} — سُحبت تلقائيًا`);
+    }
+  } catch (err) { console.error("revokeExpiredPositions failed", err); }
+}
 
 export { positionsOfUser };
 export default router;

@@ -213,7 +213,8 @@ export const positionsApi = {
   list: () => apiFetch<any[]>("/api/positions"),
   ofUser: (userId: number) => apiFetch<{ positions: string[] }>(`/api/positions/user/${userId}`),
   audit: () => apiFetch<any[]>("/api/positions/audit"),
-  grant: (userId: number, positionKey: string) => apiFetch<any>("/api/positions/grant", { method: "POST", body: JSON.stringify({ userId, positionKey }) }),
+  grant: (userId: number, positionKey: string, expiresAt?: string) => apiFetch<any>("/api/positions/grant", { method: "POST", body: JSON.stringify({ userId, positionKey, ...(expiresAt ? { expiresAt } : {}) }) }),
+  bundles: () => apiFetch<Record<string, any>>("/api/positions/bundles"),
   revoke: (userId: number, positionKey: string) => apiFetch<any>("/api/positions/revoke", { method: "POST", body: JSON.stringify({ userId, positionKey }) }),
 };
 

@@ -13,6 +13,7 @@ import {
   ShieldAlert, Search, EyeOff, ChevronDown,
 } from "lucide-react";
 import { formatKuwaitDateTime } from "@/lib/timezone";
+import { generatePassword } from "@/pages/change-password";
 
 /* ── brand ── */
 const G  = "#D4A534";
@@ -140,8 +141,26 @@ function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (
 
 /* ── User Form Modal ── */
 function UserModal({ open, editing, form, setForm, newPass, setNewPass, onClose, onSave, isPending }: any) {
+  // حزم القبعات — لعرض «الفرق عن الحزمة» بالألوان (hook قبل أي خروج مبكر)
+  const { data: hatBundles } = useQuery<Record<string, any>>({ queryKey: ["position-bundles"], queryFn: () => positionsApi.bundles() });
   if (!open) return null;
   const isEdit = !!editing;
+  const heldHatKeys: string[] = isEdit ? (((editing as any).hats ?? []) as any[]).map((h: any) => h.key) : [];
+  // المصفوفة المتوقعة من اتحاد حزم قبعاته — الفرق عنها يُلوَّن في الجدول
+  const expectedMatrix: PermMatrix | null = (isEdit && hatBundles && heldHatKeys.length)
+    ? (() => {
+        const m: any = {};
+        for (const { key } of MODULES) m[key] = { view: false, add: false, edit: false, del: false };
+        for (const hk of heldHatKeys) {
+          const b = (hatBundles as any)[hk] ?? {};
+          for (const [mod, acts] of Object.entries(b)) {
+            if (!m[mod]) m[mod] = { view: false, add: false, edit: false, del: false };
+            for (const a of ["view", "add", "edit", "del"] as const) if ((acts as any)[a]) m[mod][a] = true;
+          }
+        }
+        return m as PermMatrix;
+      })()
+    : null;
   const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 13, color: "#1e2a1e", background: "#fafaf8", outline: "none", fontFamily: "inherit" };
   const lbl: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 700, color: GR, marginBottom: 5 };
   const focus = (e: any) => { e.target.style.borderColor = G; e.target.style.boxShadow = `0 0 0 3px rgba(212,165,52,0.15)`; };
@@ -192,10 +211,18 @@ function UserModal({ open, editing, form, setForm, newPass, setNewPass, onClose,
               </div>
               <div>
                 <label style={lbl}>{isEdit ? "كلمة مرور جديدة (اختياري)" : "كلمة المرور *"}</label>
-                <input type="password" value={isEdit ? newPass : data.password}
-                  onChange={e => isEdit ? setNewPass(e.target.value) : set("password", e.target.value)}
-                  placeholder={isEdit ? "اتركها فارغة إذا لم تريد التغيير" : "كلمة المرور"}
-                  dir="ltr" style={inp} onFocus={focus} onBlur={blur} />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input type="text" value={isEdit ? newPass : data.password}
+                    onChange={e => isEdit ? setNewPass(e.target.value) : set("password", e.target.value)}
+                    placeholder={isEdit ? "اتركها فارغة إذا لم تريد التغيير" : "كلمة المرور"}
+                    dir="ltr" style={{ ...inp, flex: 1 }} onFocus={focus} onBlur={blur} />
+                  <button type="button" title="توليد كلمة قوية"
+                    onClick={() => { const pw = generatePassword(); isEdit ? setNewPass(pw) : set("password", pw); }}
+                    style={{ padding: "0 12px", borderRadius: 10, border: `1.5px solid ${G}66`, background: "#fdf8ec", color: GD, fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                    🎲 توليد
+                  </button>
+                </div>
+                <p style={{ fontSize: 10.5, color: "#9ca3af", margin: "4px 0 0" }}>8+ أحرف وفيها حرف ورقم — والموظف يغيّرها إجباريًا عند أول دخول</p>
               </div>
             </div>
 
@@ -250,6 +277,12 @@ function UserModal({ open, editing, form, setForm, newPass, setNewPass, onClose,
             <p style={{ fontSize: 11, color: "#9ca3af", margin: "0 2px 10px" }}>
               تُفرض من السيرفر تلقائيًا: بدون "عرض" لا تظهر الوحدة إطلاقًا، وكل عملية إضافة/تعديل/حذف تتطلب صلاحيتها. المدير يملك كل الصلاحيات دائمًا.
             </p>
+            {isEdit && heldHatKeys.length > 0 && (
+              <p style={{ fontSize: 11, fontWeight: 700, margin: "0 2px 10px", display: "flex", gap: 14, flexWrap: "wrap" }}>
+                <span style={{ color: "#16a34a" }}>◉ إطار أخضر: زيادة يدوية على حزمة قبعته ({heldHatKeys.length ? ((editing as any).hats ?? []).map((h: any) => h.name).join("، ") : ""})</span>
+                <span style={{ color: "#dc2626" }}>◉ إطار أحمر: محجوب يدويًا من حزمته</span>
+              </p>
+            )}
             {(() => {
               const matrix: PermMatrix = (data as any).permissions ?? matrixFromLegacy(data as any);
               const setCell = (mod: string, action: keyof PermActions, val: boolean) => {
@@ -273,11 +306,14 @@ function UserModal({ open, editing, form, setForm, newPass, setNewPass, onClose,
                 set("permissions", next);
               };
               const colAll = (action: keyof PermActions) => MODULES.every(({ key }) => matrix[key]?.[action]);
-              const cellBox = (checked: boolean, onChange: () => void) => (
-                <button type="button" onClick={onChange} style={{
+              const cellBox = (checked: boolean, onChange: () => void, diff?: "extra" | "missing") => (
+                <button type="button" onClick={onChange}
+                  title={diff === "extra" ? "زيادة على حزمة قبعته" : diff === "missing" ? "محجوب من حزمة قبعته" : undefined}
+                  style={{
                   width: 22, height: 22, borderRadius: 6, cursor: "pointer",
                   border: `1.5px solid ${checked ? "#16a34a" : "#d1d5db"}`,
                   background: checked ? "#16a34a" : "white",
+                  boxShadow: diff === "extra" ? "0 0 0 2.5px #86efac" : diff === "missing" ? "0 0 0 2.5px #fca5a5" : undefined,
                   display: "inline-flex", alignItems: "center", justifyContent: "center",
                   color: "white", fontSize: 13, fontWeight: 900, lineHeight: 1, padding: 0,
                 }}>{checked ? "✓" : ""}</button>
@@ -308,11 +344,16 @@ function UserModal({ open, editing, form, setForm, newPass, setNewPass, onClose,
                             <td style={{ padding: "8px 14px", fontWeight: 700, color: row.view ? "#132a18" : "#9ca3af", whiteSpace: "nowrap" }}>
                               <span style={{ marginLeft: 6 }}>{icon}</span>{label}
                             </td>
-                            {PERM_ACTIONS.map(a => (
-                              <td key={a.key} style={{ padding: "8px", textAlign: "center" }}>
-                                {cellBox(!!row[a.key as keyof PermActions], () => setCell(key, a.key as keyof PermActions, !row[a.key as keyof PermActions]))}
-                              </td>
-                            ))}
+                            {PERM_ACTIONS.map(a => {
+                              const exp = expectedMatrix?.[key]?.[a.key as keyof PermActions];
+                              const cur = !!row[a.key as keyof PermActions];
+                              const diff = expectedMatrix ? (cur && !exp ? "extra" as const : !cur && exp ? "missing" as const : undefined) : undefined;
+                              return (
+                                <td key={a.key} style={{ padding: "8px", textAlign: "center" }}>
+                                  {cellBox(cur, () => setCell(key, a.key as keyof PermActions, !cur), diff)}
+                                </td>
+                              );
+                            })}
                             <td style={{ padding: "8px", textAlign: "center" }}>
                               {cellBox(rowAll, () => setRow(key, !rowAll))}
                             </td>
@@ -967,8 +1008,85 @@ function PermissionsModal({ user, onClose }: { user: UserRow; onClose: () => voi
   );
 }
 
+/* ── نافذة «ماذا يرى؟»: محاكاة غرف النظام المرئية لهذا المستخدم — دقة قبل المنح ── */
+function WhatSeesModal({ u, onClose }: { u: UserRow; onClose: () => void }) {
+  const isAdminU = u.role === "admin";
+  const hats: string[] = (((u as any).hats ?? []) as any[]).map((h: any) => h.key);
+  const can = (f: string) => isAdminU || !!(u as any)[f];
+  const manager = isAdminU || ["general_manager", "executive_manager", "financial_manager"].some(k => hats.includes(k));
+  const GROUPS: { label: string; items: { label: string; show: boolean }[] }[] = [
+    { label: "لوحتي", items: [{ label: "لوحة التحكم", show: true }] },
+    { label: "الملفات والقرارات", items: [{ label: "الملفات والاعتمادات", show: manager }] },
+    { label: "الأعمال والمناقصات", items: [
+      { label: "المناقصات والممارسات", show: can("accessTenders") },
+      { label: "بورصة الفرص (داخل أوامر الشراء)", show: can("accessOpportunities") },
+      { label: "غرفة العقود وعروض الأسعار", show: can("accessContracts") },
+      { label: "أوامر الشراء — السوق المحلي", show: can("accessPo") || can("accessResearch") },
+      { label: "غرفة التسعير", show: can("accessPricing") },
+      { label: "ذكاء المنافسين والتنبؤ 🔒", show: can("accessTenders") },
+      { label: "المشاريع", show: can("accessProjects") },
+    ]},
+    { label: "العمليات", items: [
+      { label: "مركز العمليات", show: can("accessTasks") },
+      { label: "الأحمال والنقل (داخل المركز)", show: isAdminU || hats.includes("executive_manager") },
+      { label: "التجديدات (داخل المركز)", show: manager },
+      { label: "النقل", show: can("accessTransportation") },
+      { label: "الصيانة وتقاريرها", show: can("accessMaintenance") },
+      { label: "المراسلات", show: can("accessCorrespondence") },
+      { label: "الإقامات", show: can("accessResidency") },
+    ]},
+    { label: "المالية", items: [
+      { label: "المركز المالي (الأبواب الخمسة)", show: manager },
+      { label: "سجل الكفالات", show: manager },
+    ]},
+    { label: "الدلائل والمستندات", items: [
+      { label: "الجهات الحكومية", show: can("accessEntities") },
+      { label: "الموردون", show: can("accessSuppliers") },
+      { label: "وثائق الشركة والتسجيلات", show: isAdminU || can("accessTenders") },
+    ]},
+    { label: "الإعدادات", items: [{ label: "المستخدمون وسجل النشاط", show: isAdminU }] },
+  ];
+  const landing = isAdminU || hats.includes("general_manager") ? "لوحة التحكم"
+    : hats.includes("financial_manager") ? "المركز المالي"
+    : hats.includes("executive_manager") ? "الأحمال والنقل"
+    : hats.includes("consultant") ? "سجل المناقصات"
+    : hats.includes("researcher") ? "مكتب التكليفات والمواصفات"
+    : (hats.includes("delegate") || hats.includes("transport_worker") || hats.includes("maintenance_worker")) ? "مركز العمليات"
+    : "لوحة التحكم";
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(11,26,16,.5)", zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div dir="rtl" onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: 16, width: "min(560px,100%)", maxHeight: "86vh", overflowY: "auto", padding: 20, border: `1.5px solid ${G}33` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <h2 style={{ fontSize: 15.5, fontWeight: 800, color: GR, margin: 0 }}>👁 ماذا يرى {u.fullName}؟</h2>
+          <button onClick={onClose} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 6, cursor: "pointer", display: "inline-flex" }}><X size={14} color="#64748b" /></button>
+        </div>
+        <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 12px" }}>محاكاة قائمته وغرفه حسب قبعاته وصلاحياته الحالية — يهبط عند الدخول على: <b style={{ color: GD }}>{landing}</b></p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {GROUPS.map(g => {
+            const visible = g.items.filter(i => i.show);
+            return (
+              <div key={g.label} style={{ border: "1.5px solid #f0ead8", borderRadius: 12, padding: "10px 14px", background: visible.length ? "white" : "#fafafa" }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: visible.length ? GR : "#c7cdd6", marginBottom: visible.length ? 6 : 0 }}>
+                  {g.label}{!visible.length && " — مخفية بالكامل"}
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {g.items.map(i => (
+                    <span key={i.label} style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: i.show ? "#f0fdf4" : "#f9fafb", color: i.show ? "#16a34a" : "#d1d5db", border: `1px solid ${i.show ? "#bbf7d0" : "#f0f0f0"}`, textDecoration: i.show ? "none" : "line-through" }}>
+                      {i.show ? "✓" : "✗"} {i.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── User Card ── */
-function UserCard({ u, me, onEdit, onDelete, onViewProfile, onViewPositions, onViewPermissions }: { u: UserRow; me: any; onEdit: () => void; onDelete: () => void; onViewProfile: () => void; onViewPositions: () => void; onViewPermissions: () => void }) {
+function UserCard({ u, me, onEdit, onDelete, onViewProfile, onViewPositions, onViewPermissions, onPreview }: { u: UserRow; me: any; onEdit: () => void; onDelete: () => void; onViewProfile: () => void; onViewPositions: () => void; onViewPermissions: () => void; onPreview: () => void }) {
   const isAdmin = u.role === "admin";
 
   return (
@@ -991,10 +1109,25 @@ function UserCard({ u, me, onEdit, onDelete, onViewProfile, onViewPositions, onV
                 ? <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#16a34a", fontWeight: 600 }}><CheckCircle2 size={12} /> نشط</span>
                 : <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#dc2626", fontWeight: 600 }}><XCircle size={12} /> موقوف</span>
               }
+              {(u as any).lockedUntil && new Date((u as any).lockedUntil) > new Date() && (
+                <span style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 9px", borderRadius: 20, background: "#fff1f2", color: "#dc2626" }}>🔒 مقفل بعد محاولات فاشلة</span>
+              )}
+              {(u as any).mustChangePassword && (
+                <span style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 9px", borderRadius: 20, background: "#fffbeb", color: "#d97706" }}>🔑 بانتظار تغيير كلمته</span>
+              )}
             </div>
             <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>
               @{u.username} · آخر دخول: {u.lastLogin ? formatKuwaitDateTime(u.lastLogin) : "لم يدخل بعد"}
             </div>
+            {((u as any).hats ?? []).length > 0 && (
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 5 }}>
+                {((u as any).hats as any[]).map((h) => (
+                  <span key={h.key} style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 10px", borderRadius: 20, background: "#fdf8ec", color: GD, border: `1px solid ${G}30`, whiteSpace: "nowrap" }}>
+                    🎩 {h.name}{h.expiresAt ? ` ⏳ حتى ${String(h.expiresAt).slice(0, 10)}` : ""}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1005,6 +1138,10 @@ function UserCard({ u, me, onEdit, onDelete, onViewProfile, onViewPositions, onV
             onMouseEnter={e => (e.currentTarget.style.background = `${G}18`)}
             onMouseLeave={e => (e.currentTarget.style.background = "#fffbeb")}>
             <Eye size={13} /> الملف
+          </button>
+          <button onClick={onPreview} title="ماذا يرى هذا المستخدم؟"
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#ecfeff", color: "#0891b2", border: "1px solid #a5f3fc", cursor: "pointer", fontFamily: "inherit" }}>
+            <Eye size={13} /> يرى؟
           </button>
           <button onClick={onViewPositions} title="القبعات (المناصب)"
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#fdf8ec", color: GD, border: `1px solid ${G}40`, cursor: "pointer", fontFamily: "inherit" }}>
@@ -1030,12 +1167,12 @@ function UserCard({ u, me, onEdit, onDelete, onViewProfile, onViewPositions, onV
             onMouseLeave={e => (e.currentTarget.style.background = "#f0fdf4")}>
             <Pencil size={12} /> تعديل
           </button>
-          {u.id !== me?.id && (
-            <button onClick={onDelete}
+          {u.id !== me?.id && u.isActive && (
+            <button onClick={onDelete} title="أرشفة آمنة: تعطيل + إنهاء جلساته — بعد نقل أعماله المفتوحة"
               style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "#fff1f2", color: "#dc2626", border: "1px solid #fecaca", cursor: "pointer", fontFamily: "inherit" }}
               onMouseEnter={e => (e.currentTarget.style.background = "#fee2e2")}
               onMouseLeave={e => (e.currentTarget.style.background = "#fff1f2")}>
-              <Trash2 size={12} />
+              <Trash2 size={12} /> أرشفة
             </button>
           )}
         </div>
@@ -1089,7 +1226,8 @@ function PositionsModal({ user, onClose }: { user: UserRow; onClose: () => void 
   const { data: audit = [] } = useQuery<any[]>({ queryKey: ["positions-audit"], queryFn: () => positionsApi.audit() });
   const held = mine?.positions ?? [];
   const inv = () => { qc.invalidateQueries({ queryKey: ["user-positions", user.id] }); qc.invalidateQueries({ queryKey: ["positions"] }); qc.invalidateQueries({ queryKey: ["positions-audit"] }); qc.invalidateQueries({ queryKey: ["admin-users"] }); };
-  const grantMut = useMutation({ mutationFn: (key: string) => positionsApi.grant(user.id, key), onSuccess: inv, onError: (e: any) => alert(e.message) });
+  const [grantExpiry, setGrantExpiry] = useState("");
+  const grantMut = useMutation({ mutationFn: (key: string) => positionsApi.grant(user.id, key, grantExpiry || undefined), onSuccess: () => { setGrantExpiry(""); inv(); }, onError: (e: any) => alert(e.message) });
   const revokeMut = useMutation({ mutationFn: (key: string) => positionsApi.revoke(user.id, key), onSuccess: inv, onError: (e: any) => alert(e.message) });
   const userAudit = audit.filter((a) => a.targetName === user.fullName).slice(0, 8);
   return (
@@ -1099,7 +1237,13 @@ function PositionsModal({ user, onClose }: { user: UserRow; onClose: () => void 
           <h2 style={{ fontSize: 16, fontWeight: 800, color: GR, margin: 0 }}>القبعات — {user.fullName}</h2>
           <button onClick={onClose} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 6, cursor: "pointer", display: "inline-flex" }}><XCircle size={15} color="#64748b" /></button>
         </div>
-        <p style={{ fontSize: 12, color: "#9ca3af", margin: "0 0 14px" }}>أول قبعة تضبط صلاحيات المستخدم على حزمتها («القبعة تحدد ما يرى»)، واللاحقة تضيف فوقها، والسحب يسحب ما لا تغطيه قبعة باقية. كل منح وسحب يُقيَّد في السجل باسم فاعله.</p>
+        <p style={{ fontSize: 12, color: "#9ca3af", margin: "0 0 10px" }}>أول قبعة تضبط صلاحيات المستخدم على حزمتها («القبعة تحدد ما يرى»)، واللاحقة تضيف فوقها، والسحب يسحب ما لا تغطيه قبعة باقية. كل منح وسحب يُقيَّد في السجل باسم فاعله — والمنح والسحب ينهيان جلساته القائمة فورًا.</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, background: "#fdf8ec", border: `1px solid ${G}30`, borderRadius: 10, padding: "8px 12px" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: GR }}>⏳ إنابة مؤقتة؟ حدد انتهاءها قبل المنح:</span>
+          <input type="date" value={grantExpiry} onChange={(e) => setGrantExpiry(e.target.value)}
+            style={{ padding: "5px 9px", borderRadius: 8, border: "1.5px solid #e5dfc8", fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+          {grantExpiry && <span style={{ fontSize: 11, color: "#d97706", fontWeight: 700 }}>القبعة الممنوحة الآن تسقط تلقائيًا بعد هذا التاريخ</span>}
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {allPositions.map((pos) => {
             const has = held.includes(pos.key);
@@ -1110,7 +1254,7 @@ function PositionsModal({ user, onClose }: { user: UserRow; onClose: () => void 
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     <b style={{ fontSize: 13.5, color: GR }}>{pos.nameAr}</b>
                     <span style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 9px", borderRadius: 20, background: managerial ? "#f5f3ff" : "#f0fdf4", color: managerial ? "#7c3aed" : "#16a34a" }}>{pos.tier}</span>
-                    {(pos.holders ?? []).length > 0 && <span style={{ fontSize: 11, color: "#9ca3af" }}>يحملها: {(pos.holders ?? []).map((h: any) => h.fullName).join("، ")}</span>}
+                    {(pos.holders ?? []).length > 0 && <span style={{ fontSize: 11, color: "#9ca3af" }}>يحملها: {(pos.holders ?? []).map((h: any) => h.fullName + (h.expiresAt ? ` (⏳ ${String(h.expiresAt).slice(0, 10)})` : "")).join("، ")}</span>}
                   </div>
                   <div style={{ fontSize: 11.5, color: "#6b7280", marginTop: 2 }}>{pos.description}</div>
                 </div>
@@ -1147,6 +1291,11 @@ export default function AdminUsers() {
   const [profileUserId,     setProfileUserId]     = useState<number | null>(null);
   const [positionsUser,     setPositionsUser]     = useState<UserRow | null>(null);
   const [permissionsUser,   setPermissionsUser]   = useState<UserRow | null>(null);
+  const [previewUser,       setPreviewUser]       = useState<UserRow | null>(null);
+  const [pageTab, setPageTab] = useState<"users" | "audit">("users");
+  const [q, setQ] = useState("");
+  const [hatFilter, setHatFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
 
   const { data: users = [], isLoading } = useQuery<UserRow[]>({
     queryKey: ["admin-users"],
@@ -1165,6 +1314,20 @@ export default function AdminUsers() {
   const deleteMut = useMutation({
     mutationFn: (id: number) => apiFetch(`/api/admin/users/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+    onError: (e: any) => alert(e.message),
+  });
+
+  // سجل الإدارة: قبعات + محاولات دخول
+  const { data: hatAudit = [] } = useQuery<any[]>({ queryKey: ["positions-audit"], queryFn: () => positionsApi.audit(), enabled: pageTab === "audit" });
+  const { data: loginAttempts = [] } = useQuery<any[]>({ queryKey: ["login-attempts"], queryFn: () => apiFetch("/api/admin/login-attempts"), enabled: pageTab === "audit" });
+  const { data: allHats = [] } = useQuery<any[]>({ queryKey: ["positions"], queryFn: () => positionsApi.list() });
+
+  const visibleUsers = users.filter(u => {
+    if (statusFilter === "active" && !u.isActive) return false;
+    if (statusFilter === "inactive" && u.isActive) return false;
+    if (hatFilter && !(((u as any).hats ?? []) as any[]).some((h: any) => h.key === hatFilter)) return false;
+    if (q && !(u.fullName.includes(q) || u.username.toLowerCase().includes(q.toLowerCase()))) return false;
+    return true;
   });
 
   const closeAll = () => { setShowForm(false); setEditing(null); setForm({ ...defaultForm }); setNewPass(""); };
@@ -1238,6 +1401,11 @@ export default function AdminUsers() {
         <PermissionsModal user={permissionsUser} onClose={() => setPermissionsUser(null)} />
       )}
 
+      {/* ماذا يرى؟ */}
+      {previewUser !== null && (
+        <WhatSeesModal u={previewUser} onClose={() => setPreviewUser(null)} />
+      )}
+
       {/* User form modal */}
       <UserModal
         open={showForm || !!editing}
@@ -1292,6 +1460,76 @@ export default function AdminUsers() {
         ))}
       </div>
 
+      {/* تبويبا الصفحة: المستخدمون | سجل الإدارة */}
+      <div style={{ display: "flex", gap: 6, background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 6, width: "fit-content" }}>
+        {([["users", "👥 المستخدمون"], ["audit", "🧾 سجل الإدارة"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setPageTab(id)}
+            style={{ padding: "9px 22px", borderRadius: 10, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", border: "none", background: pageTab === id ? `linear-gradient(135deg,${G},${GD})` : "transparent", color: pageTab === id ? "white" : "#6b7280" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {pageTab === "audit" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "16px 20px" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: GR, marginBottom: 10 }}>🎩 سجل القبعات — كل منح وسحب باسم فاعله</div>
+            {hatAudit.length === 0 ? <div style={{ color: "#9ca3af", fontSize: 12.5 }}>لا حركات بعد</div> :
+              hatAudit.slice(0, 40).map((a: any) => (
+                <div key={a.id} style={{ fontSize: 12.5, color: "#4b5563", padding: "5px 0", borderBottom: "1px dashed #f0ead8" }}>
+                  <b style={{ color: a.action === "منح" ? "#16a34a" : "#dc2626" }}>{a.action}</b> {a.positionName} — لـ<b>{a.userName ?? `#${a.userId}`}</b> بواسطة {a.actorName ?? "النظام (انتهاء إنابة)"} · {formatKuwaitDateTime(a.createdAt)}
+                </div>
+              ))}
+          </div>
+          <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "16px 20px" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: GR, marginBottom: 10 }}>🔐 محاولات الدخول الأخيرة — الفاشلة تكشف من يحاول</div>
+            {loginAttempts.length === 0 ? <div style={{ color: "#9ca3af", fontSize: 12.5 }}>لا محاولات مسجلة بعد</div> : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 480 }}>
+                  <thead><tr style={{ background: "#faf8f2" }}>{["المستخدم", "النتيجة", "العنوان", "الوقت"].map(h => <th key={h} style={{ padding: "8px 12px", textAlign: "right", fontWeight: 800, fontSize: 11, color: "#6b7280", borderBottom: "1.5px solid #f0ead8" }}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {loginAttempts.map((a: any) => (
+                      <tr key={a.id} style={{ borderBottom: "1px solid #f5f0e6", background: a.success ? "white" : "#fff7f7" }}>
+                        <td style={{ padding: "6px 12px", fontWeight: 700, color: GR }}>{a.username}</td>
+                        <td style={{ padding: "6px 12px" }}>{a.success ? <span style={{ color: "#16a34a", fontWeight: 700 }}>✓ نجحت</span> : <span style={{ color: "#dc2626", fontWeight: 700 }}>✗ فشلت</span>}</td>
+                        <td style={{ padding: "6px 12px", color: "#9ca3af", fontFamily: "monospace", fontSize: 11 }}>{a.ip ?? "—"}</td>
+                        <td style={{ padding: "6px 12px", color: "#6b7280" }}>{formatKuwaitDateTime(a.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {pageTab === "users" && (
+      <>
+      {/* بحث وفلاتر */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ position: "relative", width: 260 }}>
+          <Search size={14} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#9ca3af" }} />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="بحث بالاسم أو اسم المستخدم..."
+            style={{ width: "100%", boxSizing: "border-box", padding: "9px 36px 9px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 13, outline: "none", fontFamily: "inherit", background: "white" }} />
+        </div>
+        <select value={hatFilter} onChange={e => setHatFilter(e.target.value)} style={{ padding: "9px 12px", borderRadius: 10, border: "1.5px solid #e5e7eb", fontSize: 12.5, fontFamily: "inherit", background: "white" }}>
+          <option value="">🎩 كل القبعات</option>
+          {allHats.map((p: any) => <option key={p.key} value={p.key}>{p.nameAr}</option>)}
+        </select>
+        <div style={{ display: "flex", gap: 4, background: "white", border: "1.5px solid #f0ead8", borderRadius: 10, padding: 4 }}>
+          {([["all", "الكل"], ["active", "نشط"], ["inactive", "موقوف"]] as const).map(([id, label]) => (
+            <button key={id} onClick={() => setStatusFilter(id)}
+              style={{ padding: "5px 14px", borderRadius: 7, fontSize: 12, fontWeight: 700, border: "none", cursor: "pointer", fontFamily: "inherit", background: statusFilter === id ? `${G}22` : "transparent", color: statusFilter === id ? GD : "#6b7280" }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {(q || hatFilter || statusFilter !== "all") && (
+          <span style={{ fontSize: 12, color: "#9ca3af" }}>{visibleUsers.length} من {users.length}</span>
+        )}
+      </div>
+
       {/* Users list */}
       {isLoading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1299,23 +1537,26 @@ export default function AdminUsers() {
             <div key={i} style={{ background: "white", borderRadius: 18, border: "1.5px solid #f0ead8", height: 160, animation: "pulse 1.5s infinite" }} />
           ))}
         </div>
-      ) : users.length === 0 ? (
+      ) : visibleUsers.length === 0 ? (
         <div style={{ padding: "64px 0", textAlign: "center" }}>
           <Users size={44} color="#e2d5b0" style={{ margin: "0 auto 12px", display: "block" }} />
-          <p style={{ color: "#94a3b8", fontSize: 14, fontWeight: 600 }}>لا يوجد مستخدمون مسجّلون</p>
+          <p style={{ color: "#94a3b8", fontSize: 14, fontWeight: 600 }}>{users.length ? "لا نتائج مطابقة للفلاتر" : "لا يوجد مستخدمون مسجّلون"}</p>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {users.map(u => (
+          {visibleUsers.map(u => (
             <UserCard key={u.id} u={u} me={me}
               onEdit={() => { closeAll(); setEditing({ ...u }); }}
-              onDelete={() => { if (confirm(`حذف ${u.fullName}؟`)) deleteMut.mutate(u.id); }}
+              onDelete={() => { if (confirm(`أرشفة ${u.fullName}؟ سيُعطَّل حسابه وتُنهى جلساته — وسجلاته التاريخية تبقى.`)) deleteMut.mutate(u.id); }}
               onViewProfile={() => setProfileUserId(u.id)}
               onViewPositions={() => setPositionsUser(u)}
               onViewPermissions={() => setPermissionsUser(u)}
+              onPreview={() => setPreviewUser(u)}
             />
           ))}
         </div>
+      )}
+      </>
       )}
 
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}`}</style>

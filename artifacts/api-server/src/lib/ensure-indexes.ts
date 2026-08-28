@@ -930,6 +930,20 @@ const MIGRATIONS = [
   // مكان واحد للسوق المحلي: الفرصة الفائزة تتولد أمر شراء وتربط به
   `ALTER TABLE procurement_opportunities ADD COLUMN IF NOT EXISTS purchase_order_id integer REFERENCES direct_purchase_orders(id) ON DELETE SET NULL`,
 
+  // حزمة أمان إدارة المستخدمين: القفل المؤقت + إجبار تغيير الكلمة + الإنابة المؤقتة + سجل المحاولات
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_logins integer NOT NULL DEFAULT 0`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until timestamptz`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT false`,
+  `ALTER TABLE user_positions ADD COLUMN IF NOT EXISTS expires_at date`,
+  `CREATE TABLE IF NOT EXISTS login_attempts (
+    id serial PRIMARY KEY,
+    username text NOT NULL,
+    success boolean NOT NULL,
+    ip text,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_login_attempts_time ON login_attempts(created_at DESC)`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

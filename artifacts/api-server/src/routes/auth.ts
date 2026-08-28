@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { positionsOfUser } from "./positions";
 import bcrypt from "bcryptjs";
+import { passwordPolicyError, logLoginAttempt } from "../lib/security";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logActivity } from "../middleware/activity-logger";
@@ -50,6 +51,7 @@ function buildUserResponse(user: any) {
     permissions: user.permissions ?? synthesizePermissions(user),
     recordViewScope: user.recordViewScope ?? "own",
     positions: user.positions ?? [],
+    mustChangePassword: user.mustChangePassword ?? false,
   };
 }
 
@@ -65,18 +67,35 @@ router.post("/login", async (req, res) => {
   const [user] = await db.select().from(usersTable).where(eq(usersTable.username, username));
 
   if (!user || !user.isActive) {
+    await logLoginAttempt(username, false, req.ip);
     res.status(401).json({ error: "اسم المستخدم أو كلمة المرور غير صحيحة." });
+    return;
+  }
+
+  // القفل المؤقت بعد ٥ محاولات فاشلة
+  if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+    const mins = Math.ceil((new Date(user.lockedUntil).getTime() - Date.now()) / 60000);
+    await logLoginAttempt(username, false, req.ip);
+    res.status(423).json({ error: `الحساب مقفل مؤقتًا بعد محاولات فاشلة — حاول بعد ${mins} دقيقة` });
     return;
   }
 
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) {
-    res.status(401).json({ error: "اسم المستخدم أو كلمة المرور غير صحيحة." });
+    const fails = (user.failedLogins ?? 0) + 1;
+    if (fails >= 5) {
+      await db.update(usersTable).set({ failedLogins: 0, lockedUntil: new Date(Date.now() + 15 * 60000) }).where(eq(usersTable.id, user.id));
+    } else {
+      await db.update(usersTable).set({ failedLogins: fails }).where(eq(usersTable.id, user.id));
+    }
+    await logLoginAttempt(username, false, req.ip);
+    res.status(401).json({ error: fails >= 5 ? "قُفل الحساب 15 دقيقة بعد 5 محاولات فاشلة" : "اسم المستخدم أو كلمة المرور غير صحيحة." });
     return;
   }
 
-  // Update last login
-  await db.update(usersTable).set({ lastLogin: new Date() }).where(eq(usersTable.id, user.id));
+  // Update last login + تصفير عدّاد الفشل
+  await db.update(usersTable).set({ lastLogin: new Date(), failedLogins: 0, lockedUntil: null }).where(eq(usersTable.id, user.id));
+  await logLoginAttempt(username, true, req.ip);
 
   // Store in session
   req.session.userId = user.id;
@@ -98,6 +117,7 @@ router.post("/login", async (req, res) => {
   req.session.permissions = user.permissions ?? synthesizePermissions(user);
   req.session.recordViewScope = user.recordViewScope ?? "own";
   try { req.session.positions = await positionsOfUser(user.id); } catch { req.session.positions = []; }
+  (req.session as any).mustChangePassword = user.mustChangePassword ?? false;
 
   // Log login activity
   logActivity({
@@ -166,7 +186,35 @@ router.get("/me", (req, res) => {
     correspondenceViewAll: req.session.correspondenceViewAll ?? false,
     permissions: req.session.permissions ?? synthesizePermissions(req.session as any),
     recordViewScope: req.session.recordViewScope ?? "own",
+    mustChangePassword: (req.session as any).mustChangePassword ?? false,
   });
+});
+
+// POST /api/auth/change-password — المستخدم يغيّر كلمته (وإجباريًا بعد الإنشاء/إعادة التعيين)
+router.post("/change-password", async (req, res) => {
+  if (!req.session?.userId) {
+    res.status(401).json({ error: "غير مصرح." });
+    return;
+  }
+  const { currentPassword, newPassword } = req.body as { currentPassword: string; newPassword: string };
+  if (!currentPassword || !newPassword) {
+    res.status(400).json({ error: "كلمة المرور الحالية والجديدة مطلوبتان." });
+    return;
+  }
+  const policy = passwordPolicyError(newPassword);
+  if (policy) { res.status(400).json({ error: policy }); return; }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, req.session.userId));
+  if (!user) { res.status(404).json({ error: "المستخدم غير موجود." }); return; }
+  const valid = await bcrypt.compare(currentPassword, user.password);
+  if (!valid) { res.status(401).json({ error: "كلمة المرور الحالية غير صحيحة." }); return; }
+  if (currentPassword === newPassword) { res.status(400).json({ error: "الكلمة الجديدة يجب أن تختلف عن الحالية." }); return; }
+
+  const hashed = await bcrypt.hash(newPassword, 12);
+  await db.update(usersTable).set({ password: hashed, mustChangePassword: false }).where(eq(usersTable.id, user.id));
+  (req.session as any).mustChangePassword = false;
+  logActivity({ userId: user.id, username: user.username, fullName: user.fullName, action: "change_password", module: "auth" }).catch(() => {});
+  res.json({ ok: true });
 });
 
 export default router;

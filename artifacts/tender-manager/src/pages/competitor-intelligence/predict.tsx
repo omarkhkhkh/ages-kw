@@ -263,7 +263,7 @@ function ItemSearch({ onSelect }: { onSelect: (name: string) => void }) {
 /* ════════════════════════════════════════════════════════
    Main Page
    ════════════════════════════════════════════════════════ */
-export default function PredictPage() {
+export default function PredictPage({ embedded = false }: { embedded?: boolean }) {
   // Mode: by tender/practice OR by item name
   const [mode, setMode] = useState<"source" | "item">("source");
 
@@ -324,7 +324,8 @@ export default function PredictPage() {
   return (
     <div dir="rtl" style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif", display: "flex", flexDirection: "column", gap: 22, maxWidth: 860, margin: "0 auto" }}>
 
-      {/* ── Header ── */}
+      {/* ── Header — يختفي داخل غرفة الذكاء ── */}
+      {!embedded && (
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <button onClick={() => window.history.back()}
           style={{ background: "white", border: "1.5px solid #e5e7eb", borderRadius: 10, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center" }}>
@@ -337,6 +338,7 @@ export default function PredictPage() {
           <p style={{ fontSize: 12, color: "#9ca3af", margin: 0 }}>مبني على بيانات الفضوض المسجَّلة</p>
         </div>
       </div>
+      )}
 
       {/* ── Mode Tabs ── */}
       <div style={{ display: "flex", gap: 6, background: "#f3f4f6", borderRadius: 10, padding: 4 }}>

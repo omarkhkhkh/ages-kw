@@ -49,7 +49,6 @@ import CompanyDocuments from '@/pages/company-documents';
 import GovernmentRegistrations from '@/pages/government-registrations';
 import CompetitorIntelligence from '@/pages/competitor-intelligence/index';
 import CompetitorDetail from '@/pages/competitor-intelligence/competitor-detail';
-import PredictPage from '@/pages/competitor-intelligence/predict';
 import CorrespondenceList from '@/pages/correspondence-list';
 import ResidencyCompanies from '@/pages/residency-companies';
 import ResidencyCompanyDashboard from '@/pages/residency-company-dashboard';
@@ -204,7 +203,7 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || user.accessTenders}><CompetitorDetail /></ModuleGuard>
         </Route>
         <Route path="/competitor-intelligence/predict">
-          <ModuleGuard access={isAdmin || user.accessTenders}><PredictPage /></ModuleGuard>
+          <Redirect to="/competitor-intelligence?tab=predict" />
         </Route>
         <Route path="/competitor-intelligence">
           <ModuleGuard access={isAdmin || user.accessTenders}><CompetitorIntelligence /></ModuleGuard>

@@ -17,6 +17,7 @@ import {
 import { formatCurrency } from "@/lib/utils";
 
 import { KnowledgeCenterSection } from "@/pages/research";
+import PredictPage from "@/pages/competitor-intelligence/predict";
 
 const G  = "#D4A534";
 const GD = "#A87C20";
@@ -74,6 +75,8 @@ function WinRateBar({ wins, total }: { wins: number; total: number }) {
 }
 
 export default function CompetitorIntelligence() {
+  const [roomTab, setRoomTab] = useState<"board" | "predict">(() =>
+    new URLSearchParams(window.location.search).get("tab") === "predict" ? "predict" : "board");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [tenderTypeFilter, setTenderTypeFilter] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -238,14 +241,26 @@ export default function CompetitorIntelligence() {
             <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>مركز ذكاء المنافسين</h1>
           </div>
           <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>
-            تحليل شامل لأداء المنافسين عبر جميع المناقصات والممارسات — ومعه مركز المعرفة: دروس الفوز والخسارة
+            {roomTab === "board"
+              ? "المرآة: تحليل شامل لأداء المنافسين + مركز المعرفة — ماذا حدث؟"
+              : "التصويب: تنبؤ بأسعار المنافسين ومحاكي احتمالية الفوز — ماذا سيحدث؟"}
           </p>
         </div>
-        <Link href="/competitor-intelligence/predict"
-          style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 20px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", background: `linear-gradient(135deg,${G},${GD})`, color: "white", fontFamily: "inherit", textDecoration: "none", boxShadow: "0 4px 14px rgba(212,165,52,0.3)" }}>
-          <Target size={15} /> تنبؤ الأسعار
-        </Link>
       </div>
+
+      {/* غرفة واحدة: المرآة والتصويب — والمصدر واحد: جلسات الفض الإلزامية */}
+      <div style={{ display: "flex", gap: 6, background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 6, width: "fit-content" }}>
+        {([["board", "📊 اللوحة"], ["predict", "🎯 تنبؤ الأسعار"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setRoomTab(id)}
+            style={{ padding: "9px 22px", borderRadius: 10, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", border: "none", transition: "all 0.15s", background: roomTab === id ? `linear-gradient(135deg,${G},${GD})` : "transparent", color: roomTab === id ? "white" : "#6b7280", boxShadow: roomTab === id ? `0 4px 12px ${G}44` : "none" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {roomTab === "predict" && <PredictPage embedded />}
+
+      {roomTab === "board" && (<>
 
       {/* ── Stat Cards ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(175px,1fr))", gap: 14 }}>
@@ -584,6 +599,7 @@ export default function CompetitorIntelligence() {
         </p>
         <KnowledgeCenterSection canEdit={true} isAdmin={true} />
       </div>
+      </>)}
     </div>
   );
 }

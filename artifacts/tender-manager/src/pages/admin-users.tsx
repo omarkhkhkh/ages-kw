@@ -1320,6 +1320,7 @@ export default function AdminUsers() {
   // سجل الإدارة: قبعات + محاولات دخول
   const { data: hatAudit = [] } = useQuery<any[]>({ queryKey: ["positions-audit"], queryFn: () => positionsApi.audit(), enabled: pageTab === "audit" });
   const { data: loginAttempts = [] } = useQuery<any[]>({ queryKey: ["login-attempts"], queryFn: () => apiFetch("/api/admin/login-attempts"), enabled: pageTab === "audit" });
+  const { data: resetRequests = [] } = useQuery<any[]>({ queryKey: ["reset-requests"], queryFn: () => apiFetch("/api/admin/reset-requests"), enabled: pageTab === "audit" });
   const { data: allHats = [] } = useQuery<any[]>({ queryKey: ["positions"], queryFn: () => positionsApi.list() });
 
   const visibleUsers = users.filter(u => {
@@ -1478,6 +1479,16 @@ export default function AdminUsers() {
               hatAudit.slice(0, 40).map((a: any) => (
                 <div key={a.id} style={{ fontSize: 12.5, color: "#4b5563", padding: "5px 0", borderBottom: "1px dashed #f0ead8" }}>
                   <b style={{ color: a.action === "منح" ? "#16a34a" : "#dc2626" }}>{a.action}</b> {a.positionName} — لـ<b>{a.userName ?? `#${a.userId}`}</b> بواسطة {a.actorName ?? "النظام (انتهاء إنابة)"} · {formatKuwaitDateTime(a.createdAt)}
+                </div>
+              ))}
+          </div>
+          <div style={{ background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: "16px 20px" }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: GR, marginBottom: 10 }}>🔑 طلبات «نسيت كلمة المرور» — أعد التعيين من زر تعديل المستخدم (🎲 توليد)</div>
+            {resetRequests.length === 0 ? <div style={{ color: "#9ca3af", fontSize: 12.5 }}>لا طلبات</div> :
+              resetRequests.map((r: any) => (
+                <div key={r.id} style={{ fontSize: 12.5, color: "#4b5563", padding: "5px 0", borderBottom: "1px dashed #f0ead8", display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                  <span><b style={{ color: GR }}>{r.fullName ?? r.username}</b> <span style={{ color: "#9ca3af" }}>(@{r.username})</span>{r.fullName == null && <span style={{ color: "#dc2626", fontWeight: 700 }}> — اسم غير معروف ⚠</span>}</span>
+                  <span style={{ color: "#9ca3af" }}>{formatKuwaitDateTime(r.createdAt)}</span>
                 </div>
               ))}
           </div>

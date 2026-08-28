@@ -20,6 +20,22 @@ export default function Login() {
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotUser, setForgotUser] = useState("");
+  const [forgotMsg, setForgotMsg] = useState("");
+  const [forgotBusy, setForgotBusy] = useState(false);
+
+  const sendForgot = async () => {
+    if (!forgotUser.trim()) return;
+    setForgotBusy(true);
+    try {
+      const r = await fetch("/api/auth/reset-request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: forgotUser.trim() }) });
+      const d = await r.json().catch(() => null);
+      setForgotMsg(d?.message ?? "وصل طلبك.");
+    } catch {
+      setForgotMsg("تعذّر الإرسال — حاول مجددًا.");
+    } finally { setForgotBusy(false); }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -296,7 +312,38 @@ export default function Login() {
                   : <><LogIn size={18} /> {t("login.submit")}</>
                 }
               </button>
+
+              {/* نسيت كلمة المرور؟ — حلقة داخلية: الطلب يصل المدير فورًا */}
+              <button type="button" onClick={() => { setForgotOpen(true); setForgotMsg(""); setForgotUser(username); }}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#a89060", fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", padding: 0, alignSelf: "center" }}>
+                نسيت كلمة المرور؟
+              </button>
             </form>
+
+            {forgotOpen && (
+              <div onClick={() => setForgotOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(11,26,16,0.5)", zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+                <div dir="rtl" onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: 16, width: "min(400px,100%)", padding: 22, boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#132a18", marginBottom: 6 }}>🔑 نسيت كلمة المرور؟</div>
+                  {forgotMsg ? (
+                    <>
+                      <p style={{ fontSize: 13, color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", lineHeight: 1.8 }}>{forgotMsg}</p>
+                      <button onClick={() => setForgotOpen(false)} style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1.5px solid #e5e7eb", background: "white", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: "#374151" }}>حسنًا</button>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ fontSize: 12.5, color: "#6b7280", margin: "0 0 12px", lineHeight: 1.8 }}>اكتب اسم مستخدمك وسيصل طلبك للمدير فورًا — سيعيد تعيين كلمة مؤقتة لك تستبدلها عند دخولك.</p>
+                      <input value={forgotUser} onChange={e => setForgotUser(e.target.value)} placeholder="اسم المستخدم" dir="ltr"
+                        style={{ width: "100%", boxSizing: "border-box", padding: "11px 14px", borderRadius: 10, border: "1.5px solid #e8e0cc", fontSize: 13.5, outline: "none", fontFamily: "inherit", marginBottom: 12 }}
+                        onKeyDown={e => e.key === "Enter" && sendForgot()} />
+                      <button disabled={forgotBusy || !forgotUser.trim()} onClick={sendForgot}
+                        style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: `linear-gradient(135deg,${GOLD_LIGHT},${GOLD_DARK})`, color: "white", fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                        {forgotBusy ? "جارٍ الإرسال…" : "إرسال الطلب للمدير"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
         </div>

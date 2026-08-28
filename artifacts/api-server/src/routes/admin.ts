@@ -104,6 +104,17 @@ router.get("/users", async (_req, res) => {
   }
 });
 
+// GET /api/admin/reset-requests — طلبات «نسيت كلمة المرور» الأخيرة
+router.get("/reset-requests", async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.id, r.username, r.created_at AS "createdAt", u.full_name AS "fullName", u.is_active AS "isActive"
+       FROM password_reset_requests r LEFT JOIN users u ON u.username = r.username
+       ORDER BY r.id DESC LIMIT 50`);
+    res.json(rows);
+  } catch { res.json([]); }
+});
+
 // GET /api/admin/login-attempts — سجل محاولات الدخول (لتبويب سجل الإدارة)
 router.get("/login-attempts", async (_req, res) => {
   try {

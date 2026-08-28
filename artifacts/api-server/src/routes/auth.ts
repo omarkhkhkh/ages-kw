@@ -2,6 +2,8 @@ import { Router } from "express";
 import { positionsOfUser } from "./positions";
 import bcrypt from "bcryptjs";
 import { passwordPolicyError, logLoginAttempt } from "../lib/security";
+import { pool } from "@workspace/db";
+import { createNotification } from "./notifications";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logActivity } from "../middleware/activity-logger";
@@ -54,6 +56,40 @@ function buildUserResponse(user: any) {
     mustChangePassword: user.mustChangePassword ?? false,
   };
 }
+
+// POST /api/auth/reset-request — «نسيت كلمة المرور»: طلب داخلي يصل المدراء
+// رد موحّد دائمًا (لا كشف لوجود الحساب) + طلب واحد لكل اسم كل 10 دقائق
+router.post("/reset-request", async (req, res) => {
+  const UNIFORM = { ok: true, message: "إن كان الحساب موجودًا فقد وصل طلبك للمدير — سيتواصل معك بكلمة مرور مؤقتة." };
+  try {
+    const username = String(req.body?.username ?? "").trim().slice(0, 100);
+    if (!username) { res.json(UNIFORM); return; }
+    const { rows: recent } = await pool.query(
+      `SELECT 1 FROM password_reset_requests WHERE username = $1 AND created_at > now() - interval '10 minutes' LIMIT 1`,
+      [username]);
+    await pool.query(`INSERT INTO password_reset_requests (username) VALUES ($1)`, [username]);
+    if (!recent.length) {
+      const [target] = await db.select().from(usersTable).where(eq(usersTable.username, username));
+      if (target && target.isActive) {
+        // يصل للأدمن (ومنه حساب الأمان المستقل) ولحامل قبعة المدير العام
+        const { rows: recipients } = await pool.query(
+          `SELECT id FROM users WHERE role = 'admin' AND is_active = true
+           UNION
+           SELECT up.user_id FROM user_positions up JOIN positions p ON p.id = up.position_id
+           JOIN users u2 ON u2.id = up.user_id
+           WHERE p.key = 'general_manager' AND u2.is_active = true`);
+        for (const r of recipients) {
+          createNotification({
+            recipientUserId: r.id, type: "password_reset_request",
+            message: `🔑 ${target.fullName} (@${username}) يطلب إعادة تعيين كلمة مروره — من إدارة المستخدمين: 🎲 توليد كلمة مؤقتة`,
+            link: "/admin/users",
+          }).catch(() => {});
+        }
+      }
+    }
+  } catch (err) { console.error("reset-request failed", err); }
+  res.json(UNIFORM);
+});
 
 // POST /api/auth/login
 router.post("/login", async (req, res) => {

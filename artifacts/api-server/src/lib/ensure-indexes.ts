@@ -943,6 +943,11 @@ const MIGRATIONS = [
     created_at timestamptz NOT NULL DEFAULT now()
   )`,
   `CREATE INDEX IF NOT EXISTS idx_login_attempts_time ON login_attempts(created_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS password_reset_requests (
+    id serial PRIMARY KEY,
+    username text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+  )`,
 
 ];
 

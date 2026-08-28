@@ -16,6 +16,8 @@ import {
 } from "recharts";
 import { formatCurrency } from "@/lib/utils";
 
+import { KnowledgeCenterSection } from "@/pages/research";
+
 const G  = "#D4A534";
 const GD = "#A87C20";
 const GR = "#132a18";
@@ -236,7 +238,7 @@ export default function CompetitorIntelligence() {
             <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>مركز ذكاء المنافسين</h1>
           </div>
           <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>
-            تحليل شامل لأداء المنافسين عبر جميع المناقصات والممارسات
+            تحليل شامل لأداء المنافسين عبر جميع المناقصات والممارسات — ومعه مركز المعرفة: دروس الفوز والخسارة
           </p>
         </div>
         <Link href="/competitor-intelligence/predict"
@@ -572,6 +574,15 @@ export default function CompetitorIntelligence() {
             </table>
           )}
         </div>
+      </div>
+
+      {/* مركز المعرفة — دروس الفوز والخسارة: انتقل من البحث والتطوير إلى بيته 🔒 (تغذيه بوابة الإغلاق) */}
+      <div style={{ background: "white", borderRadius: 18, border: "1.5px solid #f0ead8", boxShadow: "0 2px 16px rgba(0,0,0,0.05)", padding: "18px 20px" }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: GR, marginBottom: 4 }}>📖 مركز المعرفة — دروس الفوز والخسارة</div>
+        <p style={{ fontSize: 11.5, color: "#9ca3af", margin: "0 0 14px", lineHeight: 1.7 }}>
+          يتغذى تلقائيًا من بوابة إغلاق الملفات (الأسباب والدروس وأسماء المنافسين) — «الخسارة بلا درس خسارتان».
+        </p>
+        <KnowledgeCenterSection canEdit={true} isAdmin={true} />
       </div>
     </div>
   );

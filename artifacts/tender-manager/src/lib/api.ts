@@ -274,6 +274,7 @@ export const financialCenterApi = {
   liquidity: (months?: number, safety?: number) => apiFetch<any>(`/api/financial-center/liquidity?months=${months ?? 6}${safety != null ? `&safety=${safety}` : ""}`),
   readiness: (year?: number) => apiFetch<any>(`/api/financial-center/readiness${year ? `?year=${year}` : ""}`),
   alerts: () => apiFetch<any>("/api/financial-center/alerts"),
+  poLedger: () => apiFetch<any>("/api/financial-center/po-ledger"),
   categoryBudgets: (year?: number) => apiFetch<any[]>(`/api/financial-center/category-budgets${year ? `?year=${year}` : ""}`),
   saveCategoryBudget: (d: { costCenterId: number; category: string; amount: number; year?: number }) => apiFetch<any>("/api/financial-center/category-budgets", { method: "POST", body: JSON.stringify(d) }),
   deleteCategoryBudget: (id: number) => apiFetch<void>(`/api/financial-center/category-budgets/${id}`, { method: "DELETE" }),
@@ -330,6 +331,13 @@ export const purchaseOrdersApi = {
   },
   stageHistory: {
     list: (poId: number) => apiFetch<any[]>(`/api/direct-purchase-orders/${poId}/stage-history`),
+  },
+  // جدول التسعير التنفيذي: تكلفة + نقل فقط
+  pricing: {
+    list: (poId: number) => apiFetch<any[]>(`/api/direct-purchase-orders/${poId}/pricing-items`),
+    create: (poId: number, data: any) => apiFetch<any>(`/api/direct-purchase-orders/${poId}/pricing-items`, { method: "POST", body: JSON.stringify(data) }),
+    update: (poId: number, itemId: number, data: any) => apiFetch<any>(`/api/direct-purchase-orders/${poId}/pricing-items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    delete: (poId: number, itemId: number) => apiFetch<void>(`/api/direct-purchase-orders/${poId}/pricing-items/${itemId}`, { method: "DELETE" }),
   },
 };
 

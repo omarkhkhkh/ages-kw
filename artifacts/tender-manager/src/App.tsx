@@ -53,7 +53,6 @@ import EquipmentDetail from '@/pages/maintenance/equipment-detail';
 import WorkOrderDetail from '@/pages/maintenance/work-order-detail';
 import MaintenanceReportTemplates from '@/pages/maintenance/report-templates';
 import ContractMaintenance from '@/pages/contract-maintenance';
-import ResearchIndex from '@/pages/research/index';
 import PricingList from '@/pages/pricing/index';
 import PricingSheetDetail from '@/pages/pricing/sheet-detail';
 import NotFound from '@/pages/not-found';
@@ -153,10 +152,10 @@ function AppRouter() {
           <Redirect to="/contracts?tab=rfq" />
         </Route>
         <Route path="/purchase-orders">
-          <ModuleGuard access={isAdmin || user.accessPo}><PurchaseOrdersList /></ModuleGuard>
+          <ModuleGuard access={isAdmin || user.accessPo || user.accessResearch}><PurchaseOrdersList /></ModuleGuard>
         </Route>
         <Route path="/purchase-orders/:id">
-          <ModuleGuard access={isAdmin || user.accessPo}><PurchaseOrderDetail /></ModuleGuard>
+          <ModuleGuard access={isAdmin || user.accessPo || user.accessResearch}><PurchaseOrderDetail /></ModuleGuard>
         </Route>
         <Route path="/projects">
           <ModuleGuard access={isAdmin || user.accessProjects}><ProjectsList /></ModuleGuard>
@@ -231,7 +230,7 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || user.accessMaintenance}><ContractMaintenance /></ModuleGuard>
         </Route>
         <Route path="/research">
-          <ModuleGuard access={isAdmin || user.accessResearch}><ResearchIndex /></ModuleGuard>
+          <Redirect to="/purchase-orders?tab=research" />
         </Route>
         <Route path="/pricing">
           <ModuleGuard access={isAdmin || user.accessPricing}><PricingList /></ModuleGuard>

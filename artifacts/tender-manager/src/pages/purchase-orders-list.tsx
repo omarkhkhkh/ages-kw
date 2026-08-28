@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import CorrespondenceSheet from "@/components/correspondence/correspondence-sheet";
 import EntityDirectoryPicker from "@/components/entity-directory-picker";
 import { AssignedEmployee } from "@/components/assigned-employee";
+import { useAuth } from "@/contexts/auth";
+import ResearchDesk from "@/pages/research";
 
 const G  = "#D4A534";
 const GL = "#E8BE55";
@@ -27,7 +29,13 @@ const PRIORITY_MAP: Record<string, { label: string; color: string }> = {
   urgent: { label: "عاجلة", color: "#7c3aed" },
 };
 
-const emptyForm = { orderNumber: "", supplierId: "", governmentEntityId: "" as string | number | null, departmentId: "" as string | number | null, contactId: "" as string | number | null, companyId: "", contractId: "", description: "", amount: "", orderDate: "", deliveryDate: "", status: "new", priority: "medium", notes: "" };
+const emptyForm = { orderNumber: "", supplierId: "", governmentEntityId: "" as string | number | null, departmentId: "" as string | number | null, contactId: "" as string | number | null, companyId: "", contractId: "", description: "", amount: "", orderDate: "", deliveryDate: "", status: "new", priority: "medium", notes: "", bidDeadline: "", awardResult: "بانتظار النتيجة", awardDate: "", awardNotes: "" };
+
+const AWARD_MAP: Record<string, { label: string; bg: string; color: string }> = {
+  "بانتظار النتيجة": { label: "⏳ بانتظار النتيجة", bg: "#fffbeb", color: "#d97706" },
+  "فزنا": { label: "🏆 فزنا", bg: "#f0fdf4", color: "#16a34a" },
+  "خسرنا": { label: "خسرنا", bg: "#fff1f2", color: "#dc2626" },
+};
 
 const S = {
   page: { fontFamily: "'Segoe UI', Tahoma, sans-serif", direction: "rtl" as const },
@@ -60,6 +68,13 @@ export default function PurchaseOrdersList() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const { user } = useAuth();
+  // الربح والهامش وجدول التكلفة للمديرين — المندوب والباحث ينفّذان بلا اطّلاع على المال
+  const isManager = user?.role === "admin" || ["general_manager", "executive_manager", "financial_manager"].some((k) => (((user as any)?.positions) ?? []).includes(k));
+  const [roomTab, setRoomTab] = useState<"orders" | "desk">(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return t === "research" || t === "desk" ? "desk" : "orders";
+  });
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
@@ -67,27 +82,29 @@ export default function PurchaseOrdersList() {
   const [search, setSearch] = useState("");
   const [correspondenceFor, setCorrespondenceFor] = useState<{ id: number; label: string; governmentEntityId: number | null } | null>(null);
 
-  const statusFilter = tab !== "all" ? tab : undefined;
+  const statusFilter = tab !== "all" && tab !== "archive" ? tab : undefined;
   const { data: orders = [], isLoading } = useQuery({ queryKey: ["purchase-orders", tab], queryFn: () => purchaseOrdersApi.list(statusFilter) });
   const { data: suppliers = [] } = useQuery({ queryKey: ["suppliers"], queryFn: () => suppliersApi.list() });
   const { data: contracts = [] } = useQuery({ queryKey: ["contracts", "all"], queryFn: () => contractsApi.list() });
   const { data: companies = [] } = useQuery({ queryKey: ["companies-list"], queryFn: () => companiesApi.list() });
-  const { data: kpi } = useQuery({ queryKey: ["purchase-orders-stats"], queryFn: () => purchaseOrdersApi.stats() });
+  const { data: kpi } = useQuery({ queryKey: ["purchase-orders-stats"], queryFn: () => purchaseOrdersApi.stats(), enabled: isManager });
 
   const createM = useMutation({ mutationFn: purchaseOrdersApi.create, onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); closeForm(); toast({ title: "✅ تم إضافة أمر الشراء" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
   const updateM = useMutation({ mutationFn: ({ id, data }: any) => purchaseOrdersApi.update(id, data), onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); closeForm(); toast({ title: "✅ تم تحديث أمر الشراء" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
   const deleteM = useMutation({ mutationFn: purchaseOrdersApi.delete, onSuccess: () => { qc.invalidateQueries({ queryKey: ["purchase-orders"] }); toast({ title: "تم حذف أمر الشراء" }); }, onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }) });
 
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
-  const openEdit = (o: any) => { setEditId(o.id); setForm({ orderNumber: o.orderNumber, supplierId: o.supplierId || "", governmentEntityId: o.governmentEntityId || "", departmentId: o.departmentId || "", contactId: o.contactId || "", companyId: o.companyId || "", contractId: o.contractId || "", description: o.description, amount: o.amount || "", orderDate: o.orderDate || "", deliveryDate: o.deliveryDate || "", status: o.status, priority: o.priority || "medium", notes: o.notes || "" }); setShowForm(true); };
-  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.orderNumber.trim() || !form.description.trim()) return; const data = { ...form, supplierId: form.supplierId ? Number(form.supplierId) : null, governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : null, departmentId: form.departmentId ? Number(form.departmentId) : null, contactId: form.contactId ? Number(form.contactId) : null, companyId: form.companyId ? Number(form.companyId) : null, contractId: form.contractId ? Number(form.contractId) : null, amount: form.amount ? String(form.amount) : null, orderDate: form.orderDate || null, deliveryDate: form.deliveryDate || null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
+  const openEdit = (o: any) => { setEditId(o.id); setForm({ orderNumber: o.orderNumber, supplierId: o.supplierId || "", governmentEntityId: o.governmentEntityId || "", departmentId: o.departmentId || "", contactId: o.contactId || "", companyId: o.companyId || "", contractId: o.contractId || "", description: o.description, amount: o.amount || "", orderDate: o.orderDate || "", deliveryDate: o.deliveryDate || "", status: o.status, priority: o.priority || "medium", notes: o.notes || "", bidDeadline: o.bidDeadline || "", awardResult: o.awardResult || "بانتظار النتيجة", awardDate: o.awardDate || "", awardNotes: o.awardNotes || "" }); setShowForm(true); };
+  const handleSubmit = (ev: React.FormEvent) => { ev.preventDefault(); if (!form.orderNumber.trim() || !form.description.trim()) return; const data = { ...form, supplierId: form.supplierId ? Number(form.supplierId) : null, governmentEntityId: form.governmentEntityId ? Number(form.governmentEntityId) : null, departmentId: form.departmentId ? Number(form.departmentId) : null, contactId: form.contactId ? Number(form.contactId) : null, companyId: form.companyId ? Number(form.companyId) : null, contractId: form.contractId ? Number(form.contractId) : null, amount: form.amount ? String(form.amount) : null, orderDate: form.orderDate || null, deliveryDate: form.deliveryDate || null, bidDeadline: form.bidDeadline || null, awardResult: form.awardResult || "بانتظار النتيجة", awardDate: form.awardDate || null, awardNotes: form.awardResult === "خسرنا" ? (form.awardNotes || null) : null }; editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data); };
 
+  // «خسرنا» يؤرشف الأمر: يختفي من كل البطاقات ويظهر في «المؤرشفة» فقط
   const filtered = (orders as any[]).filter(o => {
     const matchSearch = !search || o.orderNumber.toLowerCase().includes(search.toLowerCase()) || (o.description || "").toLowerCase().includes(search.toLowerCase()) || (o.supplierName || "").includes(search);
-    return matchSearch;
+    const matchArchive = tab === "archive" ? o.awardResult === "خسرنا" : o.awardResult !== "خسرنا";
+    return matchSearch && matchArchive;
   });
 
-  const tabs = [{ id: "all", label: "الجميع" }, ...Object.entries(STATUS_MAP).map(([k, v]) => ({ id: k, label: v.label }))];
+  const tabs = [{ id: "all", label: "النشطة" }, ...Object.entries(STATUS_MAP).map(([k, v]) => ({ id: k, label: v.label })), { id: "archive", label: "المؤرشفة" }];
   const totalAmount = (orders as any[]).reduce((s: number, o: any) => s + (Number(o.amount) || 0), 0);
   const completedCount = (orders as any[]).filter((o: any) => o.status === "completed").length;
 
@@ -98,24 +115,47 @@ export default function PurchaseOrdersList() {
         <div>
           <div style={S.titleRow}>
             <div style={S.accentBar} />
-            <h1 style={S.title}>أوامر الشراء المباشر</h1>
+            <h1 style={S.title}>أوامر الشراء — السوق المحلي</h1>
           </div>
-          <p style={S.subtitle}>تتبع أوامر الشراء المباشر خارج إطار المناقصات</p>
+          <p style={S.subtitle}>
+            {roomTab === "orders"
+              ? "🧭 قناة الشراء المحلي تحت المدير التنفيذي — المندوب وفريق البحث يجمعون الأسعار وينفّذون"
+              : "🧭 مكتب المندوب وفريق البحث: التكليفات والمواصفات — كل تكليف يصب في عطاء محلي أو ملف"}
+          </p>
         </div>
-        <button style={S.btnPrimary} onClick={() => { closeForm(); setShowForm(true); }}>
-          <Plus size={15} /> أمر شراء جديد
-        </button>
+        {roomTab === "orders" && (
+          <button style={S.btnPrimary} onClick={() => { closeForm(); setShowForm(true); }}>
+            <Plus size={15} /> أمر شراء جديد
+          </button>
+        )}
       </div>
 
-      {/* Stats */}
+      {/* غرفة واحدة: الأوامر + التكليفات والمواصفات */}
+      <div style={{ display: "flex", gap: 6, background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 6, marginBottom: 20, width: "fit-content" }}>
+        {([["orders", "📦 الأوامر"], ["desk", "🔎 التكليفات والمواصفات"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setRoomTab(id)}
+            style={{ padding: "9px 22px", borderRadius: 10, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", border: "none", transition: "all 0.15s", background: roomTab === id ? `linear-gradient(135deg,${GL},${GD})` : "transparent", color: roomTab === id ? "white" : "#6b7280", boxShadow: roomTab === id ? `0 4px 12px ${G}44` : "none" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {roomTab === "desk" && <ResearchDesk embedded />}
+
+      {roomTab === "orders" && (<>
+
+      {/* Stats — الربح والهامش للمديرين فقط (وتظهر أيضًا في المركز المالي) */}
       <div style={{ display: "flex", gap: 14, marginBottom: 22, flexWrap: "wrap" as const }}>
         {[
           { label: "إجمالي الأوامر", value: (orders as any[]).length, color: G, icon: ShoppingCart },
+          { label: "بانتظار نتيجة العطاء", value: (orders as any[]).filter((o: any) => o.awardResult === "بانتظار النتيجة" && o.bidDeadline).length, color: "#d97706", icon: RotateCcw },
           { label: "جاري التنفيذ", value: (orders as any[]).filter((o: any) => o.status === "in_progress").length, color: "#1d4ed8", icon: RotateCcw },
           { label: "مكتمل", value: completedCount, color: "#059669", icon: PackageCheck },
-          { label: "إجمالي المبالغ", value: formatCurrency(totalAmount), color: "#7c3aed", icon: ShoppingCart },
-          { label: "إجمالي الربح", value: kpi ? formatCurrency(kpi.totalProfit) : "—", color: "#16a34a", icon: TrendingUp },
-          { label: "متوسط الهامش", value: kpi ? `${Number(kpi.avgMarginPct).toFixed(1)}%` : "—", color: "#0891b2", icon: Percent },
+          ...(isManager ? [
+            { label: "إجمالي المبالغ", value: formatCurrency(totalAmount), color: "#7c3aed", icon: ShoppingCart },
+            { label: "إجمالي الربح", value: kpi ? formatCurrency(kpi.totalProfit) : "—", color: "#16a34a", icon: TrendingUp },
+            { label: "متوسط الهامش", value: kpi ? `${Number(kpi.avgMarginPct).toFixed(1)}%` : "—", color: "#0891b2", icon: Percent },
+          ] : []),
         ].map(s => (
           <div key={s.label} style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: "14px 20px", display: "flex", alignItems: "center", gap: 12, boxShadow: "0 2px 10px rgba(0,0,0,0.04)" }}>
             <div style={{ width: 36, height: 36, borderRadius: 9, background: `${s.color}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -151,7 +191,7 @@ export default function PurchaseOrdersList() {
           <table style={{ width: "100%", borderCollapse: "collapse" as const, fontSize: 13, textAlign: "right" as const }}>
             <thead style={S.thead}>
               <tr>
-                {["رقم الأمر", "وصف الشراء", "المورد", "الجهة", "العقد", "المبلغ", "الأولوية", "تاريخ التسليم", "الموظف المسؤول", "الحالة", ""].map(h => (
+                {["رقم الأمر", "وصف الشراء", "المورد", "الجهة", "العقد", "المبلغ", "العطاء", "آخر موعد للعطاء", "الموظف المسؤول", "الحالة", ""].map(h => (
                   <th key={h} style={S.th}>{h}</th>
                 ))}
               </tr>
@@ -181,9 +221,27 @@ export default function PurchaseOrdersList() {
                     <td style={{ ...S.td, color: "#4b5563", fontSize: 12 }}>{o.contractNumber || "—"}</td>
                     <td style={{ ...S.td, fontFamily: "monospace", fontSize: 12, fontWeight: 700, color: "#132a18" }}>{o.amount ? formatCurrency(o.amount) : "—"}</td>
                     <td style={S.td}>
-                      <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: `${pr.color}15`, color: pr.color }}>{pr.label}</span>
+                      {(() => {
+                        const aw = AWARD_MAP[o.awardResult] ?? AWARD_MAP["بانتظار النتيجة"];
+                        return <span style={{ padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: aw.bg, color: aw.color, whiteSpace: "nowrap" as const }}>{aw.label}</span>;
+                      })()}
+                      <div style={{ marginTop: 3 }}>
+                        <span style={{ padding: "1px 8px", borderRadius: 20, fontSize: 10, fontWeight: 700, background: `${pr.color}15`, color: pr.color }}>{pr.label}</span>
+                      </div>
                     </td>
-                    <td style={{ ...S.td, color: "#4b5563", whiteSpace: "nowrap" as const }}>{formatDate(o.deliveryDate)}</td>
+                    <td style={{ ...S.td, whiteSpace: "nowrap" as const }}>
+                      {(() => {
+                        if (!o.bidDeadline) return <span style={{ color: "#9ca3af" }}>—</span>;
+                        const days = Math.ceil((new Date(o.bidDeadline).getTime() - Date.now()) / 86400000);
+                        const hot = o.awardResult === "بانتظار النتيجة" && days <= 3 && days >= -30;
+                        return (
+                          <span style={{ color: hot ? "#dc2626" : "#4b5563", fontWeight: hot ? 800 : 400 }}>
+                            {hot && "⏰ "}{formatDate(o.bidDeadline)}
+                            {hot && days >= 0 && <div style={{ fontSize: 10 }}>بعد {days} يوم</div>}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td style={S.td} onClick={ev => ev.stopPropagation()}>
                       <AssignedEmployee value={o.assignedUserId} displayName={o.assignedName} compact
                         onReassign={(uid) => updateM.mutate({ id: o.id, data: { assignedUserId: uid } })} />
@@ -296,6 +354,33 @@ export default function PurchaseOrdersList() {
                     <label style={S.label}>ملاحظات</label>
                     <input style={S.input} value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="ملاحظات" />
                   </div>
+                  <div style={{ gridColumn: "1 / -1", borderTop: "1.5px dashed #f0ead8", paddingTop: 12, marginTop: 2 }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: "#4a3f1a" }}>🏛 دورة العطاء المحلي</span>
+                  </div>
+                  <div>
+                    <label style={S.label}>آخر موعد لتقديم العطاء</label>
+                    <input style={S.input} type="date" value={form.bidDeadline} onChange={e => setForm(p => ({ ...p, bidDeadline: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={S.label}>نتيجة العطاء</label>
+                    <select style={S.select} value={form.awardResult} onChange={e => setForm(p => ({ ...p, awardResult: e.target.value }))}>
+                      <option value="بانتظار النتيجة">⏳ بانتظار النتيجة</option>
+                      <option value="فزنا">🏆 فزنا — تنطلق مراحل التنفيذ</option>
+                      <option value="خسرنا">❌ خسرنا — يؤرشف الأمر</option>
+                    </select>
+                  </div>
+                  {form.awardResult !== "بانتظار النتيجة" && (
+                    <div>
+                      <label style={S.label}>تاريخ النتيجة</label>
+                      <input style={S.input} type="date" value={form.awardDate} onChange={e => setForm(p => ({ ...p, awardDate: e.target.value }))} />
+                    </div>
+                  )}
+                  {form.awardResult === "خسرنا" && (
+                    <div>
+                      <label style={S.label}>سبب الخسارة (اختياري)</label>
+                      <input style={S.input} value={form.awardNotes} onChange={e => setForm(p => ({ ...p, awardNotes: e.target.value }))} placeholder="سعر المنافس، مواصفات..." />
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
                   <button type="submit" style={S.saveBtn} disabled={createM.isPending || updateM.isPending}>
@@ -308,6 +393,8 @@ export default function PurchaseOrdersList() {
           </div>
         </>
       )}
+      </>)}
+
       {correspondenceFor && (
         <CorrespondenceSheet
           open={!!correspondenceFor}

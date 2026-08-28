@@ -116,6 +116,40 @@ function DashboardDoor() {
   );
 }
 
+/* ── نافذة أوامر الشراء المحلية: الإيراد − (جدول التكلفة والنقل + الصرف) = صافي الربح ── */
+function PoLedgerWindow() {
+  const { data: ledger } = useQuery<any>({ queryKey: ["fc-po-ledger"], queryFn: () => financialCenterApi.poLedger().catch(() => null) });
+  if (!ledger || !(ledger.orders ?? []).length) return null;
+  const t = ledger.totals ?? {};
+  return (
+    <div style={{ ...card, borderRightWidth: 4, borderRightColor: "#0891b2" }}>
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: GR, marginBottom: 4 }}>أوامر الشراء المحلية — ربح القناة وصرفها (نفس أرقام الغرفة، بعين المدير المالي)</div>
+      <div style={{ fontSize: 12.5, color: "#6b7280", marginBottom: 10 }}>
+        الإيراد <b style={{ color: "#16a34a" }}>{fmt(t.revenue)}</b> − جدول التكلفة والنقل <b style={{ color: GD }}>{fmt(t.pricingCost)}</b> − الصرف المقيد <b style={{ color: "#d97706" }}>{fmt(t.expenses)}</b>
+        = صافي <b style={{ color: (t.profit ?? 0) >= 0 ? "#16a34a" : "#dc2626", fontSize: 14 }}>{fmt(t.profit)}</b> د.ك
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+          <thead style={{ background: "#faf8f2" }}><tr>{["الأمر", "الجهة", "العطاء", "الإيراد", "تكلفة + نقل", "الصرف", "صافي الربح"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+          <tbody>
+            {(ledger.orders ?? []).slice(0, 12).map((o: any) => (
+              <tr key={o.id}>
+                <td style={{ ...td, fontWeight: 700 }}>{o.orderNumber}</td>
+                <td style={td}>{o.entityName ?? "—"}</td>
+                <td style={{ ...td, fontWeight: 700, color: o.awardResult === "فزنا" ? "#16a34a" : o.awardResult === "خسرنا" ? "#dc2626" : "#d97706" }}>{o.awardResult}</td>
+                <td style={td}>{fmt(o.revenue)}</td>
+                <td style={td}>{fmt(o.pricingCost)}</td>
+                <td style={td}>{fmt(o.expenses)}</td>
+                <td style={{ ...td, fontWeight: 800, color: o.profit >= 0 ? "#16a34a" : "#dc2626" }}>{fmt(o.profit)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /* ── ② دفتر العمليات: نوافذ على القائم + آخر الأحداث ── */
 function LedgerDoor() {
   const { data: events = [] } = useQuery<any[]>({
@@ -129,6 +163,8 @@ function LedgerDoor() {
           <Link key={h} href={h}><button style={{ ...btn, background: "white", color: GD, border: `1.5px solid ${G}55` }}>{l} ←</button></Link>
         ))}
       </div>
+      <PoLedgerWindow />
+
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 800, color: GR, marginBottom: 8 }}>آخر أحداث الدفتر — كل قيد يصب هنا أيًّا كان مصدره</div>
         {events.length === 0 ? <div style={{ color: "#9ca3af", fontSize: 12.5 }}>لا أحداث</div> :

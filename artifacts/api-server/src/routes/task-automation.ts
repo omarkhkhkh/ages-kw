@@ -255,6 +255,24 @@ export async function runAutomationChecks(): Promise<void> {
       }
     }
 
+    // غرفة السوق المحلي: آخر موعد للعطاء ≤٣ أيام والنتيجة معلقة ← إنذار للمسؤول عن الأمر
+    const { rows: nearBids } = await pool.query(
+      `SELECT po.id, po.order_number AS num, po.bid_deadline AS deadline,
+              COALESCE(po.assigned_user_id, po.assigned_to_user_id, po.created_by_user_id) AS owner
+       FROM direct_purchase_orders po
+       WHERE po.bid_deadline IS NOT NULL AND po.award_result = 'بانتظار النتيجة'
+         AND po.bid_deadline BETWEEN CURRENT_DATE AND CURRENT_DATE + 3`);
+    for (const b of nearBids) {
+      const daysLeft = Math.max(0, Math.ceil((new Date(b.deadline).getTime() - Date.now()) / 86400000));
+      await insertAutomationTask({
+        title: `⏰ آخر موعد لعطاء أمر الشراء ${b.num ?? b.id} بعد ${daysLeft} يوم — قدّم العرض وسجّل النتيجة`,
+        sourceType: "po_bid_deadline", sourceId: b.id, triggerKey: `bid_${b.deadline}`,
+        linkedEntityType: "purchaseOrder", linkedEntityId: b.id, priority: "urgent", dueDate: b.deadline,
+        assignedTo: b.owner ?? null,
+        notificationMessage: `⏰ آخر موعد لعطاء أمر الشراء ${b.num ?? b.id} بعد ${daysLeft} يوم`,
+      });
+    }
+
     // تأخر مورد (استدلالي) — أمر شراء بلا تقدّم في مراحله منذ فترة، وحالته غير نهائية
     const { rows: delayedPOs } = await pool.query(
       `SELECT po.id, po.order_number AS "orderNumber", po.execution_stage AS "executionStage", MAX(h.changed_at) AS "lastChange"

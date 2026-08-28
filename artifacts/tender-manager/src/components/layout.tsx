@@ -103,10 +103,10 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
     },
     {
       id: "contracts", label: t("nav.contractsGroup"), icon: FileSignature,
-      show: can("accessContracts") || can("accessPo") || can("accessRfq"),
+      show: can("accessContracts") || can("accessPo") || can("accessRfq") || can("accessResearch"),
       items: [
         { href: "/contracts",       label: t("nav.contracts"),      show: can("accessContracts") },
-        { href: "/purchase-orders", label: t("nav.purchaseOrders"), show: can("accessPo") },
+        { href: "/purchase-orders", label: t("nav.purchaseOrders"), show: can("accessPo") || can("accessResearch") },
       ].filter(i => i.show),
     },
     {
@@ -162,10 +162,6 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       // قاعدة الإخفاء الكامل: المدخل غير موجود أصلًا لغير الأدمن وحامل قبعة التنفيذي
       id: "workload", label: "لوحة الأحمال", icon: Scale,
       show: isAdmin || ((user as any)?.positions ?? []).includes("executive_manager"), href: "/workload",
-    },
-    {
-      id: "research", label: t("nav.research"), icon: FlaskConical,
-      show: can("accessResearch"), href: "/research",
     },
     {
       id: "pricing", label: t("nav.pricing"), icon: Calculator,

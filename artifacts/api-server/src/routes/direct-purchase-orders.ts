@@ -1,6 +1,5 @@
 import { Router, type Request, type Response } from "express";
 import { eq, and } from "drizzle-orm";
-import { ownRecordsOnly } from "../middleware/auth";
 import {
   db,
   pool,
@@ -12,10 +11,33 @@ import {
   updatePoItemSchema,
   poTeamMembersTable,
   poStageHistoryTable,
+  poPricingItemsTable,
+  insertPoPricingItemSchema,
+  updatePoPricingItemSchema,
 } from "@workspace/db";
 import { insertAutomationTask } from "./task-automation";
 
 const router = Router();
+
+/* غرفة السوق المحلي: المديرون يرون الكل والأرباح؛ المندوب/الباحث المسند إليهم فقط وبلا أرباح */
+const AWARD_RESULTS = ["بانتظار النتيجة", "فزنا", "خسرنا"];
+async function isManagerHat(req: Request): Promise<boolean> {
+  if (req.session.role === "admin") return true;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM user_positions up JOIN positions p ON p.id = up.position_id
+     WHERE up.user_id = $1 AND p.key IN ('general_manager','executive_manager','financial_manager') LIMIT 1`,
+    [req.session.userId]);
+  return rows.length > 0;
+}
+/* جدول التسعير التنفيذي يكتبه التنفيذي والعام فقط */
+async function isExecHat(req: Request): Promise<boolean> {
+  if (req.session.role === "admin") return true;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM user_positions up JOIN positions p ON p.id = up.position_id
+     WHERE up.user_id = $1 AND p.key IN ('general_manager','executive_manager') LIMIT 1`,
+    [req.session.userId]);
+  return rows.length > 0;
+}
 
 const EXECUTION_STAGES = [
   "supplier_approval", "po_issued", "materials_received",
@@ -31,6 +53,8 @@ const PO_COLUMNS = `
   po.status, po.priority, po.assigned_to_user_id AS "assignedToUserId",
   po.assigned_user_id AS "assignedUserId", asg.full_name AS "assignedName",
   po.follow_up_manager_id AS "followUpManagerId", po.execution_stage AS "executionStage",
+  po.bid_deadline AS "bidDeadline", po.award_result AS "awardResult",
+  po.award_date AS "awardDate", po.award_notes AS "awardNotes",
   po.po_file_url AS "poFileUrl", po.notes, po.created_at AS "createdAt", po.updated_at AS "updatedAt"
 `;
 
@@ -48,10 +72,17 @@ router.get("/", async (req: Request, res: Response) => {
     const { status, contractId } = req.query as Record<string, string>;
     const conditions: string[] = [];
     const params: any[] = [];
-    // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
-    if (ownRecordsOnly(req)) {
+    // «كل مسؤول يرى مالته»: غير المديرين يرون المسند إليهم أو فريقهم أو ما أنشؤوه
+    if (!(await isManagerHat(req))) {
       params.push(req.session.userId);
-      conditions.push(`po.assigned_user_id = $${params.length}`);
+      conditions.push(`(
+        po.assigned_user_id = $${params.length}
+        OR po.assigned_to_user_id = $${params.length}
+        OR po.follow_up_manager_id = $${params.length}
+        OR po.created_by_user_id = $${params.length}
+        OR EXISTS (SELECT 1 FROM po_team_members tm WHERE tm.purchase_order_id = po.id AND tm.user_id = $${params.length})
+        OR (po.assigned_user_id IS NULL AND po.assigned_to_user_id IS NULL AND po.created_by_user_id IS NULL)
+      )`);
     }
     if (status) { params.push(status); conditions.push(`po.status = $${params.length}`); }
     if (contractId) { params.push(Number(contractId)); conditions.push(`po.contract_id = $${params.length}`); }
@@ -90,8 +121,10 @@ router.get("/", async (req: Request, res: Response) => {
 /* ══════════════════════════════════════
    AGGREGATE STATS — before /:id
 ══════════════════════════════════════ */
-router.get("/stats", async (_req: Request, res: Response) => {
+router.get("/stats", async (req: Request, res: Response) => {
   try {
+    // مؤشرات الربح والهامش للمديرين فقط — المندوب والباحث لا يرون المال
+    if (!(await isManagerHat(req))) return res.status(403).json({ error: "مؤشرات الربح للمديرين" });
     const { rows } = await pool.query(`
       WITH po_revenue AS (
         SELECT po.id, po.status,
@@ -189,6 +222,9 @@ router.patch("/:id", async (req: Request, res: Response) => {
     if (data.executionStage !== undefined && !EXECUTION_STAGES.includes(data.executionStage)) {
       return res.status(400).json({ error: "مرحلة تنفيذ غير صالحة" });
     }
+    if (data.awardResult !== undefined && !AWARD_RESULTS.includes(data.awardResult)) {
+      return res.status(400).json({ error: "نتيجة العطاء: «بانتظار النتيجة» أو «فزنا» أو «خسرنا»" });
+    }
     // date/numeric columns reject "" at the driver level — normalize blank strings to null
     for (const f of ["orderDate", "deliveryDate", "amount"]) {
       if (data[f] === "") data[f] = null;
@@ -198,6 +234,16 @@ router.patch("/:id", async (req: Request, res: Response) => {
       .set({ ...data, updatedAt: new Date() })
       .where(eq(directPurchaseOrdersTable.id, id))
       .returning();
+
+    // فزنا ← تنفتح مراحل التنفيذ: مهمة بدء فورية للمسؤول
+    if (data.awardResult === "فزنا" && existing.awardResult !== "فزنا") {
+      insertAutomationTask({
+        title: `🏆 رسا علينا العطاء المحلي ${order.orderNumber} — ابدأ التنفيذ`,
+        sourceType: "po_award", sourceId: id, triggerKey: "won",
+        linkedEntityType: "purchaseOrder", linkedEntityId: id, priority: "high",
+        assignedTo: order.assignedUserId ?? order.assignedToUserId ?? null,
+      }).catch(() => {});
+    }
 
     if (data.executionStage !== undefined && data.executionStage !== existing.executionStage) {
       await db.insert(poStageHistoryTable).values({
@@ -288,6 +334,72 @@ router.delete("/:id/items/:itemId", async (req: Request, res: Response) => {
 });
 
 /* ══════════════════════════════════════
+   جدول التسعير التنفيذي — تكلفة الشراء + النقل فقط، لا ربح ولا سعر بيع
+   يكتبه التنفيذي/العام؛ ويطالعه المديرون الثلاثة — مخفي عن المندوب والباحث
+══════════════════════════════════════ */
+router.get("/:id/pricing-items", async (req: Request, res: Response) => {
+  const poId = parseId(req.params.id);
+  if (!poId) return res.status(400).json({ error: "معرّف غير صالح" });
+  if (!(await isManagerHat(req))) return res.status(403).json({ error: "جدول التسعير التنفيذي للمديرين" });
+  try {
+    const rows = await db.select().from(poPricingItemsTable).where(eq(poPricingItemsTable.purchaseOrderId, poId)).orderBy(poPricingItemsTable.sortOrder, poPricingItemsTable.id);
+    return res.json(rows);
+  } catch {
+    return res.status(500).json({ error: "فشل في جلب جدول التسعير" });
+  }
+});
+
+router.post("/:id/pricing-items", async (req: Request, res: Response) => {
+  const poId = parseId(req.params.id);
+  if (!poId) return res.status(400).json({ error: "معرّف غير صالح" });
+  if (!(await isExecHat(req))) return res.status(403).json({ error: "جدول التسعير يبنيه المدير التنفيذي أو العام" });
+  try {
+    for (const f of ["quantity", "unitCost", "transportCost"]) {
+      if (typeof req.body?.[f] === "number") req.body[f] = String(req.body[f]);
+      if (req.body?.[f] === "") req.body[f] = null;
+    }
+    const data = insertPoPricingItemSchema.parse({ ...req.body, purchaseOrderId: poId });
+    const [row] = await db.insert(poPricingItemsTable).values(data).returning();
+    return res.status(201).json(row);
+  } catch (err: any) {
+    if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
+    return res.status(500).json({ error: "فشل في إضافة بند التسعير" });
+  }
+});
+
+router.patch("/:id/pricing-items/:itemId", async (req: Request, res: Response) => {
+  const itemId = parseId(req.params.itemId);
+  if (!itemId) return res.status(400).json({ error: "معرّف غير صالح" });
+  if (!(await isExecHat(req))) return res.status(403).json({ error: "جدول التسعير يبنيه المدير التنفيذي أو العام" });
+  try {
+    for (const f of ["quantity", "unitCost", "transportCost"]) {
+      if (typeof req.body?.[f] === "number") req.body[f] = String(req.body[f]);
+      if (req.body?.[f] === "") req.body[f] = null;
+    }
+    const data = updatePoPricingItemSchema.parse(req.body) as Record<string, any>;
+    delete data.purchaseOrderId;
+    const [row] = await db.update(poPricingItemsTable).set({ ...data, updatedAt: new Date() }).where(eq(poPricingItemsTable.id, itemId)).returning();
+    if (!row) return res.status(404).json({ error: "البند غير موجود" });
+    return res.json(row);
+  } catch (err: any) {
+    if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
+    return res.status(500).json({ error: "فشل في تحديث بند التسعير" });
+  }
+});
+
+router.delete("/:id/pricing-items/:itemId", async (req: Request, res: Response) => {
+  const itemId = parseId(req.params.itemId);
+  if (!itemId) return res.status(400).json({ error: "معرّف غير صالح" });
+  if (!(await isExecHat(req))) return res.status(403).json({ error: "جدول التسعير يبنيه المدير التنفيذي أو العام" });
+  try {
+    await db.delete(poPricingItemsTable).where(eq(poPricingItemsTable.id, itemId));
+    return res.status(204).send();
+  } catch {
+    return res.status(500).json({ error: "فشل في حذف بند التسعير" });
+  }
+});
+
+/* ══════════════════════════════════════
    TEAM (فريق عمل الطلب)
 ══════════════════════════════════════ */
 router.get("/:id/team", async (req: Request, res: Response) => {
@@ -362,10 +474,13 @@ router.get("/:id/stage-history", async (req: Request, res: Response) => {
 router.get("/:id/profitability", async (req: Request, res: Response) => {
   const poId = parseId(req.params.id);
   if (!poId) return res.status(400).json({ error: "معرّف غير صالح" });
+  // الربح للمديرين فقط — المندوب والباحث ينفّذان بلا اطّلاع على الهوامش
+  if (!(await isManagerHat(req))) return res.status(403).json({ error: "تحليل الربحية للمديرين" });
   try {
-    const [poRows, itemRows, expenseRows] = await Promise.all([
+    const [poRows, itemRows, pricingRows, expenseRows] = await Promise.all([
       pool.query(`SELECT amount FROM direct_purchase_orders WHERE id = $1`, [poId]),
       pool.query(`SELECT id, item_name AS "itemName", quantity, unit_price AS "unitPrice" FROM po_items WHERE purchase_order_id = $1`, [poId]),
+      pool.query(`SELECT quantity, unit_cost AS "unitCost", transport_cost AS "transportCost" FROM po_pricing_items WHERE purchase_order_id = $1`, [poId]),
       pool.query(`SELECT id, description, amount, category FROM finance_expenses WHERE purchase_order_id = $1`, [poId]),
     ]);
     if (!poRows.rows.length) return res.status(404).json({ error: "أمر الشراء غير موجود" });
@@ -374,19 +489,24 @@ router.get("/:id/profitability", async (req: Request, res: Response) => {
     const itemsTotal = items.reduce((s: number, i: any) => s + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
     const revenue = itemsTotal > 0 ? itemsTotal : Number(poRows.rows[0].amount) || 0;
 
+    // جدول التسعير التنفيذي: (تكلفة الوحدة + نقل الوحدة) × الكمية
+    const pricingCost = pricingRows.rows.reduce(
+      (s: number, r: any) => s + (Number(r.quantity) || 1) * ((Number(r.unitCost) || 0) + (Number(r.transportCost) || 0)), 0);
+
     const expenses = expenseRows.rows;
     const expensesTotal = expenses.reduce((s: number, e: any) => s + (Number(e.amount) || 0), 0);
     const byCategoryMap: Record<string, number> = {};
     for (const e of expenses) byCategoryMap[e.category || "أخرى"] = (byCategoryMap[e.category || "أخرى"] || 0) + (Number(e.amount) || 0);
     const byCategory = Object.entries(byCategoryMap).map(([category, total]) => ({ category, total }));
 
-    const profit = revenue - expensesTotal;
+    const totalCost = pricingCost + expensesTotal;
+    const profit = revenue - totalCost;
     const profitPct = revenue > 0 ? (profit / revenue) * 100 : 0;
 
     return res.json({
-      revenue, itemsTotal,
+      revenue, itemsTotal, pricingCost,
       expenses: { total: expensesTotal, byCategory, rows: expenses },
-      totalCost: expensesTotal, profit, profitPct,
+      totalCost, profit, profitPct,
     });
   } catch (err) {
     console.error(err);

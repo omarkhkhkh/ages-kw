@@ -121,7 +121,11 @@ router.use((req, res, next) => {
 });
 router.use("/suppliers", requireModule("accessSuppliers"), suppliersRouter);
 router.use("/rfq-requests", requireModule("accessRfq"), rfqRequestsRouter);
-router.use("/direct-purchase-orders", requireModule("accessPo"), directPurchaseOrdersRouter);
+// غرفة السوق المحلي: أهل المشتريات (accessPo) وفريق البحث (accessResearch) — الخادم يقيد ما يرونه داخلها
+router.use("/direct-purchase-orders", (req, res, next) => {
+  if (req.session?.userId && hasModuleAction(req, "accessResearch", "view")) return directPurchaseOrdersRouter(req, res, next);
+  return requireModule("accessPo")(req, res, () => directPurchaseOrdersRouter(req, res, next));
+});
 router.use("/projects", requireModule("accessProjects"), projectsRouter);
 router.use("/bank-guarantees", requireModule("accessGuarantees"), bankGuaranteesRouter);
 router.use("/contracts", requireModule("accessContracts"), contractsRouter);
@@ -153,7 +157,18 @@ router.use("/maintenance", (req, res, next) => {
   return requireModule("accessMaintenance")(req, res, next);
 }, maintenanceRouter);
 router.use("/maintenance-service", requireModule("accessMaintenance"), maintenanceServiceRouter);
-router.use("/research", requireModule("accessResearch"), researchRouter);
+// قناة الفريق (الرسائل) صارت في مركز العمليات — متاحة لكل مسجَّل؛
+// ومركز المعرفة صار في ذكاء المنافسين — أهل المناقصات يصلونه؛ والباقي خلف accessResearch
+router.use("/research", (req, res, next) => {
+  if (req.path.startsWith("/messages")) {
+    if (!req.session?.userId) return res.status(401).json({ error: "غير مصرح. يرجى تسجيل الدخول." });
+    return researchRouter(req, res, next);
+  }
+  if (req.path.startsWith("/knowledge") && req.session?.userId && hasModuleAction(req, "accessTenders", "view")) {
+    return researchRouter(req, res, next);
+  }
+  return requireModule("accessResearch")(req, res, () => researchRouter(req, res, next));
+});
 // التسعير: مسارات العمل على ورقة قائمة (أصناف، أسعار، اعتماد، إعدادات، نسخ، حذف)
 // تمرّ هنا بصلاحية العرض فقط، والمسارات نفسها تتحقق داخليًا من (مُنشئ الورقة ||
 // صلاحية إضافة/تعديل بالمصفوفة). إنشاء ورقة جديدة مستقلة يبقى على صلاحية الإضافة.

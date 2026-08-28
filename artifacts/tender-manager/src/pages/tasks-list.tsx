@@ -4,7 +4,7 @@ import { tasksApi } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import {
   ClipboardList, Plus, X, Save, Loader2,
-  List, KanbanSquare, Calendar as CalendarIcon, History, GanttChartSquare, CalendarCheck,
+  List, KanbanSquare, Calendar as CalendarIcon, History, GanttChartSquare, CalendarCheck, MessageSquare,
 } from "lucide-react";
 import { PRIORITY_MAP, STATUS_MAP, OpTask, G, GD, GR } from "./operations/shared";
 import DailyView from "./operations/daily-view";
@@ -14,12 +14,14 @@ import CalendarView from "./operations/calendar-view";
 import TimelineView from "./operations/timeline-view";
 import GanttView from "./operations/gantt-view";
 import TaskDetailDrawer from "./operations/task-detail-drawer";
+import { ChatTab } from "@/pages/research";
 
 const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "9px 12px", borderRadius: 9, border: "1.5px solid #e5e7eb", fontSize: 12.5, color: "#1e2a1e", background: "#fafaf8", outline: "none", fontFamily: "inherit" };
 const lbl: React.CSSProperties = { display: "block", fontSize: 11.5, fontWeight: 700, color: GR, marginBottom: 5 };
 
 const VIEW_MODES = [
   { key: "daily", label: "المتابعة اليومية", icon: CalendarCheck },
+  { key: "chat", label: "التواصل", icon: MessageSquare },
   { key: "list", label: "قائمة", icon: List },
   { key: "kanban", label: "Kanban", icon: KanbanSquare },
   { key: "calendar", label: "تقويم", icon: CalendarIcon },
@@ -183,6 +185,7 @@ export default function TasksList() {
       ) : (
         <>
           {view === "daily" && <DailyView isAdmin={isAdminUser} employees={employees} onOpenTask={id => setOpenTaskId(id)} />}
+          {view === "chat" && <ChatTab />}
           {view === "list" && <ListView tasks={tasks} onOpen={t => setOpenTaskId(t.id)} />}
           {view === "kanban" && <KanbanView tasks={tasks} onOpen={t => setOpenTaskId(t.id)} canDrag={isAdminUser} />}
           {view === "calendar" && <CalendarView tasks={tasks} />}

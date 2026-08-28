@@ -364,7 +364,7 @@ function SpecsSection({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean
 ═══════════════════════════════════════════════════════ */
 const emptyKnowledgeForm = { tenderId: "", title: "", outcome: "other", reasons: "", lessonsLearned: "", competitorNames: "", tags: "" };
 
-function KnowledgeTab({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
+export function KnowledgeCenterSection({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
   const qc = useQueryClient();
   const [outcomeFilter, setOutcomeFilter] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -398,9 +398,7 @@ function KnowledgeTab({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <SpecsSection canEdit={canEdit} isAdmin={isAdmin} />
-
-      <div style={{ borderTop: "1px solid #f0ead8", paddingTop: 16 }}>
+      <div>
         <div style={{ ...sectionTitle, marginBottom: 10 }}>الدروس المستفادة {isAdmin ? "(كل الموظفين)" : "(الخاصة بي فقط)"}</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
           <select value={outcomeFilter} onChange={(e) => setOutcomeFilter(e.target.value)} style={{ ...inp, width: "auto" }}>
@@ -469,7 +467,7 @@ function KnowledgeTab({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean
 /* ═══════════════════════════════════════════════════════
    TEAM CHAT TAB
 ═══════════════════════════════════════════════════════ */
-function ChatTab() {
+export function ChatTab() {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [text, setText] = useState("");
@@ -512,7 +510,7 @@ function ChatTab() {
 /* ═══════════════════════════════════════════════════════
    PERFORMANCE ANALYTICS TAB
 ═══════════════════════════════════════════════════════ */
-function PerformanceTab() {
+export function PerformanceTab() {
   const { data } = useQuery<any>({ queryKey: ["research-performance"], queryFn: () => researchApi.performance() });
   const byType = (data?.byType ?? []).map((r: any) => ({ name: r.taskType, overdue: r.overdueCount }));
   const admin = data?.scope === "admin";
@@ -563,33 +561,35 @@ function PerformanceTab() {
 /* ═══════════════════════════════════════════════════════
    MAIN PAGE
 ═══════════════════════════════════════════════════════ */
-export default function ResearchIndex() {
+export default function ResearchIndex({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  // «تحت المدير التنفيذي»: المشرفون على المكتب هم العام والتنفيذي والمالي
+  const isOverseer = isAdmin || ["general_manager", "executive_manager", "financial_manager"].some((k) => (((user as any)?.positions) ?? []).includes(k));
   const canEdit = isAdmin || !!user?.canEdit;
   const [, navigate] = useLocation();
 
-  const [activeTab, setActiveTab] = useState<"home" | "knowledge" | "chat" | "performance">("home");
+  const [activeTab, setActiveTab] = useState<"home" | "specs">("home");
 
   const TABS = [
-    { key: "home", label: "الرئيسية", icon: LayoutDashboard },
-    { key: "knowledge", label: "المواصفات والمعرفة", icon: ClipboardList },
-    { key: "chat", label: "التواصل", icon: MessageSquare },
-    { key: "performance", label: "تحليل الإنجاز", icon: TrendingUp },
+    { key: "home", label: "المكتب والتكليفات", icon: LayoutDashboard },
+    { key: "specs", label: "المواصفات", icon: ClipboardList },
   ] as const;
 
   return (
     <div dir="rtl" style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif", display: "flex", flexDirection: "column", gap: 20 }}>
+      {!embedded && (
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
           <div style={{ width: 4, height: 26, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
-          <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>البحث والتطوير</h1>
+          <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>التكليفات والمواصفات</h1>
         </div>
         <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>
-          الرئيسية · المواصفات والمعرفة · التواصل · تحليل الإنجاز
-          {!isAdmin && <span style={{ color: "#7c3aed", fontWeight: 700 }}> — وضع الموظف: تظهر لك بياناتك الخاصة فقط</span>}
+          مكتب المندوب وفريق البحث — التكليفات تحت المدير التنفيذي
+          {!isOverseer && <span style={{ color: "#7c3aed", fontWeight: 700 }}> — وضع الموظف: تظهر لك بياناتك الخاصة فقط</span>}
         </p>
       </div>
+      )}
 
       <div style={{ display: "flex", gap: 4, background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: 6, alignSelf: "flex-start", flexWrap: "wrap" }}>
         {TABS.map((t) => (
@@ -605,10 +605,8 @@ export default function ResearchIndex() {
         </button>
       </div>
 
-      {activeTab === "home" && <HomeTab isAdmin={isAdmin} />}
-      {activeTab === "knowledge" && <KnowledgeTab canEdit={canEdit} isAdmin={isAdmin} />}
-      {activeTab === "chat" && <ChatTab />}
-      {activeTab === "performance" && <PerformanceTab />}
+      {activeTab === "home" && <HomeTab isAdmin={isOverseer} />}
+      {activeTab === "specs" && <SpecsSection canEdit={canEdit} isAdmin={isOverseer} />}
     </div>
   );
 }

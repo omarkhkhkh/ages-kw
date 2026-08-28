@@ -35,6 +35,11 @@ export const directPurchaseOrdersTable = pgTable("direct_purchase_orders", {
   executionStage: text("execution_stage").notNull().default("supplier_approval"),
   // supplier_approval | po_issued | materials_received | materials_inspected | delivered_to_entity | closed
   poFileUrl: text("po_file_url"),
+  // دورة العطاء المحلي: آخر موعد + النتيجة (بانتظار النتيجة | فزنا | خسرنا) — خسرنا يؤرشف الأمر
+  bidDeadline: date("bid_deadline"),
+  awardResult: text("award_result").notNull().default("بانتظار النتيجة"),
+  awardDate: date("award_date"),
+  awardNotes: text("award_notes"),
   notes: text("notes"),
   createdByUserId: integer("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }), // منشئ السجل — لخصوصية العرض
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -53,6 +58,20 @@ export const poItemsTable = pgTable("po_items", {
   executionStatus: text("execution_status").notNull().default("pending"), // pending | in_progress | done
   sortOrder: smallint("sort_order").notNull().default(0),
   notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/* ── جدول التسعير التنفيذي: تكلفة الشراء + النقل فقط — لا ربح ولا سعر بيع (يملكه التنفيذي/العام) ── */
+export const poPricingItemsTable = pgTable("po_pricing_items", {
+  id: serial("id").primaryKey(),
+  purchaseOrderId: integer("purchase_order_id").notNull().references(() => directPurchaseOrdersTable.id, { onDelete: "cascade" }),
+  itemName: text("item_name").notNull(),
+  quantity: numeric("quantity", { precision: 12, scale: 3 }).default("1"),
+  unitCost: numeric("unit_cost", { precision: 15, scale: 3 }),
+  transportCost: numeric("transport_cost", { precision: 15, scale: 3 }),
+  notes: text("notes"),
+  sortOrder: smallint("sort_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -84,6 +103,10 @@ export const updateDirectPurchaseOrderSchema = insertDirectPurchaseOrderSchema.p
 
 export const insertPoItemSchema = createInsertSchema(poItemsTable).omit({ id: true, createdAt: true, updatedAt: true });
 export const updatePoItemSchema = insertPoItemSchema.partial();
+
+export const insertPoPricingItemSchema = createInsertSchema(poPricingItemsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const updatePoPricingItemSchema = insertPoPricingItemSchema.partial();
+export type PoPricingItem = typeof poPricingItemsTable.$inferSelect;
 
 export type InsertDirectPurchaseOrder = z.infer<typeof insertDirectPurchaseOrderSchema>;
 export type UpdateDirectPurchaseOrder = z.infer<typeof updateDirectPurchaseOrderSchema>;

@@ -21,6 +21,33 @@ import {
 const router = Router();
 
 const isAdmin = (req: Request) => req.session.role === "admin";
+/* المشرفون على مكتب التكليفات: العام والتنفيذي والمالي — «تحت المدير التنفيذي» */
+async function isOverseer(req: Request): Promise<boolean> {
+  if (req.session.role === "admin") return true;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM user_positions up JOIN positions p ON p.id = up.position_id
+     WHERE up.user_id = $1 AND p.key IN ('general_manager','executive_manager','financial_manager') LIMIT 1`,
+    [req.session.userId]);
+  return rows.length > 0;
+}
+/* مركز المعرفة = ذكاء تجاري 🔒: المستشار + المديرون يرون الكل */
+async function isKnowledgeOverseer(req: Request): Promise<boolean> {
+  if (req.session.role === "admin") return true;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM user_positions up JOIN positions p ON p.id = up.position_id
+     WHERE up.user_id = $1 AND p.key IN ('general_manager','executive_manager','financial_manager','consultant') LIMIT 1`,
+    [req.session.userId]);
+  return rows.length > 0;
+}
+/* منح التكليفات: العام والتنفيذي (والمشرف العام) */
+async function canAssign(req: Request): Promise<boolean> {
+  if (req.session.role === "admin") return true;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM user_positions up JOIN positions p ON p.id = up.position_id
+     WHERE up.user_id = $1 AND p.key IN ('general_manager','executive_manager') LIMIT 1`,
+    [req.session.userId]);
+  return rows.length > 0;
+}
 
 function parseId(raw: string | string[]): number | null {
   const s = Array.isArray(raw) ? raw[0] : raw;
@@ -33,7 +60,7 @@ function parseId(raw: string | string[]): number | null {
 ══════════════════════════════════════ */
 router.get("/stats", async (req: Request, res: Response) => {
   try {
-    if (isAdmin(req)) {
+    if (await isOverseer(req)) {
       const { rows } = await pool.query(`
         SELECT
           'admin' AS "scope",
@@ -72,7 +99,7 @@ router.get("/search", async (req: Request, res: Response) => {
     const q = String(req.query.q ?? "").trim();
     if (!q) return res.json([]);
     const like = `%${q}%`;
-    const admin = isAdmin(req);
+    const admin = await isOverseer(req);
     const userId = req.session.userId!;
     // "specs"/"knowledge" are per-employee work product — scoped to the requester unless admin.
     // Suppliers/competitors/tenders remain shared reference data, visible to everyone.
@@ -169,7 +196,7 @@ router.get("/knowledge", async (req: Request, res: Response) => {
     if (outcome) { params.push(outcome); conditions.push(`ke.outcome = $${params.length}`); }
     if (tenderId) { params.push(Number(tenderId)); conditions.push(`ke.tender_id = $${params.length}`); }
     if (search) { params.push(`%${search}%`); conditions.push(`(ke.title ILIKE $${params.length} OR ke.reasons ILIKE $${params.length} OR ke.lessons_learned ILIKE $${params.length})`); }
-    if (isAdmin(req)) {
+    if (await isKnowledgeOverseer(req)) {
       // Manager may optionally narrow to one employee's work; otherwise sees everyone's.
       if (employeeId) { params.push(Number(employeeId)); conditions.push(`ke.created_by_user_id = $${params.length}`); }
     } else {
@@ -249,7 +276,7 @@ router.get("/specs", async (req: Request, res: Response) => {
     const params: any[] = [];
     if (search) { params.push(`%${search}%`); conditions.push(`(rs.item_name ILIKE $${params.length} OR rs.notes ILIKE $${params.length})`); }
     if (linkedEntityType) { params.push(linkedEntityType); conditions.push(`rs.linked_entity_type = $${params.length}`); }
-    if (isAdmin(req)) {
+    if (await isOverseer(req)) {
       if (employeeId) { params.push(Number(employeeId)); conditions.push(`rs.created_by_user_id = $${params.length}`); }
     } else {
       params.push(req.session.userId!);
@@ -324,7 +351,7 @@ router.get("/assignments", async (req: Request, res: Response) => {
     const conditions: string[] = [];
     const params: any[] = [];
     if (status) { params.push(status); conditions.push(`ra.status = $${params.length}`); }
-    if (isAdmin(req)) {
+    if (await isOverseer(req)) {
       // Manager sees everyone's assignments; may optionally narrow to one employee.
       if (assignedToUserId) { params.push(Number(assignedToUserId)); conditions.push(`ra.assigned_to_user_id = $${params.length}`); }
     } else {
@@ -354,7 +381,7 @@ router.get("/assignments", async (req: Request, res: Response) => {
 });
 
 router.post("/assignments", async (req: Request, res: Response) => {
-  if (!isAdmin(req)) return res.status(403).json({ error: "للمدير فقط" });
+  if (!(await canAssign(req))) return res.status(403).json({ error: "التكليف للمدير التنفيذي أو العام" });
   try {
     const data = insertResearchAssignmentSchema.parse({ ...req.body, assignedByUserId: req.session.userId! });
     const [row] = await db.insert(researchAssignmentsTable).values(data).returning();
@@ -371,7 +398,7 @@ router.patch("/assignments/:id", async (req: Request, res: Response) => {
   try {
     const [existing] = await db.select().from(researchAssignmentsTable).where(eq(researchAssignmentsTable.id, id));
     if (!existing) return res.status(404).json({ error: "التكليف غير موجود" });
-    const admin = isAdmin(req);
+    const admin = await isOverseer(req);
     if (!admin && existing.assignedToUserId !== req.session.userId) return res.status(403).json({ error: "هذا التكليف موجّه لموظف آخر" });
     // Employees may only update the status of their own assignment (e.g. start/complete it) — not reassign or retitle it.
     const data = admin ? updateResearchAssignmentSchema.parse(req.body) : { status: req.body.status };

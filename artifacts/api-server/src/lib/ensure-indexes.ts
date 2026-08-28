@@ -898,6 +898,25 @@ const MIGRATIONS = [
   `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS invoice_sent boolean NOT NULL DEFAULT false`,
   `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS invoice_sent_date date`,
 
+  // غرفة أوامر الشراء — السوق المحلي: دورة العطاء (الموعد/النتيجة) + جدول التسعير التنفيذي (تكلفة + نقل فقط)
+  `ALTER TABLE direct_purchase_orders ADD COLUMN IF NOT EXISTS bid_deadline date`,
+  `ALTER TABLE direct_purchase_orders ADD COLUMN IF NOT EXISTS award_result text NOT NULL DEFAULT 'بانتظار النتيجة'`,
+  `ALTER TABLE direct_purchase_orders ADD COLUMN IF NOT EXISTS award_date date`,
+  `ALTER TABLE direct_purchase_orders ADD COLUMN IF NOT EXISTS award_notes text`,
+  `CREATE TABLE IF NOT EXISTS po_pricing_items (
+    id serial PRIMARY KEY,
+    purchase_order_id integer NOT NULL REFERENCES direct_purchase_orders(id) ON DELETE CASCADE,
+    item_name text NOT NULL,
+    quantity numeric(12,3) DEFAULT 1,
+    unit_cost numeric(15,3),
+    transport_cost numeric(15,3),
+    notes text,
+    sort_order smallint NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_po_pricing_po ON po_pricing_items(purchase_order_id)`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

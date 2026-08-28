@@ -104,6 +104,31 @@ router.get("/liquidity", async (req: Request, res: Response) => {
   } catch (e) { console.error(e); return res.status(500).json({ error: "فشل حساب تقويم السيولة" }); }
 });
 
+/* ── ② دفتر العمليات: نافذة أوامر الشراء المحلية — الإيراد والتكلفة والصرف وصافي الربح ── */
+router.get("/po-ledger", async (req: Request, res: Response) => {
+  if (!(await canSee(req))) return res.status(403).json({ error: "المركز المالي للمديرين" });
+  try {
+    const { rows } = await pool.query(
+      `SELECT po.id, po.order_number AS "orderNumber", po.description, po.status,
+              po.award_result AS "awardResult", po.bid_deadline AS "bidDeadline",
+              ge.name AS "entityName", s.name AS "supplierName",
+              COALESCE(NULLIF((SELECT SUM(i.quantity * i.unit_price) FROM po_items i WHERE i.purchase_order_id = po.id), 0), po.amount, 0)::numeric AS revenue,
+              COALESCE((SELECT SUM(COALESCE(pp.quantity,1) * (COALESCE(pp.unit_cost,0) + COALESCE(pp.transport_cost,0))) FROM po_pricing_items pp WHERE pp.purchase_order_id = po.id), 0)::numeric AS "pricingCost",
+              COALESCE((SELECT SUM(e.amount) FROM finance_expenses e WHERE e.purchase_order_id = po.id), 0)::numeric AS expenses
+       FROM direct_purchase_orders po
+       LEFT JOIN government_entities ge ON ge.id = po.government_entity_id
+       LEFT JOIN suppliers s ON s.id = po.supplier_id
+       ORDER BY po.created_at DESC`);
+    const orders = rows.map((r: any) => {
+      const revenue = Number(r.revenue), cost = Number(r.pricingCost) + Number(r.expenses);
+      return { ...r, revenue, pricingCost: Number(r.pricingCost), expenses: Number(r.expenses),
+               profit: Math.round((revenue - cost) * 1000) / 1000 };
+    });
+    const sum = (k: string) => Math.round(orders.reduce((s: number, o: any) => s + Number(o[k] || 0), 0) * 1000) / 1000;
+    return res.json({ orders, totals: { revenue: sum("revenue"), pricingCost: sum("pricingCost"), expenses: sum("expenses"), profit: sum("profit") } });
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل جلب دفتر أوامر الشراء" }); }
+});
+
 /* ── ③ تكلفة الجاهزية ونسب الامتصاص — القسم بلا عقود تغطيه يظهر باسمه ── */
 router.get("/readiness", async (req: Request, res: Response) => {
   if (!(await canSee(req))) return res.status(403).json({ error: "المركز المالي للمديرين" });

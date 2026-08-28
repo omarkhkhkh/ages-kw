@@ -59,6 +59,10 @@ export default function PurchaseOrderDetail() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
   const canEdit = user?.role === "admin" || !!user?.canEdit;
+  // المال للمديرين؛ وجدول التكلفة والنقل يبنيه التنفيذي/العام حصرًا
+  const positions: string[] = ((user as any)?.positions) ?? [];
+  const isManager = user?.role === "admin" || ["general_manager", "executive_manager", "financial_manager"].some((k) => positions.includes(k));
+  const isExec = user?.role === "admin" || ["general_manager", "executive_manager"].some((k) => positions.includes(k));
   const qc = useQueryClient();
 
   const [form, setForm] = useState<any>(null);
@@ -78,10 +82,31 @@ export default function PurchaseOrderDetail() {
   const { data: items = [] } = useQuery<any[]>({ queryKey: ["po-items", poId], queryFn: () => purchaseOrdersApi.items.list(poId), enabled: !!poId });
   const { data: team = [] } = useQuery<any[]>({ queryKey: ["po-team", poId], queryFn: () => purchaseOrdersApi.team.list(poId), enabled: !!poId });
   const { data: stageHistory = [] } = useQuery<any[]>({ queryKey: ["po-stage-history", poId], queryFn: () => purchaseOrdersApi.stageHistory.list(poId), enabled: !!poId });
-  const { data: costs = [] } = useQuery<any[]>({ queryKey: ["po-costs", poId], queryFn: () => apiFetch(`/api/finance/expenses?purchaseOrderId=${poId}`), enabled: !!poId && canEdit });
-  const { data: profitability } = useQuery<any>({ queryKey: ["po-profitability", poId], queryFn: () => purchaseOrdersApi.getProfitability(poId), enabled: !!poId });
+  const { data: costs = [] } = useQuery<any[]>({ queryKey: ["po-costs", poId], queryFn: () => apiFetch(`/api/finance/expenses?purchaseOrderId=${poId}`), enabled: !!poId && canEdit && isManager });
+  const { data: profitability } = useQuery<any>({ queryKey: ["po-profitability", poId], queryFn: () => purchaseOrdersApi.getProfitability(poId), enabled: !!poId && isManager });
+  const { data: pricingItems = [] } = useQuery<any[]>({ queryKey: ["po-pricing", poId], queryFn: () => purchaseOrdersApi.pricing.list(poId), enabled: !!poId && isManager });
+  const [newPricing, setNewPricing] = useState({ itemName: "", quantity: "", unitCost: "", transportCost: "" });
+  const addPricingMut = useMutation({
+    mutationFn: (d: any) => purchaseOrdersApi.pricing.create(poId, d),
+    onSuccess: () => { setNewPricing({ itemName: "", quantity: "", unitCost: "", transportCost: "" }); qc.invalidateQueries({ queryKey: ["po-pricing", poId] }); qc.invalidateQueries({ queryKey: ["po-profitability", poId] }); },
+  });
+  const deletePricingMut = useMutation({
+    mutationFn: (id: number) => purchaseOrdersApi.pricing.delete(poId, id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["po-pricing", poId] }); qc.invalidateQueries({ queryKey: ["po-profitability", poId] }); },
+  });
 
-  useEffect(() => { if (po) setForm({ ...po }); }, [po]);
+  useEffect(() => {
+    if (!po) return;
+    // أعمدة date تصل ككائنات تاريخ/ISO — حقول <input type=date> تريد YYYY-MM-DD بالتوقيت المحلي
+    const d = (v: any) => {
+      if (!v) return "";
+      const s = String(v);
+      if (!s.includes("T")) return s.slice(0, 10);
+      const dt = new Date(v);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+    };
+    setForm({ ...po, orderDate: d(po.orderDate), deliveryDate: d(po.deliveryDate), bidDeadline: d(po.bidDeadline), awardDate: d(po.awardDate) });
+  }, [po]);
 
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
 
@@ -187,7 +212,47 @@ export default function PurchaseOrderDetail() {
         )}
       </div>
 
-      {/* Execution stage tracker */}
+      {/* دورة العطاء المحلي */}
+      {(() => {
+        const aw = form.awardResult ?? "بانتظار النتيجة";
+        const days = form.bidDeadline ? Math.ceil((new Date(form.bidDeadline).getTime() - Date.now()) / 86400000) : null;
+        const hot = aw === "بانتظار النتيجة" && days != null && days <= 3 && days >= -30;
+        const bg = aw === "فزنا" ? "#f0fdf4" : aw === "خسرنا" ? "#fff1f2" : hot ? "#fff7ed" : "#fffbeb";
+        const bd = aw === "فزنا" ? "#bbf7d0" : aw === "خسرنا" ? "#fecaca" : hot ? "#fdba74" : "#fde68a";
+        return (
+          <div style={{ ...cardStyle, background: bg, borderColor: bd }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: GR }}>
+                🏛 العطاء المحلي: {aw === "فزنا" ? "🏆 فزنا — مراحل التنفيذ مفتوحة" : aw === "خسرنا" ? "❌ خسرنا — الأمر مؤرشف" : "⏳ بانتظار النتيجة"}
+                {form.bidDeadline && <span style={{ marginRight: 10, fontSize: 12.5, fontWeight: 700, color: hot ? "#dc2626" : "#6b7280" }}>
+                  {hot && "⏰ "}آخر موعد للعطاء: {form.bidDeadline}{hot && days != null && days >= 0 && ` — بعد ${days} يوم`}
+                </span>}
+                {form.awardDate && <span style={{ marginRight: 10, fontSize: 12, color: "#6b7280" }}>النتيجة بتاريخ {form.awardDate}</span>}
+              </div>
+              {canEdit && (
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="date" value={form.bidDeadline ?? ""} onChange={(e) => set("bidDeadline", e.target.value)} style={{ ...inp, width: 150 }} title="آخر موعد للعطاء" />
+                  <select value={aw} onChange={(e) => set("awardResult", e.target.value)} style={{ ...inp, width: 170 }}>
+                    <option value="بانتظار النتيجة">⏳ بانتظار النتيجة</option>
+                    <option value="فزنا">🏆 فزنا</option>
+                    <option value="خسرنا">❌ خسرنا</option>
+                  </select>
+                  <button onClick={() => updateMut.mutate({ bidDeadline: form.bidDeadline || null, awardResult: form.awardResult || "بانتظار النتيجة", awardDate: form.awardDate || null, awardNotes: form.awardNotes || null })}
+                    style={{ padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", cursor: "pointer", fontFamily: "inherit" }}>حفظ</button>
+                </div>
+              )}
+            </div>
+            {aw === "خسرنا" && (
+              <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                السبب: <input value={form.awardNotes ?? ""} onChange={(e) => set("awardNotes", e.target.value)} placeholder="سعر المنافس، مواصفات…" style={{ ...inp, width: 280, display: "inline-block" }} disabled={!canEdit} />
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Execution stage tracker — يختفي عند خسارة العطاء */}
+      {form.awardResult !== "خسرنا" && (
       <div style={cardStyle}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <span style={sectionTitle}>مراحل التنفيذ — {completionPct}% مكتمل</span>
@@ -227,7 +292,11 @@ export default function PurchaseOrderDetail() {
             ))}
           </div>
         )}
+        {form.awardResult === "بانتظار النتيجة" && form.bidDeadline && (
+          <div style={{ marginTop: 10, fontSize: 11.5, color: "#d97706", fontWeight: 700 }}>⏳ العطاء لم يُحسم بعد — سجّل النتيجة أعلاه عند صدورها</div>
+        )}
       </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, alignItems: "start" }}>
         {/* Left: basic info */}
@@ -329,8 +398,52 @@ export default function PurchaseOrderDetail() {
             )}
           </div>
 
+          {/* جدول التسعير التنفيذي — تكلفة الشراء + النقل فقط، لا ربح (يبنيه التنفيذي/العام ويطالعه المالي) */}
+          {isManager && (
+            <div style={{ ...cardStyle, borderRightWidth: 4, borderRightColor: GD }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <Banknote size={13} color={GD} />
+                <span style={sectionTitle}>جدول التسعير التنفيذي ({pricingItems.length})</span>
+              </div>
+              <p style={{ fontSize: 11, color: "#9ca3af", margin: "0 0 10px", lineHeight: 1.7 }}>
+                تكلفة الشراء + النقل فقط — لا سعر بيع ولا ربح هنا؛ الربح يُحسب في تحليل الربحية والمركز المالي.
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+                {pricingItems.map((it: any) => {
+                  const rowTotal = (Number(it.quantity) || 1) * ((Number(it.unitCost) || 0) + (Number(it.transportCost) || 0));
+                  return (
+                    <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 8, background: "#fdf8ec", border: "1px solid #f0ead8", fontSize: 11.5 }}>
+                      <span style={{ flex: 2, fontWeight: 700, color: GR }}>{it.itemName}</span>
+                      <span style={{ flex: 0.7, color: "#6b7280" }}>×{Number(it.quantity) || 1}</span>
+                      <span style={{ flex: 1, color: "#6b7280", direction: "ltr" as const }} title="تكلفة الشراء">{fmt(it.unitCost)}</span>
+                      <span style={{ flex: 1, color: "#2563eb", direction: "ltr" as const }} title="تكلفة النقل">🚚 {fmt(it.transportCost)}</span>
+                      <span style={{ flex: 1, fontWeight: 700, color: GD, direction: "ltr" as const }}>{fmt(rowTotal)}</span>
+                      {isExec && <button onClick={() => deletePricingMut.mutate(it.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626" }}><X size={12} /></button>}
+                    </div>
+                  );
+                })}
+                {pricingItems.length === 0 && <p style={{ textAlign: "center", color: "#94a3b8", fontSize: 11.5, margin: "8px 0" }}>لم يُبنَ الجدول بعد {isExec ? "— أضف البنود أدناه" : "— يبنيه المدير التنفيذي"}</p>}
+                {pricingItems.length > 0 && (
+                  <div style={{ textAlign: "left", fontSize: 12, fontWeight: 800, color: GD }}>
+                    إجمالي التكلفة والنقل: {fmt(pricingItems.reduce((s: number, it: any) => s + (Number(it.quantity) || 1) * ((Number(it.unitCost) || 0) + (Number(it.transportCost) || 0)), 0))}
+                  </div>
+                )}
+              </div>
+              {isExec && (
+                <div style={{ display: "grid", gridTemplateColumns: "2fr 0.8fr 1fr 1fr auto", gap: 6 }}>
+                  <input value={newPricing.itemName} onChange={(e) => setNewPricing((f) => ({ ...f, itemName: e.target.value }))} placeholder="البند" style={inp} />
+                  <input value={newPricing.quantity} onChange={(e) => setNewPricing((f) => ({ ...f, quantity: e.target.value }))} placeholder="الكمية" type="number" style={inp} />
+                  <input value={newPricing.unitCost} onChange={(e) => setNewPricing((f) => ({ ...f, unitCost: e.target.value }))} placeholder="تكلفة الشراء" type="number" style={inp} />
+                  <input value={newPricing.transportCost} onChange={(e) => setNewPricing((f) => ({ ...f, transportCost: e.target.value }))} placeholder="تكلفة النقل" type="number" style={inp} />
+                  <button onClick={() => newPricing.itemName.trim() && addPricingMut.mutate({ itemName: newPricing.itemName, quantity: newPricing.quantity || "1", unitCost: newPricing.unitCost || null, transportCost: newPricing.transportCost || null })}
+                    style={{ padding: "0 12px", borderRadius: 9, background: `linear-gradient(135deg,${G},${GD})`, border: "none", color: "white", cursor: "pointer" }}><Plus size={14} /></button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Actual costs */}
-          {canEdit && (
+          {canEdit && isManager && (
             <div style={cardStyle}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
                 <Banknote size={13} color={GD} />
@@ -363,7 +476,9 @@ export default function PurchaseOrderDetail() {
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <StatCard label="قيمة أمر الشراء" value={p.revenue} color={GR} />
-                <StatCard label="إجمالي التكاليف الفعلية" value={p.totalCost} color="#dc2626" />
+                <StatCard label="جدول التكلفة والنقل" value={p.pricingCost ?? 0} color={GD} />
+                <StatCard label="المصاريف المقيدة" value={p.expenses?.total ?? 0} color="#d97706" />
+                <StatCard label="إجمالي التكلفة" value={p.totalCost} color="#dc2626" />
               </div>
               <div style={{ marginTop: 10, background: isProfit ? "#f0fdf4" : "#fff1f2", border: `1.5px solid ${isProfit ? "#bbf7d0" : "#fecaca"}`, borderRadius: 14, padding: "12px 14px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>

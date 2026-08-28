@@ -4,6 +4,7 @@ import { workTransfersApi, apiFetch } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Scale, ArrowLeftRight, Inbox, History, X, CheckCircle2, XCircle } from "lucide-react";
+import { PerformanceTab } from "@/pages/research";
 
 /* ═══ لوحة الأحمال والنقل الموحّد — الخارطة الموحّدة، المرحلة ٢ ═══
    للمدير العام وحامل قبعة التنفيذي: كم عملًا مفتوحًا عند كل موظف، نقلٌ بزر واحد
@@ -176,6 +177,14 @@ export default function WorkloadPage() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* تحليل الإنجاز — انتقل من البحث والتطوير: نفس الأحمال بعين الأداء */}
+      <div style={card}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: GR, display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
+          <History size={16} color={GD} /> تحليل الإنجاز
+        </div>
+        <PerformanceTab />
       </div>
 
       {/* آخر التحركات */}

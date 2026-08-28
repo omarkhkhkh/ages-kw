@@ -51,6 +51,7 @@ export const procurementOpportunitiesTable = pgTable("procurement_opportunities"
   pricingSheetId:    integer("pricing_sheet_id").references(() => pricingSheetsTable.id, { onDelete: "set null" }),
   quotationLetterId: integer("quotation_letter_id").references(() => correspondenceLettersTable.id, { onDelete: "set null" }),
   contractId:        integer("contract_id").references(() => contractsTable.id, { onDelete: "set null" }),
+  purchaseOrderId:   integer("purchase_order_id"), // أمر الشراء المتولد عند «رست علينا» (FK في DDL)
 
   // نتيجة الترسية
   winnerName:        text("winner_name"),                       // الشركة الفائزة (عند الخسارة)

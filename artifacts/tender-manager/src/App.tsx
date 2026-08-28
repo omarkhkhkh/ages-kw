@@ -185,6 +185,9 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || user.accessTenders}><PracticeDetail /></ModuleGuard>
         </Route>
         <Route path="/opportunities">
+          <Redirect to="/purchase-orders?tab=opportunities" />
+        </Route>
+        <Route path="/opportunities-legacy-list-unused">
           <ModuleGuard access={isAdmin || (user as any).accessOpportunities}><OpportunitiesList /></ModuleGuard>
         </Route>
         <Route path="/opportunities/:id">

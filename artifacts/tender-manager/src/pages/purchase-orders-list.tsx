@@ -10,6 +10,7 @@ import EntityDirectoryPicker from "@/components/entity-directory-picker";
 import { AssignedEmployee } from "@/components/assigned-employee";
 import { useAuth } from "@/contexts/auth";
 import ResearchDesk from "@/pages/research";
+import OpportunitiesList from "@/pages/opportunities";
 
 const G  = "#D4A534";
 const GL = "#E8BE55";
@@ -71,9 +72,12 @@ export default function PurchaseOrdersList() {
   const { user } = useAuth();
   // الربح والهامش وجدول التكلفة للمديرين — المندوب والباحث ينفّذان بلا اطّلاع على المال
   const isManager = user?.role === "admin" || ["general_manager", "executive_manager", "financial_manager"].some((k) => (((user as any)?.positions) ?? []).includes(k));
-  const [roomTab, setRoomTab] = useState<"orders" | "desk">(() => {
+  const canOpportunities = user?.role === "admin" || !!(user as any)?.accessOpportunities;
+  const [roomTab, setRoomTab] = useState<"orders" | "opportunities" | "desk">(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    return t === "research" || t === "desk" ? "desk" : "orders";
+    if (t === "research" || t === "desk") return "desk";
+    if (t === "opportunities") return "opportunities";
+    return "orders";
   });
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
@@ -120,6 +124,8 @@ export default function PurchaseOrdersList() {
           <p style={S.subtitle}>
             {roomTab === "orders"
               ? "🧭 قناة الشراء المحلي تحت المدير التنفيذي — المندوب وفريق البحث يجمعون الأسعار وينفّذون"
+              : roomTab === "opportunities"
+              ? "🧭 الفرص الواردة من الجهات: طرح ← استلام ← تسعير ← عرض — والفائزة تصير أمر شراء تلقائيًا"
               : "🧭 مكتب المندوب وفريق البحث: التكليفات والمواصفات — كل تكليف يصب في عطاء محلي أو ملف"}
           </p>
         </div>
@@ -130,9 +136,9 @@ export default function PurchaseOrdersList() {
         )}
       </div>
 
-      {/* غرفة واحدة: الأوامر + التكليفات والمواصفات */}
+      {/* غرفة واحدة: الفرص ← الأوامر ← التكليفات — السوق المحلي كله هنا */}
       <div style={{ display: "flex", gap: 6, background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 6, marginBottom: 20, width: "fit-content" }}>
-        {([["orders", "📦 الأوامر"], ["desk", "🔎 التكليفات والمواصفات"]] as const).map(([id, label]) => (
+        {([["orders", "📦 الأوامر"], ["opportunities", "📥 الفرص الواردة"], ["desk", "🔎 التكليفات والمواصفات"]] as const).filter(([id]) => id !== "opportunities" || canOpportunities).map(([id, label]) => (
           <button key={id} onClick={() => setRoomTab(id)}
             style={{ padding: "9px 22px", borderRadius: 10, fontSize: 13.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", border: "none", transition: "all 0.15s", background: roomTab === id ? `linear-gradient(135deg,${GL},${GD})` : "transparent", color: roomTab === id ? "white" : "#6b7280", boxShadow: roomTab === id ? `0 4px 12px ${G}44` : "none" }}>
             {label}
@@ -141,6 +147,8 @@ export default function PurchaseOrdersList() {
       </div>
 
       {roomTab === "desk" && <ResearchDesk embedded />}
+
+      {roomTab === "opportunities" && canOpportunities && <OpportunitiesList embedded />}
 
       {roomTab === "orders" && (<>
 

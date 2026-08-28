@@ -927,6 +927,9 @@ const MIGRATIONS = [
   `ALTER TABLE bank_guarantees ADD COLUMN IF NOT EXISTS check_received boolean NOT NULL DEFAULT false`,
   `ALTER TABLE bank_guarantees ADD COLUMN IF NOT EXISTS check_received_date date`,
 
+  // مكان واحد للسوق المحلي: الفرصة الفائزة تتولد أمر شراء وتربط به
+  `ALTER TABLE procurement_opportunities ADD COLUMN IF NOT EXISTS purchase_order_id integer REFERENCES direct_purchase_orders(id) ON DELETE SET NULL`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

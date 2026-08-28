@@ -37,7 +37,7 @@ const emptyForm = {
   issueDate: "", submissionDeadline: "", openingDate: "", bondValue: "", isUrgent: false, notes: "",
 };
 
-export default function OpportunitiesList() {
+export default function OpportunitiesList({ embedded = false }: { embedded?: boolean }) {
   const [, navigate] = useLocation();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -100,17 +100,23 @@ export default function OpportunitiesList() {
 
   return (
     <div dir="rtl" style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif" }}>
-      {/* Header */}
+      {/* Header — يختصر داخل غرفة أوامر الشراء */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
+        {!embedded ? (
         <div style={{ display: "flex", gap: 12 }}>
           <div style={{ width: 4, height: 30, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
           <div>
             <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
-              <Compass size={20} color={GD} /> قسم البحث والتسعير
+              <Compass size={20} color={GD} /> الفرص الواردة
             </h1>
             <p style={{ fontSize: 12.5, color: "#6b7280", margin: "4px 0 0" }}>فرص أوامر الشراء الحكومية — من الاكتشاف حتى الترسية</p>
           </div>
         </div>
+        ) : (
+        <p style={{ fontSize: 12.5, color: "#6b7280", margin: 0, lineHeight: 1.8 }}>
+          🧭 الفرصة تُطرح فيتسابق الفريق لاستلامها، تُدرس وتُسعّر ويُرسل عرضها — و«رست علينا» تتحول تلقائيًا إلى أمر شراء في تبويب الأوامر.
+        </p>
+        )}
         <button onClick={() => setShowForm(true)}
           style={{ display: "flex", alignItems: "center", gap: 6, background: `linear-gradient(135deg,${G},${GD})`, color: "white", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", boxShadow: `0 4px 12px ${G}44` }}>
           <Plus size={15} /> فرصة شراء جديدة
@@ -219,6 +225,11 @@ export default function OpportunitiesList() {
                       </td>
                       <td style={{ padding: "10px 14px" }}>
                         <span style={{ padding: "3px 11px", borderRadius: 999, fontSize: 11, fontWeight: 800, background: st.bg, color: st.color, whiteSpace: "nowrap" }}>{st.label}</span>
+                        {o.purchaseOrderId && (
+                          <div style={{ marginTop: 4 }} onClick={e => { e.stopPropagation(); navigate(`/purchase-orders/${o.purchaseOrderId}`); }}>
+                            <span style={{ padding: "2px 10px", borderRadius: 20, fontSize: 10.5, fontWeight: 800, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", cursor: "pointer", whiteSpace: "nowrap" }}>← أمرها</span>
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: "10px 14px", width: 40 }}>
                         {isAdmin && (

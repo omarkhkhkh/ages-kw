@@ -106,7 +106,6 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       items: [
         { href: "/tenders",                 label: t("nav.tenders"),            show: can("accessTenders") },
         { href: "/practices",               label: t("nav.practices"),          show: can("accessTenders") },
-        { href: "/opportunities",           label: "بورصة الفرص",               show: can("accessOpportunities" as any) },
         { href: "/contracts",               label: "غرفة العقود وعروض الأسعار", show: can("accessContracts") },
         { href: "/purchase-orders",         label: "أوامر الشراء — السوق المحلي", show: can("accessPo") || can("accessResearch") },
         { href: "/pricing",                 label: "غرفة التسعير",              show: can("accessPricing") },

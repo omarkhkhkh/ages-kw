@@ -171,7 +171,7 @@ router.get("/", async (req: Request, res: Response) => {
               o.issue_date AS "issueDate", o.submission_deadline AS "submissionDeadline",
               o.opening_date AS "openingDate", o.bond_value AS "bondValue",
               o.claimed_by_user_id AS "claimedByUserId", o.claimed_at AS "claimedAt",
-              o.our_price AS "ourPrice", o.discovered_at AS "discoveredAt",
+              o.our_price AS "ourPrice", o.purchase_order_id AS "purchaseOrderId", o.discovered_at AS "discoveredAt",
               ge.name AS "entityName", cu.full_name AS "claimedByName",
               (SELECT COUNT(*)::int FROM opportunity_items oi WHERE oi.opportunity_id = o.id) AS "itemCount"
        FROM procurement_opportunities o
@@ -249,6 +249,7 @@ router.get("/:id", async (req: Request, res: Response) => {
               o.priced_at AS "pricedAt", o.quotation_sent_at AS "quotationSentAt", o.result_at AS "resultAt",
               o.pricing_sheet_id AS "pricingSheetId", o.quotation_letter_id AS "quotationLetterId",
               o.winner_name AS "winnerName", o.winner_price AS "winnerPrice", o.our_price AS "ourPrice",
+              o.purchase_order_id AS "purchaseOrderId",
               o.loss_reason AS "lossReason", o.loss_notes AS "lossNotes",
               ge.name AS "entityName", cu.full_name AS "claimedByName",
               ps.sheet_number AS "pricingSheetNumber", cl.letter_number AS "quotationLetterNumber"
@@ -376,6 +377,45 @@ router.patch("/:id", async (req: Request, res: Response) => {
       if (KEY_EVENTS[data.status]) {
         notifyOpportunityUsers(req.session.userId ?? null, `opportunity_${data.status}`, KEY_EVENTS[data.status], `/opportunities/${id}`);
       }
+      // «رست علينا» ← يتولد أمر الشراء تلقائيًا: البنود المسعّرة تنتقل بنودًا، والمورد المختار يصير مورد الأمر
+      if (data.status === "won" && !(existing as any).purchaseOrderId) {
+        try {
+          const { rows: po } = await pool.query(
+            `INSERT INTO direct_purchase_orders
+               (order_number, description, government_entity_id, department_id, contact_id,
+                amount, status, priority, award_result, award_date, bid_deadline,
+                assigned_user_id, created_by_user_id, notes)
+             VALUES ($1,$2,$3,$4,$5,$6,'new','medium','فزنا', CURRENT_DATE, $7, $8, $9, $10)
+             RETURNING id`,
+            [row.orderNumber, row.title ?? row.orderNumber,
+             (row as any).governmentEntityId ?? null, (row as any).departmentId ?? null, (row as any).contactId ?? null,
+             row.ourPrice ?? null, row.submissionDeadline ?? null,
+             row.claimedByUserId ?? null, req.session.userId ?? null,
+             "تولّد تلقائيًا من فرصة رست علينا — راجع البنود والمورد وابدأ التنفيذ"]);
+          const poId = po[0].id;
+          const { rows: its } = await pool.query(
+            `SELECT i.item_name, i.quantity, i.unit, i.notes, i.sort_order,
+                    (SELECT q.price FROM opportunity_item_quotes q WHERE q.item_id = i.id AND q.is_chosen = true ORDER BY q.id LIMIT 1) AS chosen_price
+             FROM opportunity_items i WHERE i.opportunity_id = $1 ORDER BY i.sort_order, i.id`, [id]);
+          for (const it of its) {
+            await pool.query(
+              `INSERT INTO po_items (purchase_order_id, item_name, quantity, unit, unit_price, notes, sort_order)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+              [poId, it.item_name, it.quantity ?? "1", it.unit ?? null, it.chosen_price ?? null, it.notes ?? null, it.sort_order ?? 0]);
+          }
+          const { rows: sup } = await pool.query(
+            `SELECT q.supplier_id FROM opportunity_item_quotes q JOIN opportunity_items i ON i.id = q.item_id
+             WHERE i.opportunity_id = $1 AND q.is_chosen = true AND q.supplier_id IS NOT NULL
+             GROUP BY q.supplier_id ORDER BY COUNT(*) DESC LIMIT 1`, [id]);
+          if (sup.length) await pool.query(`UPDATE direct_purchase_orders SET supplier_id = $1 WHERE id = $2`, [sup[0].supplier_id, poId]);
+          await pool.query(`UPDATE procurement_opportunities SET purchase_order_id = $1, updated_at = now() WHERE id = $2`, [poId, id]);
+          await logStage(id, "won", req.session.userId ?? null, `تولّد أمر الشراء #${poId} تلقائيًا — التنفيذ في غرفة أوامر الشراء`);
+          if (row.claimedByUserId) {
+            createNotification({ recipientUserId: row.claimedByUserId, type: "opportunity_to_po", message: `🏆 فرصتك ${row.orderNumber} صارت أمر شراء — ابدأ التنفيذ`, link: `/purchase-orders/${poId}` });
+          }
+        } catch (err) { console.error("opportunity→PO conversion failed", err); }
+      }
+
       // عند الخسارة: تسجيل المنافس في قاعدة المنافسين تلقائيًا
       if (data.status === "lost" && row.winnerName?.trim()) {
         try {

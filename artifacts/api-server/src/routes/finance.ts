@@ -18,7 +18,13 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 /* ══════════════════════════════════════
    HELPERS
 ══════════════════════════════════════ */
-const isAdmin = (req: Request) => req.session.role === "admin";
+/* البيت المالي الواحد: أبواب الدفتر تفتح للقبعات الثلاث لا للأدمن وحده
+   (الاسم تاريخي — الدلالة الآن «مدير مالي المستوى») */
+const isAdmin = (req: Request) => {
+  if (req.session.role === "admin") return true;
+  const hats = (req.session.positions ?? []) as string[];
+  return ["general_manager", "executive_manager", "financial_manager"].some((k) => hats.includes(k));
+};
 
 /* ══════════════════════════════════════
    SUMMARY — dashboard numbers

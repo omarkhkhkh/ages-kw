@@ -116,6 +116,9 @@ function DashboardDoor() {
   );
 }
 
+import FinancesList, { BudgetsTab as MonthlyBudgetsTab } from "@/pages/finances-list";
+import AdminCostCenters from "@/pages/admin-cost-centers";
+
 /* ── نافذة أوامر الشراء المحلية: الإيراد − (جدول التكلفة والنقل + الصرف) = صافي الربح ── */
 function PoLedgerWindow() {
   const { data: ledger } = useQuery<any>({ queryKey: ["fc-po-ledger"], queryFn: () => financialCenterApi.poLedger().catch(() => null) });
@@ -150,31 +153,17 @@ function PoLedgerWindow() {
   );
 }
 
-/* ── ② دفتر العمليات: نوافذ على القائم + آخر الأحداث ── */
+/* ── ② دفتر العمليات: الشؤون المالية نفسها تسكن هنا (لا روابط قافزة) + نافذة أوامر الشراء ── */
 function LedgerDoor() {
-  const { data: events = [] } = useQuery<any[]>({
-    queryKey: ["fc-events"],
-    queryFn: () => apiFetch<any[]>("/api/cost-centers/financial-events?limit=25").catch(() => []),
-  });
   return (
     <>
-      <div style={{ ...card, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        {[["دفتر الإيرادات والمصروفات", "/finances"], ["مراكز التكلفة والأحداث والعكوس", "/admin/cost-centers"], ["دفتر التسعير المرجعي", "/admin/pricing-book"]].map(([l, h]) => (
-          <Link key={h} href={h}><button style={{ ...btn, background: "white", color: GD, border: `1.5px solid ${G}55` }}>{l} ←</button></Link>
-        ))}
-      </div>
       <PoLedgerWindow />
-
-      <div style={card}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: GR, marginBottom: 8 }}>آخر أحداث الدفتر — كل قيد يصب هنا أيًّا كان مصدره</div>
-        {events.length === 0 ? <div style={{ color: "#9ca3af", fontSize: 12.5 }}>لا أحداث</div> :
-          events.slice(0, 25).map((e: any) => (
-            <div key={e.id} style={{ fontSize: 12.5, color: "#4b5563", padding: "4px 0", borderBottom: "1px dashed #f0ead8" }}>
-              <b style={{ color: e.eventType === "income" ? "#16a34a" : e.eventType === "reversal" ? "#7c3aed" : "#dc2626" }}>
-                {e.eventType === "income" ? "دخل" : e.eventType === "reversal" ? "عكس" : "مصروف"}</b> {fmt(e.amount)} د.ك — {e.description ?? "—"}
-              <span style={{ color: "#9ca3af" }}> · {e.costCenterName ?? ""}</span>
-            </div>
-          ))}
+      {/* الإدارة المالية كاملة (الرصيد/الإيرادات/المصروفات/المبيعات) — الميزانيات في الباب ④ ودفتر الأحداث في الباب ③ */}
+      <div style={{ ...card }}>
+        <FinancesList embedded />
+      </div>
+      <div style={{ ...card, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <Link href="/admin/pricing-book"><button style={{ ...btn, background: "white", color: GD, border: `1.5px solid ${G}55` }}>دفتر التسعير المرجعي ←</button></Link>
       </div>
     </>
   );
@@ -207,8 +196,9 @@ function CentersDoor() {
           </table>
         </div>
       </div>
-      <div style={{ ...card, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <Link href="/admin/cost-centers"><button style={{ ...btn, background: "white", color: GD, border: `1.5px solid ${G}55` }}>الربحية ثلاثية الطبقات ولوحة الشركة ←</button></Link>
+      {/* غرفة الهيكل والتدقيق كاملة: المراكز + قواعد التوزيع + الربحية الثلاثية + الأحداث والعكوس والتطابق */}
+      <div style={card}>
+        <AdminCostCenters embedded />
       </div>
     </>
   );
@@ -226,16 +216,24 @@ function BudgetsDoor({ canEdit }: { canEdit: boolean }) {
     onError: (e: any) => toast({ title: "خطأ", description: e.message, variant: "destructive" }),
   });
   const delM = useMutation({ mutationFn: (id: number) => financialCenterApi.deleteCategoryBudget(id), onSuccess: () => qc.invalidateQueries({ queryKey: ["fc-budgets"] }) });
-  const CATS = ["general", "salary", "rent", "utilities", "maintenance", "fuel", "vehicle_service", "residency", "customs", "installation", "labor", "other"];
+  const CATS = ["general", "operational", "salary", "rent", "office_rent", "warehouse_rent", "fridge_rent", "utilities", "maintenance", "fuel", "vehicle_service", "residency", "customs", "installation", "labor", "other"];
+  const CAT_AR: Record<string, string> = { general: "عام", operational: "مصاريف تشغيلية", office_rent: "إيجار المكتب", warehouse_rent: "إيجار المخزن", fridge_rent: "إيجار الثلاجة", salary: "رواتب", rent: "إيجار", utilities: "مرافق", maintenance: "صيانة", fuel: "بنزين", vehicle_service: "سيرفس مركبة", residency: "إقامة", customs: "جمارك", installation: "تركيب", labor: "عمالة", other: "أخرى" };
   return (
     <>
+      {/* الطبقة ١: السقف الشهري لكل مركز (انتقلت من الشؤون المالية — النظامان صارا شاشة واحدة) */}
+      <div style={{ ...card, borderRightWidth: 4, borderRightColor: "#6366f1" }}>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: GR, marginBottom: 8 }}>الطبقة ١ — الميزانية الشهرية المستهدفة لكل مركز</div>
+        <MonthlyBudgetsTab />
+      </div>
+
+      <div style={{ fontSize: 13.5, fontWeight: 800, color: GR, margin: "4px 0 8px" }}>الطبقة ٢ — سقوف الفئات ذات الأسنان (تجاوزها يوقف الصرف حتى موافقة المالي)</div>
       {canEdit && (
         <div style={{ ...card, display: "flex", gap: 10, alignItems: "end", flexWrap: "wrap" }}>
           <div style={{ minWidth: 170 }}><label style={lbl}>المركز</label>
             <select style={inp} value={f.costCenterId} onChange={(e) => setF({ ...f, costCenterId: e.target.value })}>
               <option value="">— اختر —</option>{centers.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
           <div><label style={lbl}>الفئة</label>
-            <select style={{ ...inp, width: 140 }} value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{CATS.map((c) => <option key={c}>{c}</option>)}</select></div>
+            <select style={{ ...inp, width: 160 }} value={f.category} onChange={(e) => setF({ ...f, category: e.target.value })}>{CATS.map((c) => <option key={c} value={c}>{CAT_AR[c] ?? c}</option>)}</select></div>
           <div><label style={lbl}>المخصص السنوي (د.ك)</label><input style={{ ...inp, width: 130 }} type="number" step="0.001" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></div>
           <button style={btn} disabled={saveM.isPending || !f.costCenterId || !f.amount} onClick={() => saveM.mutate()}><Plus size={13} /> حفظ</button>
         </div>
@@ -248,7 +246,7 @@ function BudgetsDoor({ canEdit }: { canEdit: boolean }) {
               budgets.map((b) => (
                 <tr key={b.id} style={{ background: b.alert === "تجاوز" ? "#fff1f2" : b.alert === "إنذار" ? "#fffbeb" : undefined }}>
                   <td style={{ ...td, fontWeight: 700 }}>{b.centerName}</td>
-                  <td style={td}>{b.category}</td>
+                  <td style={td}>{CAT_AR[b.category] ?? b.category}</td>
                   <td style={td}>{fmt(b.allocated)}</td>
                   <td style={td}>{fmt(b.spent)}</td>
                   <td style={{ ...td, fontWeight: 800, color: b.remaining < 0 ? "#dc2626" : "#16a34a" }}>{fmt(b.remaining)}</td>
@@ -332,7 +330,10 @@ export default function FinancialCenterPage() {
   const isAdmin = user?.role === "admin";
   const canSee = isAdmin || ["financial_manager", "general_manager", "executive_manager"].some((k) => positions.includes(k));
   const canDecideHere = isAdmin || ["financial_manager", "general_manager"].some((k) => positions.includes(k));
-  const [door, setDoor] = useState<"dash" | "ledger" | "centers" | "budgets" | "desk">("dash");
+  const [door, setDoor] = useState<"dash" | "ledger" | "centers" | "budgets" | "desk">(() => {
+    const d = new URLSearchParams(window.location.search).get("door");
+    return (["dash", "ledger", "centers", "budgets", "desk"].includes(d ?? "") ? d : "dash") as any;
+  });
   if (!canSee) return <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>المركز المالي للمديرين.</div>;
   const DOORS = [
     { key: "dash", label: "① لوحة القيادة", icon: Gauge },

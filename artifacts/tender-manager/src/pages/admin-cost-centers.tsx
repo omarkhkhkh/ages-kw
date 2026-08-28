@@ -24,17 +24,18 @@ const TYPE_COLOR: Record<string, { bg: string; text: string }> = {
 const inp: React.CSSProperties = { padding: "8px 10px", borderRadius: 8, border: "1.5px solid #e5dfc8", fontSize: 13, fontFamily: "inherit", outline: "none", width: "100%", boxSizing: "border-box" };
 const cardS: React.CSSProperties = { background: "white", border: "1.5px solid #f0ead8", borderRadius: 14, padding: 16 };
 
-export default function AdminCostCenters() {
+export default function AdminCostCenters({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const isAdmin = user?.role === "admin";
+  // باب «المراكز والربح» في البيت المالي — للقبعات الثلاث والأدمن
+  const canSee = user?.role === "admin" || ["general_manager", "executive_manager", "financial_manager"].some((k) => (((user as any)?.positions) ?? []).includes(k));
 
   const [form, setForm] = useState({ name: "", type: "profit", evaluationMetric: "" });
   const [editId, setEditId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ name: "", type: "profit", evaluationMetric: "" });
 
-  const { data: centers = [], isLoading } = useQuery({ queryKey: ["cost-centers"], queryFn: () => costCentersApi.list(), enabled: isAdmin });
+  const { data: centers = [], isLoading } = useQuery({ queryKey: ["cost-centers"], queryFn: () => costCentersApi.list(), enabled: canSee });
 
   const inv = () => qc.invalidateQueries({ queryKey: ["cost-centers"] });
   const createM = useMutation({
@@ -59,12 +60,12 @@ export default function AdminCostCenters() {
 
   // ── المرحلة ٤: قواعد التوزيع + الربحية بثلاث طبقات ──
   const year = new Date().getFullYear();
-  const { data: rules = [] } = useQuery<AllocationRule[]>({ queryKey: ["allocation-rules"], queryFn: () => costCentersApi.allocationRules.list(), enabled: isAdmin });
-  const { data: prof } = useQuery({ queryKey: ["profitability", year], queryFn: () => costCentersApi.profitability(year), enabled: isAdmin });
-  const { data: dash } = useQuery({ queryKey: ["cc-dashboard", year], queryFn: () => costCentersApi.companyDashboard(year), enabled: isAdmin });
+  const { data: rules = [] } = useQuery<AllocationRule[]>({ queryKey: ["allocation-rules"], queryFn: () => costCentersApi.allocationRules.list(), enabled: canSee });
+  const { data: prof } = useQuery({ queryKey: ["profitability", year], queryFn: () => costCentersApi.profitability(year), enabled: canSee });
+  const { data: dash } = useQuery({ queryKey: ["cc-dashboard", year], queryFn: () => costCentersApi.companyDashboard(year), enabled: canSee });
   // ── المرحلة ٦/٩/١٠: دفتر الأحداث المالية + التصحيح بالعكس + فحص التطابق ──
-  const { data: events = [] } = useQuery({ queryKey: ["financial-events", year], queryFn: () => costCentersApi.financialEvents(year), enabled: isAdmin });
-  const { data: integrity } = useQuery({ queryKey: ["ledger-integrity"], queryFn: () => costCentersApi.ledgerIntegrity(), enabled: isAdmin });
+  const { data: events = [] } = useQuery({ queryKey: ["financial-events", year], queryFn: () => costCentersApi.financialEvents(year), enabled: canSee });
+  const { data: integrity } = useQuery({ queryKey: ["ledger-integrity"], queryFn: () => costCentersApi.ledgerIntegrity(), enabled: canSee });
   const reverseM = useMutation({
     mutationFn: (id: number) => costCentersApi.reverseEvent(id),
     onSuccess: () => { ["financial-events", "ledger-integrity", "cc-dashboard"].forEach((k) => qc.invalidateQueries({ queryKey: [k] })); toast({ title: "↩︎ تم إنشاء حدث عكسي للتصحيح" }); },
@@ -81,12 +82,14 @@ export default function AdminCostCenters() {
   const fmt = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 3 });
   const profitCenters = centers.filter((c) => c.type === "profit");
 
-  if (!isAdmin) return <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>هذه الصفحة للمدير فقط.</div>;
+  if (!canSee) return <div style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>هذه الصفحة للمدراء الثلاثة.</div>;
 
   const startEdit = (c: CostCenter) => { setEditId(c.id); setEditForm({ name: c.name, type: c.type, evaluationMetric: c.evaluationMetric ?? "" }); };
 
   return (
     <div style={{ fontFamily: "'Segoe UI', Tahoma, sans-serif", direction: "rtl", maxWidth: 900, margin: "0 auto", padding: "8px 4px" }}>
+      {!embedded && (
+      <>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
         <div style={{ width: 4, height: 28, borderRadius: 2, background: `linear-gradient(180deg, ${GL}, ${GD})` }} />
         <Building2 size={22} color={GD} />
@@ -95,6 +98,8 @@ export default function AdminCostCenters() {
       <p style={{ color: "#6b7280", fontSize: 13, margin: "0 0 20px 14px" }}>
         النواة الموحّدة للنظام المالي. كل حركة (دخل/مصروف) تُنسب لقسم، ويُقاس كل قسم بحسب نوعه.
       </p>
+      </>
+      )}
 
       {/* ── لوحة الشركة الموحّدة (المرحلة ٥) ── */}
       {dash && (

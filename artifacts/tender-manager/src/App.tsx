@@ -19,7 +19,6 @@ import EntitiesList from '@/pages/entities-list';
 import EntityDetail from '@/pages/entity-detail';
 import DepartmentDetail from '@/pages/department-detail';
 import AdminServiceTypes from '@/pages/admin-service-types';
-import AdminCostCenters from '@/pages/admin-cost-centers';
 import AdminPricingBook from '@/pages/admin-pricing-book';
 import SuppliersList from '@/pages/suppliers-list';
 import PurchaseOrdersList from '@/pages/purchase-orders-list';
@@ -32,7 +31,6 @@ import AdminUsers from '@/pages/admin-users';
 import CalendarPage from '@/pages/calendar';
 import ActivityLog from '@/pages/activity-log';
 import TransportationList from '@/pages/transportation-list';
-import FinancesList from '@/pages/finances-list';
 import TasksList from '@/pages/tasks-list';
 import AdminTaskTypes from '@/pages/admin-task-types';
 import PracticesList from '@/pages/practices-list';
@@ -170,7 +168,7 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || user.accessTransportation}><TransportationList /></ModuleGuard>
         </Route>
         <Route path="/finance">
-          <ModuleGuard access={isAdmin}><FinancesList /></ModuleGuard>
+          <Redirect to="/financial-center?door=ledger" />
         </Route>
         <Route path="/practices">
           <ModuleGuard access={isAdmin || user.accessTenders}><PracticesList /></ModuleGuard>
@@ -243,7 +241,7 @@ function AppRouter() {
         <Route path="/admin/users" component={AdminUsers} />
         <Route path="/admin/activity-log" component={ActivityLog} />
         <Route path="/admin/service-types" component={AdminServiceTypes} />
-        <Route path="/admin/cost-centers" component={AdminCostCenters} />
+        <Route path="/admin/cost-centers"><Redirect to="/financial-center?door=centers" /></Route>
         <Route path="/admin/pricing-book" component={AdminPricingBook} />
         <Route path="/admin/task-types" component={AdminTaskTypes} />
         <Route component={NotFound} />

@@ -38,8 +38,8 @@ const EXPENSE_STATUS: Record<string, { label: string; color: string; bg: string;
 
 const INCOME_CATS = ["contract", "other", "bonus", "penalty"];
 const INCOME_CAT_AR: Record<string, string> = { contract: "عقد", other: "أخرى", bonus: "مكافأة", penalty: "غرامة" };
-const EXPENSE_CATS = ["general", "salary", "rent", "utilities", "maintenance", "tax", "customs", "customs_clearance", "installation", "labor", "residency", "fuel", "vehicle_service", "other"];
-const EXPENSE_CAT_AR: Record<string, string> = { general: "عام", salary: "رواتب", rent: "إيجار", utilities: "مرافق", maintenance: "صيانة", tax: "ضرائب", customs: "جمارك", customs_clearance: "تخليص جمركي", installation: "تركيب", labor: "عمالة", residency: "إقامة", fuel: "بنزين", vehicle_service: "سيرفس مركبة", other: "أخرى" };
+const EXPENSE_CATS = ["general", "operational", "salary", "rent", "office_rent", "warehouse_rent", "fridge_rent", "utilities", "maintenance", "tax", "customs", "customs_clearance", "installation", "labor", "residency", "fuel", "vehicle_service", "other"];
+const EXPENSE_CAT_AR: Record<string, string> = { general: "عام", operational: "مصاريف تشغيلية", office_rent: "إيجار المكتب", warehouse_rent: "إيجار المخزن", fridge_rent: "إيجار الثلاجة", salary: "رواتب", rent: "إيجار", utilities: "مرافق", maintenance: "صيانة", tax: "ضرائب", customs: "جمارك", customs_clearance: "تخليص جمركي", installation: "تركيب", labor: "عمالة", residency: "إقامة", fuel: "بنزين", vehicle_service: "سيرفس مركبة", other: "أخرى" };
 
 /* ═══════════════════════════════════════════════════
    TYPES
@@ -93,7 +93,7 @@ function SummaryTab() {
     queryFn: () => apiFetch("/api/finance/expenses/by-module"),
   });
 
-  const AR_ECAT: Record<string,string> = { general:"عام",salary:"رواتب",rent:"إيجار",utilities:"مرافق",maintenance:"صيانة",tax:"ضرائب",customs:"جمارك",customs_clearance:"تخليص جمركي",installation:"تركيب",labor:"عمالة",residency:"إقامة",fuel:"بنزين",vehicle_service:"سيرفس مركبة",other:"أخرى" };
+  const AR_ECAT: Record<string,string> = { general:"عام",operational: "مصاريف تشغيلية", office_rent: "إيجار المكتب", warehouse_rent: "إيجار المخزن", fridge_rent: "إيجار الثلاجة",salary:"رواتب",rent:"إيجار",utilities:"مرافق",maintenance:"صيانة",tax:"ضرائب",customs:"جمارك",customs_clearance:"تخليص جمركي",installation:"تركيب",labor:"عمالة",residency:"إقامة",fuel:"بنزين",vehicle_service:"سيرفس مركبة",other:"أخرى" };
   const CAT_COLORS: Record<string,string> = { general:"#6b7280",salary:"#7c3aed",rent:"#d97706",utilities:"#2563eb",maintenance:"#ea580c",tax:"#dc2626",customs:"#0891b2",customs_clearance:"#0e7490",installation:"#16a34a",labor:"#a16207",residency:"#0d9488",fuel:"#ca8a04",vehicle_service:"#4338ca",other:"#374151" };
   const AR_MODULE: Record<string,string> = { maintenance:"الصيانة", transportation:"النقل والمركبات", contract:"العقود", purchase_order:"أوامر الشراء", other:"أخرى" };
   const MODULE_COLORS: Record<string,string> = { maintenance:"#ea580c", transportation:"#2563eb", contract:"#7c3aed", purchase_order:"#0891b2", other:"#374151" };
@@ -1177,7 +1177,7 @@ function SalesTab({ isAdmin }: { isAdmin: boolean }) {
    BUDGETS TAB — الميزانيات الموحّدة لكل الأقسام (مركز واحد)
 ═══════════════════════════════════════════════════ */
 const BMONTHS = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
-function BudgetsTab() {
+export function BudgetsTab() {
   const qc = useQueryClient();
   const [ccId, setCcId] = useState<number | null>(null);
   const [year, setYear] = useState(new Date().getFullYear());
@@ -1287,17 +1287,20 @@ function BudgetsTab() {
 /* ═══════════════════════════════════════════════════
    MAIN PAGE
 ═══════════════════════════════════════════════════ */
-export default function FinancesList() {
+export default function FinancesList({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
+  // البيت المالي الواحد: الأبواب للقبعات الثلاث — الدفتر يفتح لها لا للأدمن وحده
+  const canFinance = isAdmin || ["general_manager", "executive_manager", "financial_manager"].some((k) => (((user as any)?.positions) ?? []).includes(k));
   const [activeTab, setActiveTab] = useState<"summary"|"income"|"expenses"|"budgets"|"sales">("summary");
 
   type TabDef = { key: string; label: string; icon: React.ElementType; show: boolean };
   const TABS: TabDef[] = [
-    { key: "summary",  label: "الرصيد",      icon: Scale,        show: isAdmin },
-    { key: "income",   label: "الإيرادات",   icon: TrendingUp,   show: isAdmin },
-    { key: "expenses", label: "المصروفات",   icon: TrendingDown, show: isAdmin },
-    { key: "budgets",  label: "الميزانيات",  icon: Wallet,       show: isAdmin },
+    { key: "summary",  label: "الرصيد",      icon: Scale,        show: canFinance },
+    { key: "income",   label: "الإيرادات",   icon: TrendingUp,   show: canFinance },
+    { key: "expenses", label: "المصروفات",   icon: TrendingDown, show: canFinance },
+    // الميزانية الشهرية انتقلت للباب ④ في المركز المالي عندما نكون مضمّنين
+    { key: "budgets",  label: "الميزانيات",  icon: Wallet,       show: canFinance && !embedded },
     { key: "sales",    label: "المبيعات",    icon: UserCheck,    show: true },
   ].filter(t => t.show);
 
@@ -1307,16 +1310,18 @@ export default function FinancesList() {
 
   return (
     <div dir="rtl" style={{ fontFamily: "'Cairo','IBM Plex Sans Arabic',sans-serif", display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Header */}
+      {/* Header — يختفي داخل باب المركز المالي */}
+      {!embedded && (
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
           <div style={{ width: 4, height: 26, borderRadius: 2, background: `linear-gradient(180deg,${G},${GD})` }} />
           <h1 style={{ fontSize: 22, fontWeight: 800, color: GR, margin: 0 }}>الإدارة المالية</h1>
         </div>
         <p style={{ color: "#6b7280", fontSize: 13, margin: 0, paddingRight: 14 }}>
-          {isAdmin ? "إيرادات الشركة · المصروفات والفواتير · مبيعات الموظفين" : "متابعة مبيعاتك الشخصية"}
+          {canFinance ? "إيرادات الشركة · المصروفات والفواتير · مبيعات الموظفين" : "متابعة مبيعاتك الشخصية"}
         </p>
       </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, background: "white", borderRadius: 16, border: "1.5px solid #f0ead8", padding: 6, alignSelf: "flex-start" }}>
@@ -1329,11 +1334,11 @@ export default function FinancesList() {
       </div>
 
       {/* Content */}
-      {currentTab === "summary"  && isAdmin && <SummaryTab />}
-      {currentTab === "income"   && isAdmin && <IncomeTab isAdmin={isAdmin} />}
-      {currentTab === "expenses" && isAdmin && <ExpensesTab isAdmin={isAdmin} />}
-      {currentTab === "budgets"  && isAdmin && <BudgetsTab />}
-      {currentTab === "sales"    && <SalesTab isAdmin={isAdmin} />}
+      {currentTab === "summary"  && canFinance && <SummaryTab />}
+      {currentTab === "income"   && canFinance && <IncomeTab isAdmin={canFinance} />}
+      {currentTab === "expenses" && canFinance && <ExpensesTab isAdmin={canFinance} />}
+      {currentTab === "budgets"  && canFinance && !embedded && <BudgetsTab />}
+      {currentTab === "sales"    && <SalesTab isAdmin={canFinance} />}
 
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>

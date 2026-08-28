@@ -36,8 +36,8 @@ const STAGES = [
   { key: "delivered_to_entity", label: "التسليم للجهة" },
   { key: "closed", label: "إغلاق الطلب" },
 ];
-const EXPENSE_CATS = ["general", "salary", "rent", "utilities", "maintenance", "tax", "customs", "customs_clearance", "installation", "labor", "other"];
-const EXPENSE_CAT_AR: Record<string, string> = { general: "عام", salary: "رواتب", rent: "إيجار", utilities: "مرافق", maintenance: "صيانة", tax: "ضرائب", customs: "جمارك", customs_clearance: "تخليص جمركي", installation: "تركيب", labor: "عمالة", other: "أخرى" };
+const EXPENSE_CATS = ["general", "operational", "salary", "rent", "office_rent", "warehouse_rent", "fridge_rent", "utilities", "maintenance", "tax", "customs", "customs_clearance", "installation", "labor", "other"];
+const EXPENSE_CAT_AR: Record<string, string> = { general: "عام", operational: "مصاريف تشغيلية", office_rent: "إيجار المكتب", warehouse_rent: "إيجار المخزن", fridge_rent: "إيجار الثلاجة", salary: "رواتب", rent: "إيجار", utilities: "مرافق", maintenance: "صيانة", tax: "ضرائب", customs: "جمارك", customs_clearance: "تخليص جمركي", installation: "تركيب", labor: "عمالة", other: "أخرى" };
 
 function fmt(v: number) { return `${Number(v || 0).toLocaleString("en-KW", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} د.ك`; }
 

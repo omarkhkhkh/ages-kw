@@ -3,7 +3,12 @@ import { eq } from "drizzle-orm";
 import { db, pool, costCentersTable, insertCostCenterSchema, updateCostCenterSchema, costAllocationRulesTable, insertCostAllocationRuleSchema } from "@workspace/db";
 
 const router = Router();
-const isAdmin = (req: Request) => req.session.role === "admin";
+/* البيت المالي الواحد: باب «المراكز والربح» يفتح للقبعات الثلاث لا للأدمن وحده */
+const isAdmin = (req: Request) => {
+  if (req.session.role === "admin") return true;
+  const hats = (req.session.positions ?? []) as string[];
+  return ["general_manager", "executive_manager", "financial_manager"].some((k) => hats.includes(k));
+};
 
 /* مراكز التكلفة/الربح — النواة الموحّدة للنظام المالي. للمدير فقط. */
 

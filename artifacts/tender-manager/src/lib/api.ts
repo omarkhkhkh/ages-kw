@@ -292,6 +292,7 @@ export const practicesExtraApi = {
   unassign: (id: number, role: string) => apiFetch<void>(`/api/practices/${id}/assignments/${encodeURIComponent(role)}`, { method: "DELETE" }),
   issueBond: (id: number, d: { guaranteeNumber: string; bankName: string; issueDate?: string; expiryDate?: string }) =>
     apiFetch<any>(`/api/practices/${id}/issue-bond`, { method: "POST", body: JSON.stringify(d) }),
+  extendBond: (id: number, expiryDate: string) => apiFetch<any>(`/api/practices/${id}/extend-bond`, { method: "POST", body: JSON.stringify({ expiryDate }) }),
 };
 export const tendersExtraApi = {
   assignments: (tenderId: number) => apiFetch<any[]>(`/api/tenders/${tenderId}/assignments`),
@@ -299,6 +300,7 @@ export const tendersExtraApi = {
   unassign: (tenderId: number, role: string) => apiFetch<void>(`/api/tenders/${tenderId}/assignments/${encodeURIComponent(role)}`, { method: "DELETE" }),
   issueBond: (tenderId: number, d: { guaranteeNumber: string; bankName: string; issueDate?: string; expiryDate?: string }) =>
     apiFetch<any>(`/api/tenders/${tenderId}/issue-bond`, { method: "POST", body: JSON.stringify(d) }),
+  extendBond: (tenderId: number, expiryDate: string) => apiFetch<any>(`/api/tenders/${tenderId}/extend-bond`, { method: "POST", body: JSON.stringify({ expiryDate }) }),
 };
 
 // ── RFQ Requests ───────────────────────────────────────────────────────────
@@ -355,6 +357,7 @@ export const guaranteesApi = {
   create: (data: any) => apiFetch<any>("/api/bank-guarantees", { method: "POST", body: JSON.stringify(data) }),
   update: (id: number, data: any) => apiFetch<any>(`/api/bank-guarantees/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id: number) => apiFetch<void>(`/api/bank-guarantees/${id}`, { method: "DELETE" }),
+  extend: (id: number, d: { newExpiryDate: string; reason?: string }) => apiFetch<any>(`/api/bank-guarantees/${id}/extend`, { method: "POST", body: JSON.stringify(d) }),
 };
 
 // ── Contracts ──────────────────────────────────────────────────────────────

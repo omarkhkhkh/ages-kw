@@ -922,6 +922,11 @@ const MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS idx_bg_contract ON bank_guarantees(contract_id)`,
   `ALTER TABLE contracts ADD COLUMN IF NOT EXISTS final_bond_guarantee_id integer REFERENCES bank_guarantees(id) ON DELETE SET NULL`,
 
+  // تمديد الكفالة + استلام الشيك المصدق
+  `ALTER TABLE bank_guarantees ADD COLUMN IF NOT EXISTS extension_count integer NOT NULL DEFAULT 0`,
+  `ALTER TABLE bank_guarantees ADD COLUMN IF NOT EXISTS check_received boolean NOT NULL DEFAULT false`,
+  `ALTER TABLE bank_guarantees ADD COLUMN IF NOT EXISTS check_received_date date`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

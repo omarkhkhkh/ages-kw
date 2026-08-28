@@ -1,4 +1,4 @@
-import { pgTable, serial, text, numeric, timestamp, date, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, timestamp, date, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { tendersTable } from "./tenders";
@@ -19,6 +19,9 @@ export const bankGuaranteesTable = pgTable("bank_guarantees", {
   expiryDate: date("expiry_date"),
   status: text("status").notNull().default("active"), // active, expired, released
   location: text("location"), // مكان وجود الكفالة (البنك / الخزينة / لدى موظف...)
+  extensionCount: integer("extension_count").notNull().default(0), // كم مرة مُددت (الابتدائية غالبًا)
+  checkReceived: boolean("check_received").notNull().default(false), // للشيك المصدق: هل استُلم؟
+  checkReceivedDate: date("check_received_date"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

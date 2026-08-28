@@ -51,6 +51,11 @@ function formatTender(t: typeof tendersTable.$inferSelect) {
     filePricing: t.filePricing,
     fileSuppliers: t.fileSuppliers,
     fileOpening: t.fileOpening,
+    // حقول الكفالة الأولية — بطاقة الكفالة في التفاصيل تعتمد عليها (كانت تسقط هنا)
+    initialBondIssued: (t as any).initialBondIssued ?? false,
+    initialBondNumber: (t as any).initialBondNumber ?? null,
+    initialBondBank: (t as any).initialBondBank ?? null,
+    initialBondIssueDate: (t as any).initialBondIssueDate ?? null,
     createdAt: t.createdAt.toISOString(),
     updatedAt: t.updatedAt.toISOString(),
   };
@@ -477,6 +482,28 @@ router.post("/:id/issue-bond", async (req: Request, res: Response) => {
     try { await client.query("ROLLBACK"); } catch { /* قد لا تكون بدأت */ }
     console.error(e); res.status(500).json({ error: "فشل تسجيل الكفالة" });
   } finally { client.release(); }
+});
+
+/* ── تمديد الكفالة الأولية من بطاقة المصدر — للمستشار المسؤول أو المديرين، ينعكس في السجل ── */
+router.post("/:id/extend-bond", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const newExpiry = String(req.body?.expiryDate ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newExpiry)) { res.status(400).json({ error: "تاريخ الانتهاء الجديد مطلوب" }); return; }
+  if (!(await isManagerHat(req)) && !(await isTenderConsultant(req, id))) {
+    res.status(403).json({ error: "تمديد الكفالة للمديرين أو المستشار المسؤول" }); return;
+  }
+  const { rows: tr } = await pool.query(`SELECT initial_bond_guarantee_id AS gid, tender_number AS num FROM tenders WHERE id = $1`, [id]);
+  if (!tr.length) { res.status(404).json({ error: "المناقصة غير موجودة" }); return; }
+  if (!tr[0].gid) { res.status(409).json({ error: "لا كفالة أولية مسجَّلة لهذه المناقصة" }); return; }
+  const { rows: cur } = await pool.query(`SELECT to_char(expiry_date, 'YYYY-MM-DD') AS expiry_date FROM bank_guarantees WHERE id = $1`, [tr[0].gid]);
+  const oldExp = cur[0]?.expiry_date ? String(cur[0].expiry_date).slice(0, 10) : "—";
+  await pool.query(
+    `UPDATE bank_guarantees
+     SET expiry_date = $1, status = 'active', extension_count = extension_count + 1,
+         notes = COALESCE(NULLIF(notes, ''), '') || CASE WHEN COALESCE(notes,'') = '' THEN '' ELSE E'\n' END || $2,
+         updated_at = now() WHERE id = $3`,
+    [newExpiry, `⏱ مُددت من ${oldExp} إلى ${newExpiry} — من بطاقة مناقصة ${tr[0].num}`, tr[0].gid]);
+  res.json({ ok: true, guaranteeId: tr[0].gid, expiryDate: newExpiry });
 });
 
 // DELETE /api/tenders/:id

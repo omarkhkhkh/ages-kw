@@ -74,6 +74,12 @@ export function BondCard({ tender, onChanged, entityType = "tender" }: { tender:
     onSuccess: () => { onChanged(); toast({ title: "✅ سُجّلت الكفالة في الضمانات البنكية" }); },
     onError: (e: any) => toast({ title: "تعذّر التسجيل", description: e.message, variant: "destructive" }),
   });
+  const [extDate, setExtDate] = useState("");
+  const extendM = useMutation({
+    mutationFn: () => xApi.extendBond(tender.id, extDate),
+    onSuccess: (r: any) => { setExtDate(""); onChanged(); toast({ title: `⏱ مُددت الكفالة حتى ${r.expiryDate}` }); },
+    onError: (e: any) => toast({ title: "تعذّر التمديد", description: e.message, variant: "destructive" }),
+  });
   return (
     <div style={{ ...panel, borderColor: alert ? "#fecaca" : "#f0ead8" }}>
       <div style={{ ...head, background: alert ? "#fff1f2" : issued ? "#f0fdf4" : "#fdf8ec" }}>
@@ -84,10 +90,26 @@ export function BondCard({ tender, onChanged, entityType = "tender" }: { tender:
       </div>
       <div style={{ padding: "14px 18px" }}>
         {issued ? (
-          <div style={{ fontSize: 12.5, color: "#4b5563", lineHeight: 2 }}>
-            رقمها: <b>{tender.initialBondNumber ?? "—"}</b> · البنك: <b>{tender.initialBondBank ?? "—"}</b> · أُصدرت: <b>{tender.initialBondIssueDate ?? "—"}</b>
-            {tender.bondValue != null && <> · قيمتها: <b>{Number(tender.bondValue).toLocaleString()}</b> د.ك</>}
-          </div>
+          <>
+            <div style={{ fontSize: 12.5, color: "#4b5563", lineHeight: 2 }}>
+              رقمها: <b>{tender.initialBondNumber ?? "—"}</b> · البنك: <b>{tender.initialBondBank ?? "—"}</b> · أُصدرت: <b>{tender.initialBondIssueDate ?? "—"}</b>
+              {tender.bondValue != null && <> · قيمتها: <b>{Number(tender.bondValue).toLocaleString()}</b> د.ك</>}
+            </div>
+            {/* التمديد من المصدر: المستشار يمدد وينعكس تلقائيًا في سجل المدراء */}
+            <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "flex-end" }}>
+              <div style={{ flex: 1 }}>
+                <label style={lbl}>تمديد الكفالة — الانتهاء الجديد</label>
+                <input style={inp} type="date" value={extDate} onChange={(e) => setExtDate(e.target.value)} />
+              </div>
+              <button
+                style={{ padding: "8px 16px", borderRadius: 9, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#2563eb", fontWeight: 800, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" } as CSSProperties}
+                disabled={!extDate || extendM.isPending}
+                onClick={() => extendM.mutate()}>
+                ⏱ {extendM.isPending ? "جارٍ…" : "تمديد"}
+              </button>
+            </div>
+            <p style={{ fontSize: 10.5, color: "#9ca3af", margin: "6px 0 0" }}>التمديد ينعكس مباشرة في سجل الكفالات لدى المدراء مع أثر التواريخ.</p>
+          </>
         ) : canIssue ? (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div><label style={lbl}>رقم الكفالة *</label><input style={inp} value={f.guaranteeNumber} onChange={(e) => setF({ ...f, guaranteeNumber: e.target.value })} /></div>

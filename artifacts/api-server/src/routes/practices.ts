@@ -275,6 +275,28 @@ router.post("/:id/issue-bond", async (req: Request, res: Response) => {
   } finally { client.release(); }
 });
 
+/* ── تمديد الكفالة الأولية من بطاقة المصدر — ينعكس في السجل ── */
+router.post("/:id/extend-bond", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const newExpiry = String(req.body?.expiryDate ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newExpiry)) return res.status(400).json({ error: "تاريخ الانتهاء الجديد مطلوب" });
+  if (!(await isManagerHat(req)) && !(await isPracticeConsultant(req, id))) {
+    return res.status(403).json({ error: "تمديد الكفالة للمديرين أو المستشار المسؤول" });
+  }
+  const { rows: tr } = await pool.query(`SELECT initial_bond_guarantee_id AS gid, practice_number AS num FROM practices WHERE id = $1`, [id]);
+  if (!tr.length) return res.status(404).json({ error: "الممارسة غير موجودة" });
+  if (!tr[0].gid) return res.status(409).json({ error: "لا كفالة أولية مسجَّلة لهذه الممارسة" });
+  const { rows: cur } = await pool.query(`SELECT to_char(expiry_date, 'YYYY-MM-DD') AS expiry_date FROM bank_guarantees WHERE id = $1`, [tr[0].gid]);
+  const oldExp = cur[0]?.expiry_date ? String(cur[0].expiry_date).slice(0, 10) : "—";
+  await pool.query(
+    `UPDATE bank_guarantees
+     SET expiry_date = $1, status = 'active', extension_count = extension_count + 1,
+         notes = COALESCE(NULLIF(notes, ''), '') || CASE WHEN COALESCE(notes,'') = '' THEN '' ELSE E'\n' END || $2,
+         updated_at = now() WHERE id = $3`,
+    [newExpiry, `⏱ مُددت من ${oldExp} إلى ${newExpiry} — من بطاقة ممارسة ${tr[0].num}`, tr[0].gid]);
+  return res.json({ ok: true, guaranteeId: tr[0].gid, expiryDate: newExpiry });
+});
+
 /* ── DELETE ── */
 router.delete("/:id", async (req: Request, res: Response) => {
   const id = parseId(req.params.id);

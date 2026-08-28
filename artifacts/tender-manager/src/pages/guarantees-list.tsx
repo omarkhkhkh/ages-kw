@@ -63,6 +63,7 @@ const LOCATION_OPTIONS = [
 
 const emptyForm = {
   tenderId: "", practiceId: "", contractId: "", guaranteeNumber: "", type: "",
+  checkReceived: false, checkReceivedDate: "",
   bankName: "", amount: "", issueDate: "", expiryDate: "",
   status: "active", location: "", notes: "", companyId: "",
 };
@@ -88,6 +89,39 @@ const S = {
   td:      { padding: "12px 16px", fontSize: 13, textAlign: "right" as const, verticalAlign: "middle" as const },
 };
 
+/* ── نافذة تمديد الكفالة: انتهاء جديد + سبب — الأثر يبقى في الملاحظات ── */
+function ExtendModal({ g, onClose, onDone }: { g: any; onClose: () => void; onDone: () => void }) {
+  const { toast } = useToast();
+  const [newExpiry, setNewExpiry] = useState("");
+  const [reason, setReason] = useState("");
+  const extendM = useMutation({
+    mutationFn: () => guaranteesApi.extend(g.id, { newExpiryDate: newExpiry, reason: reason || undefined }),
+    onSuccess: (r: any) => { toast({ title: `⏱ مُددت حتى ${r.expiryDate ? String(r.expiryDate).slice(0, 10) : newExpiry} (المرة ${r.extensionCount})` }); onDone(); onClose(); },
+    onError: (e: any) => toast({ title: "تعذّر التمديد", description: e.message, variant: "destructive" }),
+  });
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(11,26,16,.45)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div dir="rtl" onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: 16, border: `1.5px solid ${G}33`, width: "min(440px,100%)", padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "#132a18", display: "flex", alignItems: "center", gap: 7 }}>
+            <Clock size={16} color={GD} /> تمديد الكفالة {g.guaranteeNumber || `BG-${g.id}`}
+          </div>
+          <button onClick={onClose} style={S.iconBtn}><X size={15} color="#6b7280" /></button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontSize: 12, color: "#6b7280" }}>الانتهاء الحالي: <b>{g.expiryDate ? formatDate(g.expiryDate) : "—"}</b>{Number(g.extensionCount) > 0 && <> · مُددت سابقًا ×{g.extensionCount}</>}</div>
+          <div><label style={S.label}>الانتهاء الجديد *</label><input style={{ ...S.input, direction: "ltr" }} type="date" value={newExpiry} onChange={e => setNewExpiry(e.target.value)} /></div>
+          <div><label style={S.label}>السبب (اختياري)</label><input style={S.input} value={reason} onChange={e => setReason(e.target.value)} placeholder="تأجيل قرار الترسية…" /></div>
+          <button disabled={!newExpiry || extendM.isPending} onClick={() => extendM.mutate()}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: `linear-gradient(135deg,${GL},${GD})`, color: "white", border: "none", borderRadius: 10, padding: "10px 0", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            <Clock size={14} /> {extendM.isPending ? "جارٍ التمديد…" : "تمديد"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ════════════════════════════════════════════════════
    GUARANTEE TABLE — shared between tabs
 ════════════════════════════════════════════════════ */
@@ -106,11 +140,12 @@ function LinkedChip({ g }: { g: any }) {
 }
 
 function GuaranteeTable({
-  rows, isLoading, emptyMsg, canEdit, onEdit, onDelete, onReassign, typeDef,
+  rows, isLoading, emptyMsg, canEdit, onEdit, onDelete, onReassign, onExtend, typeDef,
 }: {
   rows: any[]; isLoading: boolean; emptyMsg: string;
   canEdit: boolean; onEdit: (g: any) => void; onDelete: (id: number) => void;
   onReassign: (id: number, assignedUserId: number | null) => void;
+  onExtend: (g: any) => void;
   typeDef: TypeDef;
 }) {
   return (
@@ -199,6 +234,9 @@ function GuaranteeTable({
                           {formatDate(g.expiryDate) || "—"}
                           {near && <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 1 }}>بعد {dl} يوم</div>}
                         </div>
+                        {Number(g.extensionCount) > 0 && (
+                          <span style={{ display: "inline-block", marginTop: 2, padding: "1px 8px", borderRadius: 20, fontSize: 10, fontWeight: 800, background: "#eff6ff", color: "#2563eb" }}>⏱ مُددت ×{g.extensionCount}</span>
+                        )}
                       </td>
                       {/* assigned employee */}
                       <td style={S.td}>
@@ -210,11 +248,23 @@ function GuaranteeTable({
                         <span style={{ padding: "3px 11px", borderRadius: 20, fontSize: 11, fontWeight: 700, background: st.bg, color: st.text, border: `1px solid ${st.border}`, whiteSpace: "nowrap" }}>
                           {st.label}
                         </span>
+                        {g.type === "شيك مصدق" && (
+                          <div style={{ marginTop: 3 }}>
+                            {g.checkReceived
+                              ? <span style={{ padding: "1px 8px", borderRadius: 20, fontSize: 10, fontWeight: 800, background: "#f0fdf4", color: "#16a34a", whiteSpace: "nowrap" }}>✅ استُلم{g.checkReceivedDate ? ` ${formatDate(g.checkReceivedDate)}` : ""}</span>
+                              : <span style={{ padding: "1px 8px", borderRadius: 20, fontSize: 10, fontWeight: 800, background: "#fffbeb", color: "#d97706", whiteSpace: "nowrap" }}>⏳ لم يُستلم</span>}
+                          </div>
+                        )}
                       </td>
                       {/* actions */}
                       <td style={{ ...S.td, textAlign: "left" }}>
                         {canEdit && (
                           <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+                            <button style={S.iconBtn} title="تمديد الكفالة" onClick={() => onExtend(g)}
+                              onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = "#eff6ff"}
+                              onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "transparent"}>
+                              <Clock size={14} color="#2563eb" />
+                            </button>
                             <button style={S.iconBtn} onClick={() => onEdit(g)}
                               onMouseEnter={ev => (ev.currentTarget as HTMLElement).style.background = `${G}18`}
                               onMouseLeave={ev => (ev.currentTarget as HTMLElement).style.background = "transparent"}>
@@ -278,6 +328,7 @@ export default function GuaranteesList() {
   const [editId,      setEditId]      = useState<number | null>(null);
   const [form,        setForm]        = useState({ ...emptyForm });
   const [expandNotes, setExpandNotes] = useState<number | null>(null);
+  const [extendFor, setExtendFor] = useState<any | null>(null);
 
   /* data */
   const { data: all = [], isLoading } = useQuery({
@@ -304,7 +355,8 @@ export default function GuaranteesList() {
   const closeForm = () => { setShowForm(false); setEditId(null); setForm({ ...emptyForm }); };
   const openEdit  = (g: any) => {
     setEditId(g.id);
-    setForm({ tenderId: g.tenderId || "", practiceId: g.practiceId || "", contractId: g.contractId || "", guaranteeNumber: g.guaranteeNumber || "", type: g.type || "", bankName: g.bankName || "", amount: g.amount || "", issueDate: g.issueDate || "", expiryDate: g.expiryDate || "", status: g.status, location: g.location || "", notes: g.notes || "", companyId: g.companyId || "" });
+    setForm({ tenderId: g.tenderId || "", practiceId: g.practiceId || "", contractId: g.contractId || "", guaranteeNumber: g.guaranteeNumber || "",
+      checkReceived: !!g.checkReceived, checkReceivedDate: g.checkReceivedDate ? String(g.checkReceivedDate).slice(0, 10) : "", type: g.type || "", bankName: g.bankName || "", amount: g.amount || "", issueDate: g.issueDate || "", expiryDate: g.expiryDate || "", status: g.status, location: g.location || "", notes: g.notes || "", companyId: g.companyId || "" });
     setShowForm(true);
   };
   const openAdd = (preType?: string) => {
@@ -328,6 +380,8 @@ export default function GuaranteesList() {
       // date columns — keep as string (YYYY-MM-DD) or null
       issueDate:  form.issueDate  || null,
       expiryDate: form.expiryDate || null,
+      checkReceived: !!form.checkReceived,
+      checkReceivedDate: form.checkReceived ? (form.checkReceivedDate || null) : null,
     };
     editId ? updateM.mutate({ id: editId, data }) : createM.mutate(data);
   };
@@ -463,8 +517,11 @@ export default function GuaranteesList() {
         onEdit={openEdit}
         onDelete={id => deleteM.mutate(id)}
         onReassign={(id, assignedUserId) => updateM.mutate({ id, data: { assignedUserId } })}
+        onExtend={(g) => setExtendFor(g)}
         typeDef={currentTypeDef}
       />
+
+      {extendFor && <ExtendModal g={extendFor} onClose={() => setExtendFor(null)} onDone={inv} />}
 
       {/* ── Notes expansion panel (click any row note to expand) ── */}
 
@@ -559,6 +616,25 @@ export default function GuaranteesList() {
                       {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                     </select>
                   </div>
+
+                  {/* استلام الشيك المصدق */}
+                  {form.type === "شيك مصدق" && (
+                    <>
+                      <div>
+                        <label style={S.label}>هل تم استلام الشيك؟</label>
+                        <select style={S.select} value={form.checkReceived ? "yes" : "no"} onChange={e => setForm(p => ({ ...p, checkReceived: e.target.value === "yes" }))}>
+                          <option value="no">⏳ لم يُستلم بعد</option>
+                          <option value="yes">✅ تم الاستلام</option>
+                        </select>
+                      </div>
+                      {form.checkReceived && (
+                        <div>
+                          <label style={S.label}>تاريخ الاستلام</label>
+                          <input style={{ ...S.input, direction: "ltr" }} type="date" value={form.checkReceivedDate} onChange={e => setForm(p => ({ ...p, checkReceivedDate: e.target.value }))} />
+                        </div>
+                      )}
+                    </>
+                  )}
 
                   {/* issue date */}
                   <div>

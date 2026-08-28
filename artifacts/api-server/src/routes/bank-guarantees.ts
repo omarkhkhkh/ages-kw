@@ -45,6 +45,10 @@ router.get("/", async (req: Request, res: Response) => {
         issueDate: bankGuaranteesTable.issueDate,
         expiryDate: bankGuaranteesTable.expiryDate,
         status: bankGuaranteesTable.status,
+        location: bankGuaranteesTable.location,
+        extensionCount: bankGuaranteesTable.extensionCount,
+        checkReceived: bankGuaranteesTable.checkReceived,
+        checkReceivedDate: bankGuaranteesTable.checkReceivedDate,
         notes: bankGuaranteesTable.notes,
         createdAt: bankGuaranteesTable.createdAt,
         updatedAt: bankGuaranteesTable.updatedAt,
@@ -102,6 +106,28 @@ router.post("/", async (req: Request, res: Response) => {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });
     return res.status(500).json({ error: "فشل في إنشاء الكفالة" });
   }
+});
+
+/* تمديد الكفالة: انتهاء جديد + عدّاد + أثر في الملاحظات — الحالة تعود فعّالة */
+router.post("/:id/extend", async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const newExpiry = String(req.body?.newExpiryDate ?? "").trim();
+    const reason = String(req.body?.reason ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newExpiry)) return res.status(400).json({ error: "تاريخ الانتهاء الجديد مطلوب (YYYY-MM-DD)" });
+    const { rows: cur } = await pool.query(`SELECT to_char(expiry_date, 'YYYY-MM-DD') AS expiry_date, notes FROM bank_guarantees WHERE id = $1`, [id]);
+    if (!cur.length) return res.status(404).json({ error: "الكفالة غير موجودة" });
+    const oldExp = cur[0].expiry_date ? String(cur[0].expiry_date).slice(0, 10) : "—";
+    const stamp = `⏱ مُددت من ${oldExp} إلى ${newExpiry}${reason ? ` — ${reason}` : ""}`;
+    const { rows } = await pool.query(
+      `UPDATE bank_guarantees
+       SET expiry_date = $1, status = 'active', extension_count = extension_count + 1,
+           notes = COALESCE(NULLIF(notes, ''), '') || CASE WHEN COALESCE(notes,'') = '' THEN '' ELSE E'\n' END || $2,
+           updated_at = now()
+       WHERE id = $3 RETURNING id, expiry_date AS "expiryDate", extension_count AS "extensionCount"`,
+      [newExpiry, stamp, id]);
+    return res.json(rows[0]);
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل تمديد الكفالة" }); }
 });
 
 router.patch("/:id", async (req: Request, res: Response) => {

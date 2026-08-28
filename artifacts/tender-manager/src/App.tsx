@@ -9,7 +9,6 @@ import Landing from '@/pages/landing';
 import Login from '@/pages/login';
 import Dashboard from '@/pages/dashboard';
 import CaseFilesPage from '@/pages/case-files';
-import ObligationsPage from '@/pages/obligations';
 import FinancialCenterPage from '@/pages/financial-center';
 import TendersList from '@/pages/tenders-list';
 import TenderNew from '@/pages/tender-new';
@@ -113,7 +112,7 @@ function AppRouter() {
           <ModuleGuard access={isAdmin || ["executive_manager","financial_manager","general_manager"].some(k => (user.positions ?? []).includes(k))}><FinancialCenterPage /></ModuleGuard>
         </Route>
         <Route path="/obligations">
-          <ModuleGuard access={isAdmin || ["executive_manager","financial_manager","general_manager"].some(k => (user.positions ?? []).includes(k))}><ObligationsPage /></ModuleGuard>
+          <Redirect to="/tasks?view=renewals" />
         </Route>
         <Route path="/case-files">
           <ModuleGuard access={isAdmin || ["executive_manager","financial_manager","general_manager"].some(k => (user.positions ?? []).includes(k))}><CaseFilesPage /></ModuleGuard>

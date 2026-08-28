@@ -57,7 +57,7 @@ function CompleteModal({ taskId, name, onClose }: { taskId: number; name: string
   );
 }
 
-function RenewalsTab({ canManage }: { canManage: boolean }) {
+export function RenewalsTab({ canManage }: { canManage: boolean }) {
   const qc = useQueryClient(); const { toast } = useToast();
   const { data: board = [] } = useQuery<any[]>({ queryKey: ["obl-board"], queryFn: () => obligationsApi.board() });
   const { data: directory = [] } = useQuery<any[]>({ queryKey: ["users-directory"], queryFn: () => apiFetch<any[]>("/api/users/directory") });
@@ -117,7 +117,7 @@ function RenewalsTab({ canManage }: { canManage: boolean }) {
   );
 }
 
-function PayrollTab({ canPost }: { canPost: boolean }) {
+export function PayrollTab({ canPost }: { canPost: boolean }) {
   const qc = useQueryClient(); const { toast } = useToast();
   const now = new Date();
   const [ym, setYm] = useState({ year: String(now.getFullYear()), month: String(now.getMonth() + 1) });

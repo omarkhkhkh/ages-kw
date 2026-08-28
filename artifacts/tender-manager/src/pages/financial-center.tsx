@@ -118,6 +118,7 @@ function DashboardDoor() {
 
 import FinancesList, { BudgetsTab as MonthlyBudgetsTab } from "@/pages/finances-list";
 import AdminCostCenters from "@/pages/admin-cost-centers";
+import { PayrollTab } from "@/pages/obligations";
 
 /* ── نافذة أوامر الشراء المحلية: الإيراد − (جدول التكلفة والنقل + الصرف) = صافي الربح ── */
 function PoLedgerWindow() {
@@ -153,11 +154,16 @@ function PoLedgerWindow() {
   );
 }
 
-/* ── ② دفتر العمليات: الشؤون المالية نفسها تسكن هنا (لا روابط قافزة) + نافذة أوامر الشراء ── */
-function LedgerDoor() {
+/* ── ② دفتر العمليات: الشؤون المالية نفسها تسكن هنا (لا روابط قافزة) + نافذة أوامر الشراء + المسيّر ── */
+function LedgerDoor({ canPost }: { canPost: boolean }) {
   return (
     <>
       <PoLedgerWindow />
+      {/* مسيّر الرواتب — انتقل من «التجديدات والمسيّر»: الترحيل قيد مالي فبيته هنا */}
+      <div style={{ ...card, borderRightWidth: 4, borderRightColor: "#0891b2" }}>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: GR, marginBottom: 8 }}>مسيّر الرواتب الشهري — يرحَّل مصاريف على مراكز الأقسام</div>
+        <PayrollTab canPost={canPost} />
+      </div>
       {/* الإدارة المالية كاملة (الرصيد/الإيرادات/المصروفات/المبيعات) — الميزانيات في الباب ④ ودفتر الأحداث في الباب ③ */}
       <div style={{ ...card }}>
         <FinancesList embedded />
@@ -261,7 +267,7 @@ function BudgetsDoor({ canEdit }: { canEdit: boolean }) {
         </table>
       </div>
       <div style={{ ...card, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <Link href="/obligations"><button style={{ ...btn, background: "white", color: GD, border: `1.5px solid ${G}55` }}>التجديدات والمسيّر ←</button></Link>
+        <Link href="/tasks?view=renewals"><button style={{ ...btn, background: "white", color: GD, border: `1.5px solid ${G}55` }}>لوحة التجديدات (مركز العمليات) ←</button></Link>
         <Link href="/bank-guarantees"><button style={{ ...btn, background: "white", color: GD, border: `1.5px solid ${G}55` }}>الضمانات البنكية ←</button></Link>
       </div>
     </>
@@ -359,7 +365,7 @@ export default function FinancialCenterPage() {
         ))}
       </div>
       {door === "dash" && <DashboardDoor />}
-      {door === "ledger" && <LedgerDoor />}
+      {door === "ledger" && <LedgerDoor canPost={canDecideHere} />}
       {door === "centers" && <CentersDoor />}
       {door === "budgets" && <BudgetsDoor canEdit={canDecideHere} />}
       {door === "desk" && <CfoDeskDoor canDecideHere={canDecideHere} />}

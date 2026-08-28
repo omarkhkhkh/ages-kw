@@ -147,10 +147,6 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       show: isAdmin || ["executive_manager", "financial_manager", "general_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), href: "/financial-center",
     },
     {
-      id: "obligations", label: "التجديدات والمسيّر", icon: CalendarClock,
-      show: isAdmin || ["executive_manager", "financial_manager", "general_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), href: "/obligations",
-    },
-    {
       id: "caseFiles", label: "الملفات والاعتمادات", icon: FolderOpen,
       show: isAdmin || ["executive_manager", "financial_manager", "general_manager"].some(k => (((user as any)?.positions) ?? []).includes(k)), href: "/case-files",
     },

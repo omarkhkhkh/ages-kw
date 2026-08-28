@@ -4,7 +4,7 @@ import { tasksApi } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import {
   ClipboardList, Plus, X, Save, Loader2,
-  List, KanbanSquare, Calendar as CalendarIcon, History, GanttChartSquare, CalendarCheck, MessageSquare, Scale, Tags,
+  List, KanbanSquare, Calendar as CalendarIcon, History, GanttChartSquare, CalendarCheck, MessageSquare, Scale, Tags, CalendarClock,
 } from "lucide-react";
 import { PRIORITY_MAP, STATUS_MAP, OpTask, G, GD, GR } from "./operations/shared";
 import DailyView from "./operations/daily-view";
@@ -17,6 +17,7 @@ import TaskDetailDrawer from "./operations/task-detail-drawer";
 import { ChatTab } from "@/pages/research";
 import WorkloadPage from "@/pages/workload";
 import AdminTaskTypes from "@/pages/admin-task-types";
+import { RenewalsTab } from "@/pages/obligations";
 
 const inp: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "9px 12px", borderRadius: 9, border: "1.5px solid #e5e7eb", fontSize: 12.5, color: "#1e2a1e", background: "#fafaf8", outline: "none", fontFamily: "inherit" };
 const lbl: React.CSSProperties = { display: "block", fontSize: 11.5, fontWeight: 700, color: GR, marginBottom: 5 };
@@ -29,8 +30,9 @@ const VIEW_MODES = [
   { key: "calendar", label: "تقويم", icon: CalendarIcon },
   { key: "timeline", label: "Timeline", icon: History },
   { key: "gantt", label: "Gantt", icon: GanttChartSquare },
-  // الرقابة والقوالب في بيت التنفيذ نفسه — يظهران بقاعدة الإخفاء أدناه
+  // الرقابة والقوالب والتجديدات في بيت التنفيذ نفسه — تظهر بقاعدة الإخفاء أدناه
   { key: "workload", label: "الأحمال والنقل", icon: Scale },
+  { key: "renewals", label: "التجديدات", icon: CalendarClock },
   { key: "types", label: "أنواع المهام", icon: Tags },
 ] as const;
 type ViewMode = typeof VIEW_MODES[number]["key"];
@@ -97,10 +99,13 @@ export default function TasksList() {
   const { user } = useAuth();
   const isAdminUser = user?.role === "admin";
   const canApprove = isAdminUser || !!user?.taskCanApprove;
-  // قاعدة الإخفاء: الأحمال للتنفيذي والعام؛ أنواع المهام للأدمن
-  const canWorkload = isAdminUser || (((user as any)?.positions) ?? []).includes("executive_manager");
+  // قاعدة الإخفاء: الأحمال للتنفيذي والعام؛ التجديدات للمديرين الثلاثة؛ أنواع المهام للأدمن
+  const positionsList: string[] = (((user as any)?.positions) ?? []);
+  const canWorkload = isAdminUser || positionsList.includes("executive_manager");
+  const canRenewals = isAdminUser || ["general_manager", "executive_manager", "financial_manager"].some(k => positionsList.includes(k));
+  const canManageRenewals = isAdminUser || ["general_manager", "executive_manager"].some(k => positionsList.includes(k));
   const visibleViews = VIEW_MODES.filter(v =>
-    v.key === "workload" ? canWorkload : v.key === "types" ? isAdminUser : true);
+    v.key === "workload" ? canWorkload : v.key === "renewals" ? canRenewals : v.key === "types" ? isAdminUser : true);
 
   const [view, setView] = useState<ViewMode>(() => {
     const q = new URLSearchParams(window.location.search).get("view");
@@ -201,6 +206,14 @@ export default function TasksList() {
           {view === "timeline" && <TimelineView />}
           {view === "gantt" && <GanttView tasks={tasks} onOpen={t => setOpenTaskId(t.id)} />}
           {view === "workload" && canWorkload && <WorkloadPage embedded />}
+          {view === "renewals" && canRenewals && (
+            <div>
+              <p style={{ fontSize: 12, color: "#6b7280", margin: "0 0 12px", lineHeight: 1.8 }}>
+                🧭 الالتزامات المتجددة الثلاثة (تسجيلات · مستندات · وثائق العمال) — أرسل مهمة التجديد للمندوب، وأتمّها بإثباتين فيتقيد المصروف تلقائيًا. مسيّر الرواتب انتقل إلى المركز المالي.
+              </p>
+              <RenewalsTab canManage={canManageRenewals} />
+            </div>
+          )}
           {view === "types" && isAdminUser && <AdminTaskTypes embedded />}
         </>
       )}

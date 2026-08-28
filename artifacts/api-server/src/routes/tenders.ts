@@ -2,9 +2,25 @@ import { Router, type Request, type Response } from "express";
 import { eq, ilike, or, sql, and } from "drizzle-orm";
 import { db, tendersTable, departmentsTable, governmentContactsTable, pool } from "@workspace/db";
 import { insertAutomationTask } from "./task-automation";
-import { ownRecordsOnly } from "../middleware/auth";
+// الرؤية صارت بالإسناد (tender_assignments) — انظر شرط القائمة أدناه
 
 const router = Router();
+
+/* حزمة المناقصات: المديرون الثلاثة يرون الكل؛ وغيرهم يرى ما أُسند إليه («كل مسؤول يرى مالته») */
+async function isManagerHat(req: Request): Promise<boolean> {
+  if (req.session.role === "admin") return true;
+  const { rows } = await pool.query(
+    `SELECT 1 FROM user_positions up JOIN positions p ON p.id = up.position_id
+     WHERE up.user_id = $1 AND p.key IN ('general_manager','executive_manager','financial_manager') LIMIT 1`,
+    [req.session.userId]);
+  return rows.length > 0;
+}
+async function isTenderConsultant(req: Request, tenderId: number): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM tender_assignments WHERE tender_id = $1 AND role = 'المستشار المسؤول' AND user_id = $2`,
+    [tenderId, req.session.userId]);
+  return rows.length > 0;
+}
 
 function formatTender(t: typeof tendersTable.$inferSelect) {
   return {
@@ -75,10 +91,12 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
     );
   }
 
-  // خصوصية السجلات: الموظف بنطاق 'own' يرى سجلاته فقط (والقديمة بلا منشئ)
-  if (ownRecordsOnly(req)) {
+  // «كل مسؤول يرى مالته»: غير المديرين يرون ما أُسندوا عليه أو ما أنشؤوه (والقديم بلا منشئ يبقى ظاهرًا)
+  if (!(await isManagerHat(req))) {
     conditions.push(
-      sql`(${tendersTable.createdByUserId} IS NULL OR ${tendersTable.createdByUserId} = ${userId})` as ReturnType<typeof eq>
+      sql`(${tendersTable.createdByUserId} IS NULL
+           OR ${tendersTable.createdByUserId} = ${userId}
+           OR EXISTS (SELECT 1 FROM tender_assignments ta WHERE ta.tender_id = ${tendersTable.id} AND ta.user_id = ${userId}))` as ReturnType<typeof eq>
     );
   }
 
@@ -125,7 +143,29 @@ router.get("/", async (req: Request, res: Response): Promise<void> => {
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(sql`${tendersTable.createdAt} DESC`);
 
-  res.json(rows.map(formatTender));
+  // إثراء بدفعة واحدة: المستشار المسؤول وحالة ملف الحالة (يظهران عمودين في القائمة)
+  const ids = rows.map((r) => r.id);
+  const consultantOf = new Map<number, string>();
+  const caseStatusOf = new Map<number, string>();
+  if (ids.length) {
+    const { rows: cons } = await pool.query(
+      `SELECT ta.tender_id AS id, u.full_name AS name FROM tender_assignments ta
+       JOIN users u ON u.id = ta.user_id WHERE ta.role = 'المستشار المسؤول' AND ta.tender_id = ANY($1::int[])`, [ids]);
+    for (const c of cons) consultantOf.set(Number(c.id), c.name);
+    const { rows: cases } = await pool.query(
+      `SELECT entity_id AS id, status FROM case_files WHERE entity_type = 'tender' AND entity_id = ANY($1::int[])`, [ids]);
+    for (const c of cases) caseStatusOf.set(Number(c.id), c.status);
+  }
+  const today = new Date();
+  res.json(rows.map((t) => ({
+    ...formatTender(t),
+    consultantName: consultantOf.get(t.id) ?? null,
+    caseStatus: caseStatusOf.get(t.id) ?? null,
+    initialBondIssued: (t as any).initialBondIssued ?? false,
+    bondAlert: !!(t.bondValue && !((t as any).initialBondIssued) && t.deadline
+      && (new Date(t.deadline).getTime() - today.getTime()) / 86400000 <= 3
+      && !["submitted", "under_evaluation", "won", "lost", "cancelled"].includes(t.status)),
+  })));
 });
 
 // GET /api/tenders/stats
@@ -319,8 +359,26 @@ router.patch("/:id", async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({ error: `Invalid status: ${newStatus}` });
       return;
     }
+    // تغيير الحالة يدويًا: للمديرين الثلاثة والمستشار المسؤول عن هذه المناقصة فقط
+    if (!(await isManagerHat(req)) && !(await isTenderConsultant(req, id))) {
+      res.status(403).json({ error: "تغيير حالة المناقصة للمديرين أو المستشار المسؤول عنها" });
+      return;
+    }
     updates.status = newStatus;
+    // يُقيَّد في سيرة الملف إن وُجد — التغيير اليدوي لا يمر بصمت
+    pool.query(
+      `INSERT INTO case_file_events (case_file_id, event, details, actor_user_id)
+       SELECT cf.id, 'تغيير حالة المناقصة يدويًا', $1, $2 FROM case_files cf
+       WHERE cf.entity_type = 'tender' AND cf.entity_id = $3`,
+      [`← ${newStatus}`, req.session.userId ?? null, id]).catch(() => {});
   }
+  if (body.competitionType !== undefined) updates.competitionType = body.competitionType ? String(body.competitionType) : null;
+  if (body.estimatedCost !== undefined) updates.estimatedCost = body.estimatedCost != null ? String(body.estimatedCost) : null;
+  if (body.expectedProfit !== undefined) updates.expectedProfit = body.expectedProfit != null ? String(body.expectedProfit) : null;
+  if (body.initialBondIssued !== undefined) updates.initialBondIssued = Boolean(body.initialBondIssued);
+  if (body.initialBondNumber !== undefined) updates.initialBondNumber = body.initialBondNumber ? String(body.initialBondNumber) : null;
+  if (body.initialBondIssueDate !== undefined) updates.initialBondIssueDate = body.initialBondIssueDate ? String(body.initialBondIssueDate) : null;
+  if (body.initialBondBank !== undefined) updates.initialBondBank = body.initialBondBank ? String(body.initialBondBank) : null;
   if (body.offerValue !== undefined) updates.offerValue = body.offerValue != null ? String(body.offerValue) : null;
   if (body.profitPercentage !== undefined) updates.profitPercentage = body.profitPercentage != null ? String(body.profitPercentage) : null;
   if (body.isSubmitted !== undefined) updates.isSubmitted = Boolean(body.isSubmitted);
@@ -343,6 +401,72 @@ router.patch("/:id", async (req: Request, res: Response): Promise<void> => {
   }
 
   res.json(formatTender(rows[0]));
+});
+
+/* ── المسؤوليات الحقيقية: إسنادات أدوار لأشخاص — تقود الرؤية والإشعار والأحمال ── */
+router.get("/:id/assignments", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const { rows } = await pool.query(
+    `SELECT ta.id, ta.role, ta.user_id AS "userId", u.full_name AS "userName", ta.created_at AS "createdAt"
+     FROM tender_assignments ta JOIN users u ON u.id = ta.user_id WHERE ta.tender_id = $1 ORDER BY ta.role`, [id]);
+  res.json(rows);
+});
+
+router.post("/:id/assignments", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const role = String(req.body?.role ?? "");
+  const userId = Number(req.body?.userId);
+  if (!["المستشار المسؤول", "منسق مشتريات", "منسق مالي", "منسق نقل"].includes(role) || !userId) {
+    res.status(400).json({ error: "الدور والموظف مطلوبان" }); return;
+  }
+  if (!(await isManagerHat(req))) { res.status(403).json({ error: "الإسناد للمديرين" }); return; }
+  const { rows: u } = await pool.query(`SELECT full_name FROM users WHERE id = $1 AND is_active = true`, [userId]);
+  if (!u.length) { res.status(404).json({ error: "الموظف غير موجود أو موقوف" }); return; }
+  await pool.query(
+    `INSERT INTO tender_assignments (tender_id, role, user_id) VALUES ($1,$2,$3)
+     ON CONFLICT (tender_id, role) DO UPDATE SET user_id = EXCLUDED.user_id, created_at = now()`, [id, role, userId]);
+  const { createNotification } = await import("./notifications");
+  createNotification({ recipientUserId: userId, type: "tender_assigned", message: `أُسندت إليك مناقصة بدور «${role}»`, link: `/tenders/${id}` }).catch(() => {});
+  res.status(201).json({ ok: true });
+});
+
+router.delete("/:id/assignments/:role", async (req: Request, res: Response) => {
+  if (!(await isManagerHat(req))) { res.status(403).json({ error: "الإسناد للمديرين" }); return; }
+  await pool.query(`DELETE FROM tender_assignments WHERE tender_id = $1 AND role = $2`,
+    [Number(req.params.id), String(req.params.role)]);
+  res.status(204).send();
+});
+
+/* ── تسجيل الكفالة الأولية: يُنشئ سجلها في الضمانات البنكية ويعلّم المناقصة ── */
+router.post("/:id/issue-bond", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  const guaranteeNumber = String(req.body?.guaranteeNumber ?? "").trim();
+  const bankName = String(req.body?.bankName ?? "").trim();
+  if (!guaranteeNumber || !bankName) { res.status(400).json({ error: "رقم الكفالة والبنك مطلوبان" }); return; }
+  if (!(await isManagerHat(req)) && !(await isTenderConsultant(req, id))) {
+    res.status(403).json({ error: "تسجيل الكفالة للمديرين أو المستشار المسؤول" }); return;
+  }
+  const { rows: tr } = await pool.query(`SELECT bond_value, initial_bond_issued, deadline FROM tenders WHERE id = $1`, [id]);
+  if (!tr.length) { res.status(404).json({ error: "المناقصة غير موجودة" }); return; }
+  if (tr[0].initial_bond_issued) { res.status(409).json({ error: "الكفالة مسجَّلة بالفعل" }); return; }
+  const issueDate = req.body?.issueDate ? String(req.body.issueDate) : new Date().toISOString().slice(0, 10);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: g } = await client.query(
+      `INSERT INTO bank_guarantees (tender_id, guarantee_number, type, bank_name, amount, issue_date, expiry_date, status, assigned_user_id)
+       VALUES ($1,$2,'ابتدائية',$3,$4,$5,$6,'active',$7) RETURNING id`,
+      [id, guaranteeNumber, bankName, tr[0].bond_value, issueDate, req.body?.expiryDate || null, req.session.userId ?? null]);
+    await client.query(
+      `UPDATE tenders SET initial_bond_issued = true, initial_bond_number = $1, initial_bond_bank = $2,
+              initial_bond_issue_date = $3, initial_bond_guarantee_id = $4, updated_at = now() WHERE id = $5`,
+      [guaranteeNumber, bankName, issueDate, g[0].id, id]);
+    await client.query("COMMIT");
+    res.status(201).json({ ok: true, guaranteeId: g[0].id });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch { /* قد لا تكون بدأت */ }
+    console.error(e); res.status(500).json({ error: "فشل تسجيل الكفالة" });
+  } finally { client.release(); }
 });
 
 // DELETE /api/tenders/:id

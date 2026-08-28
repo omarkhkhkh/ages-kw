@@ -24,6 +24,7 @@ import TenderCompetitorAnalysis from "@/components/tender-competitor-analysis";
 import CorrespondenceListPanel from "@/components/correspondence/correspondence-list-panel";
 import { useAuth } from "@/contexts/auth";
 import CaseFilePanel from "@/components/case-file-panel";
+import { AssignmentsCard, BondCard } from "@/components/tender-side-cards";
 import EntityDirectoryPicker from "@/components/entity-directory-picker";
 import LinkedPricingSheets from "@/components/linked-pricing-sheets";
 import LinkedTasks from "@/components/linked-tasks";
@@ -109,7 +110,7 @@ export default function TenderDetail() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
-  const { data: tender, isLoading } = useGetTender(id, {
+  const { data: tender, isLoading, refetch } = useGetTender(id, {
     query: { enabled: !!id, queryKey: getGetTenderQueryKey(id) },
   });
 
@@ -513,6 +514,10 @@ export default function TenderDetail() {
           {/* ── MAIN COLUMN ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
 
+            {/* حزمة المناقصات: المسؤوليات الحقيقية + الكفالة الأولية */}
+            <AssignmentsCard tenderId={id} />
+            <BondCard tender={tender} onChanged={() => refetch()} />
+
             {/* ── Basic Info ── */}
             <Panel>
               <PanelHead icon={FileText} label="تفاصيل المناقصة" />
@@ -657,6 +662,12 @@ export default function TenderDetail() {
             <Panel>
               <PanelHead icon={FileText} label="المستندات المرفقة" color="#6366f1" />
               <div style={{ padding: "20px 22px" }}>
+                {/* المرفقات الحية: البيانات نفسها تعيش في النظام — الرفع اليدوي يبقى بديلًا */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+                  {([["التسعير الحي", "pricing"], ["عروض الموردين (الملف)", "case"], ["جلسة الفض", "bid"]] as const).map(([l, t]) => (
+                    <button key={t} onClick={() => setActiveTab(t as any)} style={{ padding: "6px 14px", borderRadius: 20, fontSize: 11.5, fontWeight: 700, background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", cursor: "pointer", fontFamily: "inherit" }}>{l} ←</button>
+                  ))}
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                   {DOC_CARDS.map(({ field, label, icon: Icon, color, bg }) => {
                     const hasFile = !!formData[field];

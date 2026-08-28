@@ -843,6 +843,37 @@ const MIGRATIONS = [
      created_at timestamp NOT NULL DEFAULT now())`,
   `CREATE INDEX IF NOT EXISTS idx_bor_status ON budget_overrun_requests (status)`,
 
+
+  /* ═══ حزمة المناقصات — المسؤوليات الحقيقية + قناة التبادل + الكفالة الأولية ═══
+     المسؤوليات تتحول من نصوص حرة لإسنادات أشخاص (تقود الرؤية: كل مسؤول يرى مالته)،
+     وقناة تبادل مواصفات/عروض بين المستشار والباحث داخل الملف، وتتبع إصدار الكفالة
+     الأولية بإنذار قبل الإغلاق بثلاثة أيام. */
+  `CREATE TABLE IF NOT EXISTS tender_assignments (
+     id serial PRIMARY KEY,
+     tender_id integer NOT NULL REFERENCES tenders(id) ON DELETE CASCADE,
+     role text NOT NULL CHECK (role IN ('المستشار المسؤول','منسق مشتريات','منسق مالي','منسق نقل')),
+     user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     created_at timestamp NOT NULL DEFAULT now(),
+     CONSTRAINT uq_tender_role UNIQUE (tender_id, role))`,
+  `CREATE INDEX IF NOT EXISTS idx_ta_user ON tender_assignments (user_id)`,
+  `CREATE TABLE IF NOT EXISTS case_file_exchanges (
+     id serial PRIMARY KEY,
+     case_file_id integer NOT NULL REFERENCES case_files(id) ON DELETE CASCADE,
+     kind text NOT NULL CHECK (kind IN ('مواصفات','عرض','رد')),
+     from_user_id integer NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     file_url text,
+     note text,
+     supplier_id integer REFERENCES suppliers(id) ON DELETE SET NULL,
+     price numeric(15,3),
+     is_own_source boolean NOT NULL DEFAULT false,
+     created_at timestamp NOT NULL DEFAULT now())`,
+  `CREATE INDEX IF NOT EXISTS idx_cfe_case2 ON case_file_exchanges (case_file_id)`,
+  `ALTER TABLE tenders ADD COLUMN IF NOT EXISTS initial_bond_issued boolean NOT NULL DEFAULT false`,
+  `ALTER TABLE tenders ADD COLUMN IF NOT EXISTS initial_bond_number text`,
+  `ALTER TABLE tenders ADD COLUMN IF NOT EXISTS initial_bond_issue_date date`,
+  `ALTER TABLE tenders ADD COLUMN IF NOT EXISTS initial_bond_bank text`,
+  `ALTER TABLE tenders ADD COLUMN IF NOT EXISTS initial_bond_guarantee_id integer REFERENCES bank_guarantees(id) ON DELETE SET NULL`,
+
 ];
 
 export async function ensurePerformanceIndexes(): Promise<void> {

@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { caseFilesApi, apiFetch } from "@/lib/api";
 import { useAuth } from "@/contexts/auth";
 import { useToast } from "@/hooks/use-toast";
-import { FolderOpen, Send, PauseCircle, PlayCircle, CheckCircle2, XCircle, History, ShieldAlert, Brain, Trophy, X, FileSignature, Activity, Plus } from "lucide-react";
+import { FolderOpen, Send, PauseCircle, PlayCircle, CheckCircle2, XCircle, History, ShieldAlert, Brain, Trophy, X, FileSignature, Activity, Plus, MessagesSquare, Paperclip } from "lucide-react";
+import FileUpload from "@/components/file-upload";
 
 /* ═══ لوحة ملف الحالة — تُركَّب داخل صفحة المناقصة/الممارسة ═══
    بوابة إعلان مسار التوريد ← الحالة وشريط الإيقاف ← أزرار حسب القبعة ← السيرة.
@@ -247,6 +248,100 @@ function ContractMonitor({ contractId }: { contractId: number }) {
   );
 }
 
+/* ── قناة التبادل: مستشار ⇄ باحث — مواصفات وعروض PDF وأسماء موردين ── */
+function ExchangePanel({ cf }: { cf: any }) {
+  const { user } = useAuth();
+  const qc = useQueryClient(); const { toast } = useToast();
+  const { data: items = [] } = useQuery<any[]>({ queryKey: ["cf-exchanges", cf.id], queryFn: () => caseFilesApi.exchanges(cf.id) });
+  const { data: suppliers = [] } = useQuery<any[]>({ queryKey: ["suppliers-brief"], queryFn: () => apiFetch<any[]>("/api/suppliers").catch(() => []) });
+  const isRaiser = cf.raisedBy === user?.id;
+  const [f, setF] = useState({ kind: isRaiser ? "مواصفات" : "عرض", note: "", fileUrl: "", supplierId: "", price: "" });
+  const sendM = useMutation({
+    mutationFn: () => caseFilesApi.addExchange(cf.id, { kind: f.kind, note: f.note || undefined, fileUrl: f.fileUrl || undefined, supplierId: f.supplierId ? Number(f.supplierId) : undefined, price: f.price || undefined }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["cf-exchanges", cf.id] }); setF({ ...f, note: "", fileUrl: "", supplierId: "", price: "" }); toast({ title: "✅ أُرسل — ووصل الإشعار للطرف الآخر" }); },
+    onError: (e: any) => toast({ title: "تعذّر الإرسال", description: e.message, variant: "destructive" }),
+  });
+  const quickAddSupplier = async () => {
+    const name = prompt("اسم المورد الجديد؟ (الإضافة الخاطفة — يبدأ مسودةً ويكتمل ملفه لاحقًا)");
+    if (!name?.trim()) return;
+    const phone = prompt("هاتفه؟ (اختياري)") ?? "";
+    try {
+      const sp = await apiFetch<any>("/api/suppliers", { method: "POST", body: JSON.stringify({ name: name.trim(), phone: phone.trim() || undefined, type: "محلي" }) });
+      qc.invalidateQueries({ queryKey: ["suppliers-brief"] });
+      setF((prev) => ({ ...prev, supplierId: String(sp.id) }));
+      toast({ title: `✅ أُضيف ${sp.name} (مسودة) واختير` });
+    } catch (e: any) { toast({ title: "تعذّرت الإضافة", description: e.message, variant: "destructive" }); }
+  };
+  const offers = items.filter((i) => i.kind === "عرض");
+  return (
+    <div style={card}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: GR, display: "flex", alignItems: "center", gap: 7, marginBottom: 8 }}>
+        <MessagesSquare size={15} color={GD} /> قناة التبادل — مواصفات وعروض
+      </div>
+
+      {/* جدول مقارنة العروض */}
+      {offers.length > 0 && (
+        <div style={{ border: "1px solid #f0ead8", borderRadius: 10, overflow: "hidden", marginBottom: 12 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <thead style={{ background: "#faf8f2" }}><tr>{["المورد", "السعر", "المصدر", "الملف"].map((h) => <th key={h} style={{ padding: "7px 12px", fontWeight: 800, fontSize: 11, color: "#6b7280", textAlign: "right", borderBottom: "1px solid #f0ead8" }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {offers.map((o) => (
+                <tr key={o.id}>
+                  <td style={{ padding: "7px 12px", borderBottom: "1px solid #f5f0e6", fontWeight: 700 }}>{o.supplierName ?? "—"}{o.supplierStatus === "draft" && <span style={{ color: "#b45309", fontSize: 10.5 }}> (مسودة)</span>}</td>
+                  <td style={{ padding: "7px 12px", borderBottom: "1px solid #f5f0e6" }}>{o.price != null ? Number(o.price).toLocaleString() + " د.ك" : "—"}</td>
+                  <td style={{ padding: "7px 12px", borderBottom: "1px solid #f5f0e6" }}>{o.isOwnSource
+                    ? <span style={{ fontSize: 10.5, fontWeight: 800, color: "#7c3aed", background: "#f5f3ff", borderRadius: 20, padding: "1px 9px" }}>مصدر المستشار</span>
+                    : <span style={{ fontSize: 11, color: "#6b7280" }}>{o.fromName}</span>}</td>
+                  <td style={{ padding: "7px 12px", borderBottom: "1px solid #f5f0e6" }}>{o.fileUrl ? <a href={o.fileUrl.startsWith("http") ? o.fileUrl : o.fileUrl} target="_blank" rel="noreferrer" style={{ color: "#2563eb", fontWeight: 700, fontSize: 11.5 }}>PDF ↗</a> : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* الخيط الزمني */}
+      <div style={{ maxHeight: 220, overflowY: "auto", marginBottom: 12 }}>
+        {items.length === 0 ? <div style={{ color: "#9ca3af", fontSize: 12.5 }}>لا تبادل بعد — المستشار يرسل المواصفات، والباحث يعيد العروض</div> :
+          items.map((m) => (
+            <div key={m.id} style={{ padding: "6px 10px", borderRadius: 10, marginBottom: 6, background: m.fromUserId === user?.id ? "#fdf8ec" : "#f8fafc", border: "1px solid #f0ead8" }}>
+              <div style={{ fontSize: 11, color: "#9ca3af" }}><b style={{ color: GD }}>{m.kind}</b> · {m.fromName} · {fmtDT(m.createdAt)}</div>
+              {m.note && <div style={{ fontSize: 12.5, color: "#374151", marginTop: 2 }}>{m.note}</div>}
+              <div style={{ display: "flex", gap: 10, marginTop: 2, fontSize: 11.5 }}>
+                {m.supplierName && <span style={{ color: "#16a34a", fontWeight: 700 }}>{m.supplierName}{m.price != null ? ` — ${Number(m.price).toLocaleString()} د.ك` : ""}</span>}
+                {m.fileUrl && <a href={m.fileUrl.startsWith("http") ? m.fileUrl : m.fileUrl} target="_blank" rel="noreferrer" style={{ color: "#2563eb", fontWeight: 700 }}><Paperclip size={11} style={{ display: "inline" }} /> ملف مرفق</a>}
+              </div>
+            </div>
+          ))}
+      </div>
+
+      {/* الإرسال */}
+      <div style={{ display: "grid", gridTemplateColumns: "110px 1fr", gap: 8, alignItems: "start" }}>
+        <select style={inp} value={f.kind} onChange={(e) => setF({ ...f, kind: e.target.value })}>
+          <option value="مواصفات">مواصفات</option><option value="عرض">عرض مورد</option><option value="رد">رد</option>
+        </select>
+        <input style={inp} value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} placeholder={f.kind === "مواصفات" ? "المواصفات المطلوبة…" : f.kind === "عرض" ? "ملاحظات العرض…" : "ردّك…"} />
+      </div>
+      {f.kind === "عرض" && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 110px", gap: 8, marginTop: 8 }}>
+          <select style={inp} value={f.supplierId} onChange={(e) => setF({ ...f, supplierId: e.target.value })}>
+            <option value="">— المورد * —</option>
+            {suppliers.map((sp: any) => <option key={sp.id} value={sp.id}>{sp.name}{sp.status === "draft" ? " (مسودة)" : ""}</option>)}
+          </select>
+          <button onClick={quickAddSupplier} style={{ padding: "0 12px", borderRadius: 8, border: `1px solid ${G}55`, background: "#fdf8ec", color: GD, fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>+ مورد</button>
+          <input style={inp} type="number" step="0.001" value={f.price} onChange={(e) => setF({ ...f, price: e.target.value })} placeholder="السعر" />
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+        <FileUpload objectPath={f.fileUrl || null} onChange={(pathValue: string) => setF({ ...f, fileUrl: pathValue })} label="إرفاق PDF/ملف" />
+        {f.fileUrl && <span style={{ fontSize: 11, color: "#16a34a", fontWeight: 700 }}>مرفق ✓</span>}
+        <button style={{ ...btn, marginRight: "auto" }} disabled={sendM.isPending || (!f.note.trim() && !f.fileUrl) || (f.kind === "عرض" && !f.supplierId)} onClick={() => sendM.mutate()}>
+          <Send size={13} /> إرسال</button>
+      </div>
+    </div>
+  );
+}
+
 export default function CaseFilePanel({ entityType, entityId }: { entityType: "tender" | "practice"; entityId: number }) {
   const { user } = useAuth();
   const qc = useQueryClient(); const { toast } = useToast();
@@ -403,6 +498,9 @@ export default function CaseFilePanel({ entityType, entityId }: { entityType: "t
           )}
         </div>
       </div>
+
+      {/* قناة التبادل — مستشار ⇄ باحث */}
+      <ExchangePanel cf={cf} />
 
       {/* السيرة */}
       <div style={card}>

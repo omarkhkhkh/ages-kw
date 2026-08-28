@@ -202,6 +202,33 @@ export async function runAutomationChecks(): Promise<void> {
       });
     }
 
+    // حزمة المناقصات: موعد نهائي ≤٧ أيام والمناقصة قبل التسليم ← مهمة إنذار للمستشار المسؤول
+    const { rows: nearTenders } = await pool.query(
+      `SELECT t.id, t.tender_number AS num, t.deadline, t.bond_value AS bond, t.initial_bond_issued AS issued,
+              (SELECT ta.user_id FROM tender_assignments ta WHERE ta.tender_id = t.id AND ta.role = 'المستشار المسؤول') AS consultant
+       FROM tenders t
+       WHERE t.deadline IS NOT NULL AND t.deadline BETWEEN CURRENT_DATE AND CURRENT_DATE + 7
+         AND t.status NOT IN ('submitted','under_evaluation','won','lost','cancelled')`);
+    for (const t of nearTenders) {
+      await insertAutomationTask({
+        title: `⏰ اقتراب إغلاق مناقصة ${t.num} — جهّز التسليم`,
+        sourceType: "tender_deadline", sourceId: t.id, triggerKey: `deadline_${t.deadline}`,
+        linkedEntityType: "tender", linkedEntityId: t.id, priority: "urgent", dueDate: t.deadline,
+        assignedTo: t.consultant ?? null,
+      });
+      // الكفالة الأولية: قيمتها محددة ولم تصدر والإغلاق ≤٣ أيام ← إنذار أقصى
+      const daysLeft = Math.ceil((new Date(t.deadline).getTime() - Date.now()) / 86400000);
+      if (t.bond != null && !t.issued && daysLeft <= 3) {
+        await insertAutomationTask({
+          title: `⚠ كفالة مناقصة ${t.num} لم تصدر والإغلاق بعد ${daysLeft} يوم`,
+          sourceType: "tender_bond", sourceId: t.id, triggerKey: `bond_${t.deadline}`,
+          linkedEntityType: "tender", linkedEntityId: t.id, priority: "urgent", dueDate: t.deadline,
+          assignedTo: t.consultant ?? null,
+          notificationMessage: `⚠ الكفالة الأولية لمناقصة ${t.num} لم تصدر — الإغلاق بعد ${daysLeft} يوم`,
+        });
+      }
+    }
+
     // تأخر مورد (استدلالي) — أمر شراء بلا تقدّم في مراحله منذ فترة، وحالته غير نهائية
     const { rows: delayedPOs } = await pool.query(
       `SELECT po.id, po.order_number AS "orderNumber", po.execution_stage AS "executionStage", MAX(h.changed_at) AS "lastChange"

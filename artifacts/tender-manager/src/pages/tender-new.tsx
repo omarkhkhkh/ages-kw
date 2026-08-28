@@ -23,11 +23,10 @@ async function apiFetch(url: string) {
 }
 
 /* ── Tender types ── */
+// نوع المنافسة — قرار عمر: خياران فقط
 const TENDER_TYPES = [
-  { value: "عامة",            label: "عامة",            icon: "🏛️", desc: "مناقصة مفتوحة لجميع المتقدمين" },
-  { value: "محدودة",          label: "محدودة",          icon: "🔒", desc: "مقتصرة على موردين مختارين" },
-  { value: "دعوة مباشرة",     label: "دعوة مباشرة",     icon: "✉️", desc: "دعوة لشركة بعينها" },
-  { value: "ممارسة سعرية",    label: "ممارسة سعرية",    icon: "💰", desc: "مقارنة أسعار محدودة" },
+  { value: "عامة",         label: "عامة",         icon: "🏛️", desc: "مناقصة مفتوحة لجميع المتقدمين" },
+  { value: "تتطلب الخبرة", label: "تتطلب الخبرة", icon: "🎓", desc: "تشترط سابقة أعمال وخبرة موثقة" },
 ];
 
 /* ── Initial statuses for a new tender ── */
@@ -450,15 +449,9 @@ export default function TenderNew() {
           <SectionBadge n={3} label="المتابعة والحالة" icon={Users} />
           <div style={grid2}>
 
-            <Field label="المهندس المسؤول">
-              <div style={{ position: "relative" }}>
-                <Users size={14} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#94a3b8", pointerEvents: "none" }} />
-                <StyledInput
-                  value={form.responsibleEngineer}
-                  onChange={e => set("responsibleEngineer", e.target.value)}
-                  placeholder="اسم المهندس المكلف بالمناقصة"
-                  style={{ paddingRight: 34 }}
-                />
+            <Field label="المسؤوليات">
+              <div style={{ padding: "10px 14px", borderRadius: 10, background: "#fdf8ec", border: "1px dashed #e5d9b8", fontSize: 12, color: "#8a7433", lineHeight: 1.8 }}>
+                المسؤوليات صارت إسنادات أشخاص حقيقيين — تُدار من بطاقة «المسؤوليات» داخل صفحة المناقصة بعد الإنشاء، والمستشار المسؤول يُسند تلقائيًا عند فتح الملف.
               </div>
             </Field>
 

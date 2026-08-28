@@ -49,6 +49,12 @@ export const tendersTable = pgTable("tenders", {
   isSubmitted: boolean("is_submitted").notNull().default(false),
   winner: text("winner"),
   notes: text("notes"),
+  // الكفالة الأولية — التتبع والإنذار قبل الإغلاق بثلاثة أيام (bank_guarantees بلا FK هنا لتجنب دورة استيراد)
+  initialBondIssued: boolean("initial_bond_issued").notNull().default(false),
+  initialBondNumber: text("initial_bond_number"),
+  initialBondIssueDate: date("initial_bond_issue_date"),
+  initialBondBank: text("initial_bond_bank"),
+  initialBondGuaranteeId: integer("initial_bond_guarantee_id"),
   // Attached documents
   fileConditions: text("file_conditions"),   // الشروط الخاصة
   filePricing: text("file_pricing"),         // التسعير

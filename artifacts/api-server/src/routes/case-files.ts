@@ -1,5 +1,14 @@
 import { Router, type Request, type Response } from "express";
 import { pool } from "@workspace/db";
+import { insertAutomationTask } from "./task-automation";
+import { createNotification } from "./notifications";
+
+/* دورة حياة المناقصة تمشي مع الملف: أحداث الملف تحدّث حالة المناقصة تلقائيًا */
+async function syncTenderStatus(entityType: string, entityId: number, status: string) {
+  if (entityType !== "tender") return; // الممارسات في حزمتها القادمة
+  try { await pool.query(`UPDATE tenders SET status = $1, updated_at = now() WHERE id = $2`, [status, entityId]); }
+  catch (err) { console.error(err); }
+}
 
 /* ═══ ملف الحالة — الخارطة الموحّدة، المرحلة ٣ ═══
    رحلة المناقصة/الممارسة: إعلان مسار التوريد (بوابة) ← قيد العمل ← تقديم للاعتماد ←
@@ -162,7 +171,15 @@ router.post("/declare-sourcing", async (req: Request, res: Response) => {
          researcherId, req.session.userId ?? null, type, id]);
       await client.query(`UPDATE case_files SET research_assignment_id = $1 WHERE id = $2`, [ra[0].id, caseId]);
     }
+    // المستشار الرافع يُسند تلقائيًا بدوره على المناقصة (يقود الرؤية والقائمة)
+    if (type === "tender" && req.session.userId) {
+      await client.query(
+        `INSERT INTO tender_assignments (tender_id, role, user_id) VALUES ($1,'المستشار المسؤول',$2)
+         ON CONFLICT (tender_id, role) DO NOTHING`, [id, req.session.userId]);
+    }
     await client.query("COMMIT");
+    // الحالة تمشي مع الملف: فتحٌ ← جاري الدراسة، ومسار البحث ← طلب تسعير الموردين
+    await syncTenderStatus(type, id, path === "فريق البحث" ? "requesting_quotes" : "studying");
     await logEvent(caseId, existing ? "إعادة إعلان مسار التوريد" : "فتح الملف وإعلان مسار التوريد",
       path === "فريق البحث" ? `فريق البحث — الباحث المختار #${researcherId}` : `مصدر خاص — المورد #${supplierId} (ظاهر للمديرَين)`,
       req.session.userId ?? null);
@@ -189,6 +206,7 @@ router.post("/:id/submit", async (req: Request, res: Response) => {
       `UPDATE case_files SET status='بانتظار الاعتماد', submitted_by=$1, submitted_at=now(), updated_at=now() WHERE id=$2`,
       [req.session.userId ?? null, caseId]);
     await logEvent(caseId, "تقديم للاعتماد", null, req.session.userId ?? null);
+    await syncTenderStatus(cf.entity_type, cf.entity_id, "management_review");
     return res.json({ ok: true });
   } catch (e) { console.error(e); return res.status(500).json({ error: "فشل التقديم" }); }
 });
@@ -262,6 +280,20 @@ async function decide(req: Request, res: Response, approve: boolean) {
       approve ? (overHold ? "اعتماد بتجاوز إيقاف مالي قائم" : "اعتماد نهائي") : "رفض",
       note ?? (overHold ? "سلطة التجاوز المطلقة — مسجَّلة باسمه" : null),
       req.session.userId ?? null);
+    if (approve) {
+      await syncTenderStatus(cf.entity_type, cf.entity_id, "ready_to_submit");
+      // مهمة «تجهيز ملف التسليم» للمستشار الرافع بموعد المناقصة النهائي
+      if (cf.entity_type === "tender" && cf.raised_by) {
+        const { rows: t } = await pool.query(`SELECT deadline, tender_number FROM tenders WHERE id = $1`, [cf.entity_id]);
+        await insertAutomationTask({
+          title: `تجهيز ملف التسليم — مناقصة ${t[0]?.tender_number ?? cf.entity_id}`,
+          description: "اعتُمد الملف نهائيًا — جهّز مستندات التسليم قبل الموعد النهائي.",
+          sourceType: "case_file", sourceId: caseId, triggerKey: "prep_submission",
+          linkedEntityType: "tender", linkedEntityId: cf.entity_id,
+          priority: "high", dueDate: t[0]?.deadline ?? null, assignedTo: cf.raised_by, proofType: "none",
+        });
+      }
+    }
     return res.json({ ok: true, override: overHold });
   } catch (e) { console.error(e); return res.status(500).json({ error: "فشل تسجيل القرار" }); }
 }
@@ -356,6 +388,14 @@ router.post("/:id/close", async (req: Request, res: Response) => {
         ? "انسحاب قبل التقديم — مُعفى من جلسة الفض"
         : `جلسة الفض #${session!.id} (${session!.entries} شركة) + الدرس المستفاد #${ke[0].id}${competitorNames ? " — نافسنا: " + competitorNames : ""}`,
       req.session.userId ?? null);
+    // النتيجة الواحدة: إغلاق الملف يحدّث حالة المناقصة (فوز←رست علينا، خسارة←رست على منافس، انسحاب←ملغاة)
+    await syncTenderStatus(cf.entity_type, cf.entity_id, outcome === "فوز" ? "won" : outcome === "خسارة" ? "lost" : "cancelled");
+    if (outcome === "فوز" && cf.entity_type === "tender" && cf.raised_by) {
+      const { rows: t } = await pool.query(`SELECT tender_number FROM tenders WHERE id = $1`, [cf.entity_id]);
+      const num = t[0]?.tender_number ?? cf.entity_id;
+      await insertAutomationTask({ title: `توقيع العقد — مناقصة ${num}`, sourceType: "case_file", sourceId: caseId, triggerKey: "sign_contract", linkedEntityType: "tender", linkedEntityId: cf.entity_id, priority: "high", assignedTo: cf.raised_by });
+      await insertAutomationTask({ title: `إصدار الكفالة النهائية — مناقصة ${num}`, sourceType: "case_file", sourceId: caseId, triggerKey: "final_bond", linkedEntityType: "tender", linkedEntityId: cf.entity_id, priority: "high", assignedTo: cf.raised_by });
+    }
     // تلميح تقييم الموردين: مصدر الملف الخاص إن وُجد
     return res.json({
       ok: true, outcome, knowledgeEntryId: ke[0].id, bidResultId: session?.id ?? null,
@@ -585,6 +625,72 @@ router.post("/contract-variances", async (req: Request, res: Response) => {
       cfoAttention: risePct != null && risePct >= 5, // ارتفاع ≥5% يستدعي نظر المدير المالي
     });
   } catch (e) { console.error(e); return res.status(500).json({ error: "فشل قيد الانحراف" }); }
+});
+
+/* ═══ قناة التبادل: مستشار ⇄ باحث — مواصفات وعروض داخل الملف ═══
+   المستشار يرسل المواصفات المطلوبة (PDF + نص)، والباحث يعيد عروض الموردين
+   (PDF + المورد + سعر اختياري)، والمستشار يضيف عرض مصدره الخاص بشارة مميِّزة.
+   العروض الحاملة موردًا تتجمع في جدول مقارنة يختار منه المستشار. */
+
+async function canExchange(req: Request, cf: any): Promise<boolean> {
+  const me = req.session.userId;
+  return cf.raisedBy === me || cf.researcherUserId === me || (await isOverseer(req));
+}
+
+router.get("/:id/exchanges", async (req: Request, res: Response) => {
+  const caseId = Number(req.params.id);
+  try {
+    const { rows: cfr } = await pool.query(`SELECT * FROM case_files WHERE id = $1`, [caseId]);
+    if (!cfr.length) return res.status(404).json({ error: "الملف غير موجود" });
+    const cfView = await getCase(cfr[0].entity_type, cfr[0].entity_id);
+    if (!(await canExchange(req, cfView))) return res.status(403).json({ error: "قناة التبادل لمشاركي الملف" });
+    const { rows } = await pool.query(
+      `SELECT e.id, e.kind, e.file_url AS "fileUrl", e.note, e.price::numeric AS price,
+              e.is_own_source AS "isOwnSource", e.created_at AS "createdAt",
+              u.full_name AS "fromName", e.from_user_id AS "fromUserId",
+              s.id AS "supplierId", s.name AS "supplierName", s.status AS "supplierStatus"
+       FROM case_file_exchanges e
+       JOIN users u ON u.id = e.from_user_id
+       LEFT JOIN suppliers s ON s.id = e.supplier_id
+       WHERE e.case_file_id = $1 ORDER BY e.id`, [caseId]);
+    return res.json(rows);
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل في جلب التبادل" }); }
+});
+
+router.post("/:id/exchanges", async (req: Request, res: Response) => {
+  const caseId = Number(req.params.id);
+  const kind = String(req.body?.kind ?? "");
+  const note = String(req.body?.note ?? "").trim() || null;
+  const fileUrl = String(req.body?.fileUrl ?? "").trim() || null;
+  const supplierId = req.body?.supplierId ? Number(req.body.supplierId) : null;
+  const price = req.body?.price != null && req.body.price !== "" ? Number(req.body.price) : null;
+  if (!["مواصفات", "عرض", "رد"].includes(kind)) return res.status(400).json({ error: "النوع: مواصفات / عرض / رد" });
+  if (!note && !fileUrl) return res.status(400).json({ error: "أرفق ملفًا أو اكتب نصًا" });
+  if (kind === "عرض" && !supplierId) return res.status(400).json({ error: "العرض يحتاج مورّدًا — اختر من القائمة أو أضفه خاطفًا (الاسم والهاتف يكفيان)" });
+  try {
+    const { rows: cfr } = await pool.query(`SELECT * FROM case_files WHERE id = $1`, [caseId]);
+    if (!cfr.length) return res.status(404).json({ error: "الملف غير موجود" });
+    const cf = cfr[0];
+    const cfView = await getCase(cf.entity_type, cf.entity_id);
+    if (!(await canExchange(req, cfView))) return res.status(403).json({ error: "قناة التبادل لمشاركي الملف" });
+    const isOwnSource = kind === "عرض" && req.session.userId === cf.raised_by;
+    const { rows } = await pool.query(
+      `INSERT INTO case_file_exchanges (case_file_id, kind, from_user_id, file_url, note, supplier_id, price, is_own_source)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [caseId, kind, req.session.userId, fileUrl, note, supplierId, price != null ? String(price) : null, isOwnSource]);
+    // إشعار الطرف الآخر: الرافع ↔ الباحث
+    const counterpart = req.session.userId === cf.raised_by ? cf.researcher_user_id : cf.raised_by;
+    if (counterpart) {
+      createNotification({
+        recipientUserId: counterpart, type: "case_exchange",
+        message: kind === "مواصفات" ? "وصلتك مواصفات مطلوبة على ملف مناقصة" : kind === "عرض" ? "وصلك عرض مورد جديد على ملف مناقصة" : "رد جديد في قناة التبادل",
+        link: cf.entity_type === "tender" ? `/tenders/${cf.entity_id}` : `/practices/${cf.entity_id}`,
+      }).catch(() => {});
+    }
+    await logEvent(caseId, kind === "مواصفات" ? "إرسال مواصفات مطلوبة" : kind === "عرض" ? (isOwnSource ? "عرض من مصدر المستشار الخاص" : "عرض مورد من الباحث") : "رد في قناة التبادل",
+      supplierId ? `المورد #${supplierId}${price != null ? " — " + price + " د.ك" : ""}` : null, req.session.userId ?? null);
+    return res.status(201).json({ id: rows[0].id, isOwnSource });
+  } catch (e) { console.error(e); return res.status(500).json({ error: "فشل الإرسال" }); }
 });
 
 export default router;

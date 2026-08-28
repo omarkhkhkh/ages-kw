@@ -142,6 +142,28 @@ router.patch("/sheets/:id", async (req: Request, res: Response) => {
     }
 
     const [sheet] = await db.update(pricingSheetsTable).set(patch).where(eq(pricingSheetsTable.id, id)).returning();
+
+    // حزمة المناقصات: اعتماد الورقة المربوطة بمناقصة يملأ قيمة عرضها تلقائيًا (Σ سعر البيع × الكمية)،
+    // والربح ونسبته يُحسبان من التكلفة التقديرية إن وُجدت — ويبقى التعديل اليدوي متاحًا ومُقيَّدًا في سيرة الملف.
+    if (data.status === "approved" && sheet.tenderId) {
+      try {
+        const { rows: tot } = await pool.query(
+          `SELECT COALESCE(SUM(quantity * sell_price_unit),0)::numeric AS offer FROM pricing_items WHERE sheet_id = $1`, [id]);
+        const offer = Number(tot[0].offer);
+        if (offer > 0) {
+          await pool.query(
+            `UPDATE tenders SET offer_value = $1,
+                    expected_profit = CASE WHEN estimated_cost IS NOT NULL THEN $1 - estimated_cost END,
+                    profit_percentage = CASE WHEN estimated_cost IS NOT NULL AND $1 > 0 THEN ROUND((($1 - estimated_cost) / $1) * 100, 2) END,
+                    updated_at = now() WHERE id = $2`, [String(offer), sheet.tenderId]);
+          await pool.query(
+            `INSERT INTO case_file_events (case_file_id, event, details, actor_user_id)
+             SELECT cf.id, 'اعتماد ورقة تسعير — قيمة العرض تحدثت تلقائيًا', $1, $2 FROM case_files cf
+             WHERE cf.entity_type = 'tender' AND cf.entity_id = $3`,
+            [`الورقة #${id} — العرض ${offer.toFixed(3)} د.ك`, req.session.userId ?? null, sheet.tenderId]);
+        }
+      } catch (err) { console.error(err); }
+    }
     return res.json(sheet);
   } catch (err: any) {
     if (err?.name === "ZodError") return res.status(400).json({ error: err.message });

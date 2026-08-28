@@ -41,6 +41,11 @@ export default function LinkedPricingSheets({ entityType, entityId }: { entityTy
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {entityType === "tender" && (
+        <div style={{ fontSize: 11.5, color: "#8a7433", background: "#fdf8ec", border: "1px dashed #e5d9b8", borderRadius: 8, padding: "7px 12px" }}>
+          اعتماد الورقة يملأ «قيمة عرضنا» في المناقصة تلقائيًا (Σ سعر البيع × الكمية) ويحسب الربح ونسبته من التكلفة التقديرية — ويُقيَّد في سيرة الملف.
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 12, fontWeight: 800, color: "#9ca3af" }}>أوراق التسعير المرتبطة ({sheets.length})</span>
         <button

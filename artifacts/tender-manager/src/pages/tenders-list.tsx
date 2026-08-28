@@ -7,6 +7,7 @@ import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
+import { caseFilesApi } from "@/lib/api";
 import {
   Search, Plus, Download, AlertCircle, FileText,
   Clock, CheckCircle2, Loader2, Trophy, Eye,
@@ -304,6 +305,9 @@ export default function TendersList() {
         </div>
       </div>
 
+      {/* حزمة المناقصات: ملفات تنتظر قرار المديرين */}
+      <PendingFilesBanner />
+
       {/* ── Square stat/filter cards ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 14 }}>
         {STAT_CARDS.map(card => {
@@ -403,7 +407,7 @@ export default function TendersList() {
                 {[
                   { label: "رقم المناقصة",     icon: FileText   },
                   { label: "المشروع / الجهة",  icon: Building2  },
-                  { label: "المهندس المسؤول",  icon: User2      },
+                  { label: "المستشار المسؤول", icon: User2      },
                   { label: "الحالة",            icon: null       },
                   { label: "آخر موعد",          icon: Clock      },
                   { label: "قيمة العرض",       icon: Banknote   },
@@ -466,23 +470,31 @@ export default function TendersList() {
                         </div>
                       </td>
                       <td style={{ padding: "14px 16px", color: "#6b7280", fontSize: 12 }}>
-                        {user?.role === "admin"
-                          ? <EngineerDropdown tenderId={tender.id} currentEngineer={tender.responsibleEngineer ?? null} />
-                          : <span>{tender.responsibleEngineer || "—"}</span>
-                        }
+                        {/* الإسناد الحقيقي (بطاقة المسؤوليات في التفاصيل) — والنصي القديم احتياطًا للعرض */}
+                        <span style={{ fontWeight: (tender as any).consultantName ? 700 : 400, color: (tender as any).consultantName ? "#1e2a1e" : "#9ca3af" }}>
+                          {(tender as any).consultantName || tender.responsibleEngineer || "—"}
+                        </span>
                       </td>
                       <td style={{ padding: "14px 16px" }}>
-                        {(user?.role === "admin" || user?.fullName === tender.responsibleEngineer)
+                        {(user?.role === "admin" || user?.fullName === (tender as any).consultantName)
                           ? <StatusDropdown tenderId={tender.id} currentStatus={tender.status as TenderStatus} />
                           : <span className={cn("px-2.5 py-1 text-xs font-semibold rounded-full border inline-flex items-center gap-1", STATUS_COLORS[tender.status])}>
                               {STATUS_ARABIC[tender.status] || tender.status}
                             </span>
                         }
+                        {(tender as any).caseStatus && (
+                          <div style={{ marginTop: 4 }}>
+                            <span style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 9px", borderRadius: 20, background: (tender as any).caseStatus === "موقوف ماليًا" ? "#fff1f2" : (tender as any).caseStatus === "معتمد" ? "#f0fdf4" : "#fdf8ec", color: (tender as any).caseStatus === "موقوف ماليًا" ? "#dc2626" : (tender as any).caseStatus === "معتمد" ? "#16a34a" : GD }}>
+                              📁 {(tender as any).caseStatus}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td style={{ padding: "14px 16px", whiteSpace: "nowrap" }}>
                         {urgent ? (
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "#fff1f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 8, padding: "4px 10px", fontSize: 11, fontWeight: 700 }}>
                             <AlertCircle size={12} /> {formatDate(tender.deadline)}
+                            {(tender as any).bondAlert && <span title="الكفالة الأولية لم تصدر">🛡️!</span>}
                           </span>
                         ) : (
                           <span style={{ color: "#6b7280", fontSize: 12 }}>{formatDate(tender.deadline)}</span>
@@ -515,5 +527,21 @@ export default function TendersList() {
         button { position: relative; }
       `}</style>
     </div>
+  );
+}
+
+/* بانر المديرين: ملفات بانتظار الاعتماد — يقفز لصفحة الملفات والاعتمادات */
+function PendingFilesBanner() {
+  const { user } = useAuth();
+  const positions = (user as any)?.positions ?? [];
+  const manager = user?.role === "admin" || ["general_manager", "executive_manager", "financial_manager"].some((k: string) => positions.includes(k));
+  const { data: pending = [] } = useQuery<any[]>({ queryKey: ["cf-pending-banner"], queryFn: () => caseFilesApi.list("بانتظار الاعتماد"), enabled: manager });
+  if (!manager || pending.length === 0) return null;
+  return (
+    <Link href="/case-files">
+      <div style={{ background: "#fffbeb", border: "1.5px solid #fde68a", borderRadius: 12, padding: "10px 16px", fontSize: 13, fontWeight: 700, color: "#92400e", cursor: "pointer" }}>
+        📁 {pending.length} {pending.length === 1 ? "ملف ينتظر" : "ملفات تنتظر"} قرار الاعتماد — اضغط للانتقال
+      </div>
+    </Link>
   );
 }

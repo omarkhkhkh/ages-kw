@@ -247,6 +247,9 @@ export const caseFilesApi = {
   closureReadiness: (id: number) => apiFetch<any>(`/api/case-files/${id}/closure-readiness`),
   close: (id: number, d: { outcome: string; reasons: string; lessons?: string }) => apiFetch<any>(`/api/case-files/${id}/close`, { method: "POST", body: JSON.stringify(d) }),
   memoryCard: (entityType: string, entityId: number) => apiFetch<any>(`/api/case-files/memory-card?entityType=${entityType}&entityId=${entityId}`),
+  exchanges: (caseId: number) => apiFetch<any[]>(`/api/case-files/${caseId}/exchanges`),
+  addExchange: (caseId: number, d: { kind: string; note?: string; fileUrl?: string; supplierId?: number; price?: string | number }) =>
+    apiFetch<any>(`/api/case-files/${caseId}/exchanges`, { method: "POST", body: JSON.stringify(d) }),
   convertToContract: (id: number, d: { contractNumber: string; opsProfile: string; contractValue?: string; startDate?: string; endDate?: string }) =>
     apiFetch<any>(`/api/case-files/${id}/convert-to-contract`, { method: "POST", body: JSON.stringify(d) }),
   contractMonitor: (contractId: number) => apiFetch<any>(`/api/case-files/contract-monitor/${contractId}`),
@@ -279,6 +282,15 @@ export const financialCenterApi = {
   approveOverrun: (id: number) => apiFetch<any>(`/api/financial-center/overrun-requests/${id}/approve`, { method: "POST", body: "{}" }),
   rejectOverrun: (id: number) => apiFetch<any>(`/api/financial-center/overrun-requests/${id}/reject`, { method: "POST", body: "{}" }),
   cfoDesk: () => apiFetch<any>("/api/financial-center/cfo-desk"),
+};
+
+// ── حزمة المناقصات: الإسنادات + الكفالة + قناة التبادل ─────────────────────
+export const tendersExtraApi = {
+  assignments: (tenderId: number) => apiFetch<any[]>(`/api/tenders/${tenderId}/assignments`),
+  assign: (tenderId: number, role: string, userId: number) => apiFetch<any>(`/api/tenders/${tenderId}/assignments`, { method: "POST", body: JSON.stringify({ role, userId }) }),
+  unassign: (tenderId: number, role: string) => apiFetch<void>(`/api/tenders/${tenderId}/assignments/${encodeURIComponent(role)}`, { method: "DELETE" }),
+  issueBond: (tenderId: number, d: { guaranteeNumber: string; bankName: string; issueDate?: string; expiryDate?: string }) =>
+    apiFetch<any>(`/api/tenders/${tenderId}/issue-bond`, { method: "POST", body: JSON.stringify(d) }),
 };
 
 // ── RFQ Requests ───────────────────────────────────────────────────────────

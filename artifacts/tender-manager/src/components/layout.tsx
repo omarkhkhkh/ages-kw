@@ -97,27 +97,27 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       show: true, href: "/",
     },
     {
-      id: "caseFiles", label: "الملفات والاعتمادات", icon: FolderOpen,
+      id: "caseFiles", label: t("nav.caseFiles"), icon: FolderOpen,
       show: manager, href: "/case-files",
     },
     {
-      id: "business", label: "الأعمال والمناقصات", icon: FileText,
+      id: "business", label: t("nav.businessGroup"), icon: FileText,
       show: can("accessTenders") || can("accessContracts") || can("accessPo") || can("accessResearch") || can("accessPricing") || can("accessOpportunities" as any) || can("accessProjects"),
       items: [
         { href: "/tenders",                 label: t("nav.tenders"),            show: can("accessTenders") },
         { href: "/practices",               label: t("nav.practices"),          show: can("accessTenders") },
-        { href: "/contracts",               label: "غرفة العقود وعروض الأسعار", show: can("accessContracts") },
-        { href: "/purchase-orders",         label: "أوامر الشراء — السوق المحلي", show: can("accessPo") || can("accessResearch") },
-        { href: "/pricing",                 label: "غرفة التسعير",              show: can("accessPricing") },
-        { href: "/competitor-intelligence", label: "ذكاء المنافسين",            show: can("accessTenders") },
+        { href: "/contracts",               label: t("nav.contractsRoom"),      show: can("accessContracts") },
+        { href: "/purchase-orders",         label: t("nav.poRoom"),             show: can("accessPo") || can("accessResearch") },
+        { href: "/pricing",                 label: t("nav.pricingRoom"),        show: can("accessPricing") },
+        { href: "/competitor-intelligence", label: t("nav.competitorGroup"),    show: can("accessTenders") },
         { href: "/projects",                label: t("nav.projects"),           show: can("accessProjects") },
       ].filter(i => i.show),
     },
     {
-      id: "operations", label: "العمليات", icon: ListChecks,
+      id: "operations", label: t("nav.operationsGroup"), icon: ListChecks,
       show: true,
       items: [
-        { href: "/tasks",                        label: "مركز العمليات",        show: can("accessTasks") },
+        { href: "/tasks",                        label: t("nav.operations"),    show: can("accessTasks") },
         { href: "/calendar",                     label: t("nav.calendar"),      show: true },
         { href: "/transportation",               label: t("nav.transport"),     show: can("accessTransportation") },
         { href: "/maintenance",                  label: t("nav.maintenance"),   show: can("accessMaintenance") },
@@ -127,15 +127,15 @@ const buildNavGroups = (user: AuthUser | null, expiringCount: number, t: (k: str
       ].filter(i => i.show),
     },
     {
-      id: "finance", label: "المالية", icon: Landmark,
+      id: "finance", label: t("nav.financeGroup"), icon: Landmark,
       show: manager,
       items: [
-        { href: "/financial-center", label: "المركز المالي",   show: manager },
+        { href: "/financial-center", label: t("nav.financialCenter"), show: manager },
         { href: "/guarantees",       label: t("nav.guarantees"), show: manager, badge: expiringCount || 0 },
       ].filter(i => i.show),
     },
     {
-      id: "directory", label: "الدلائل والمستندات", icon: Building2,
+      id: "directory", label: t("nav.directoryGroup"), icon: Building2,
       show: can("accessEntities") || can("accessSuppliers") || can("accessTenders") || isAdmin,
       items: [
         { href: "/entities",          label: t("nav.entities"),         show: can("accessEntities") },

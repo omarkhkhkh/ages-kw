@@ -60,6 +60,16 @@ const DICT: Record<string, { ar: string; en: string }> = {
   "nav.logout":          { ar: "تسجيل الخروج",           en: "Sign out" },
   "nav.roleAdmin":       { ar: "مدير النظام",            en: "System Admin" },
   "nav.roleEmployee":    { ar: "موظف",                   en: "Employee" },
+  // ── المرحلة ٨: الغرف والمجموعات المدمجة ──
+  "nav.caseFiles":       { ar: "الملفات والاعتمادات",    en: "Case Files & Approvals" },
+  "nav.businessGroup":   { ar: "الأعمال والمناقصات",     en: "Business & Tenders" },
+  "nav.contractsRoom":   { ar: "غرفة العقود وعروض الأسعار", en: "Contracts & RFQ Room" },
+  "nav.poRoom":          { ar: "أوامر الشراء — السوق المحلي", en: "POs — Local Market" },
+  "nav.pricingRoom":     { ar: "غرفة التسعير",           en: "Pricing Room" },
+  "nav.operationsGroup": { ar: "العمليات",               en: "Operations" },
+  "nav.financeGroup":    { ar: "المالية",                en: "Finance" },
+  "nav.financialCenter": { ar: "المركز المالي",          en: "Financial Center" },
+  "nav.directoryGroup":  { ar: "الدلائل والمستندات",     en: "Directories & Documents" },
 
   // ── الشريط العلوي ──
   "header.kuwait":       { ar: "الكويت",                 en: "Kuwait" },
@@ -96,6 +106,10 @@ const DICT: Record<string, { ar: string; en: string }> = {
   "page./admin/service-types": { ar: "أنواع التعامل",                en: "Service Types" },
   "page./admin/task-types":    { ar: "أنواع المهام",                 en: "Task Types" },
   "page./guide":               { ar: "الدعم الفني",                  en: "Support" },
+  "page./financial-center":    { ar: "المركز المالي",                en: "Financial Center" },
+  "page./case-files":          { ar: "الملفات والاعتمادات",          en: "Case Files & Approvals" },
+  "page./opportunities":       { ar: "الفرص الواردة",                en: "Incoming Opportunities" },
+  "page./change-password":     { ar: "تغيير كلمة المرور",            en: "Change Password" },
 
   // ── لوحة التحكم ──
   "dash.morning":        { ar: "صباح الخير",             en: "Good morning" },

@@ -36,6 +36,7 @@ import workTransfersRouter from "./work-transfers";
 import caseFilesRouter from "./case-files";
 import obligationsRouter from "./obligations";
 import financialCenterRouter from "./financial-center";
+import dashboardRouter from "./dashboard";
 import pricingRouter from "./pricing";
 import opportunitiesRouter from "./opportunities";
 import costCentersRouter from "./cost-centers";
@@ -89,6 +90,9 @@ router.use("/obligations", obligationsRouter);
 
 // المركز المالي — الأبواب الخمسة (الحوكمة داخل الراوتر حسب القبعات)
 router.use("/financial-center", financialCenterRouter);
+
+// غرفة القيادة — ملخص الشاشة الرئيسية بطلب واحد (الحوكمة داخل الراوتر حسب القبعات)
+router.use("/dashboard", dashboardRouter);
 
 // Notifications — every authenticated user reads/marks-read only their own
 router.use("/notifications", notificationsRouter);

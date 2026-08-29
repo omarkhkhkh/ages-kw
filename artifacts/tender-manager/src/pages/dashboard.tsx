@@ -1,23 +1,21 @@
-import { useGetTenderStats, useListTenders } from "@workspace/api-client-react";
+import { useGetTenderStats } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  FileText, AlertCircle, Trophy, Banknote, Percent,
-  Building2, Users, ClipboardList, ShoppingCart,
-  FolderOpen, ShieldCheck, FileSignature, Calendar,
-  ArrowLeftCircle, TrendingUp, MessageSquare,
-  ListChecks, Clock, ChevronDown, AlertTriangle, CheckCircle2,
-  FileCheck, Landmark, Bell,
+  FileText, AlertCircle, Trophy, Banknote, Percent, ShieldCheck,
+  ArrowLeftCircle, TrendingUp, MessageSquare, ListChecks, Clock,
+  ChevronDown, AlertTriangle, CheckCircle2, Landmark, KeyRound,
+  Gavel, CalendarDays, Activity, Plus, FileSignature, Mail,
+  ShoppingCart, Wrench, Users, FolderOpen,
 } from "lucide-react";
 import { formatCurrency, formatDate, isUrgent, cn } from "@/lib/utils";
 import { STATUS_ARABIC, STATUS_COLORS } from "@/lib/constants";
 import { useAuth } from "@/contexts/auth";
 import { useI18n } from "@/contexts/i18n";
-import { contractsApi, correspondenceApi, apiFetch } from "@/lib/api";
-import { CalendarWidget, type CalendarEvent } from "@/components/calendar-widget";
+import { apiFetch } from "@/lib/api";
 import CorrespondenceDashboardWidget from "@/components/correspondence-dashboard-widget";
-import { Mail } from "lucide-react";
+import { useListTenders } from "@workspace/api-client-react";
 
 /* ─── brand palette ─── */
 const G  = "#D4A534";   // gold
@@ -39,21 +37,46 @@ const STATUS_COLORS_TASK: Record<string, { color: string; bg: string; label: str
   cancelled:   { color: "#6b7280", bg: "#f9fafb", label: "dash.st.cancelled" },
 };
 
-/* ─── module shortcuts (label = مفتاح ترجمة) ─── */
-const MODULES = [
-  { href: "/tenders",           label: "dash.mod.tenders",        icon: FileText,      accent: "#D4A534", bg: "#fdf8ec" },
-  { href: "/entities",          label: "dash.mod.entities",       icon: Building2,     accent: "#1a7a3a", bg: "#edf7f0" },
-  { href: "/suppliers",         label: "dash.mod.suppliers",      icon: Users,         accent: "#2563eb", bg: "#eff6ff" },
-  { href: "/projects",          label: "dash.mod.projects",       icon: FolderOpen,    accent: "#7c3aed", bg: "#f5f3ff" },
-  { href: "/guarantees",        label: "dash.mod.guarantees",     icon: ShieldCheck,   accent: "#dc2626", bg: "#fff1f2" },
-  { href: "/contracts",         label: "dash.mod.contracts",      icon: FileSignature, accent: "#0891b2", bg: "#ecfeff" },
-  { href: "/rfq",               label: "dash.mod.rfq",            icon: ClipboardList, accent: "#d97706", bg: "#fffbeb" },
-  { href: "/purchase-orders",   label: "dash.mod.po",             icon: ShoppingCart,  accent: "#16a34a", bg: "#f0fdf4" },
-  { href: "/company-docs",      label: "dash.mod.docs",           icon: FileCheck,     accent: "#0891b2", bg: "#ecfeff" },
-  { href: "/gov-registrations", label: "dash.mod.regs",           icon: Landmark,      accent: "#7c3aed", bg: "#f5f3ff" },
-  { href: "/calendar",          label: "dash.mod.calendar",       icon: Calendar,      accent: "#9333ea", bg: "#faf5ff" },
-  { href: "/correspondence",    label: "dash.mod.correspondence", icon: Mail,          accent: "#be185d", bg: "#fdf2f8" },
-];
+/* ─── سجل الحركة: تعريب الفعل والوحدة ─── */
+const ACTION_AR: Record<string, string> = { create: "أضاف", update: "عدّل", delete: "حذف" };
+const MODULE_AR: Record<string, string> = {
+  tenders: "مناقصة", entities: "جهة", suppliers: "مورّدًا", projects: "مشروعًا",
+  guarantees: "كفالة", contracts: "عقدًا", rfq: "طلب عرض أسعار", po: "أمر شراء",
+  users: "مستخدمًا", correspondence: "خطابًا", vehicles: "مركبة", residency: "بيان إقامة",
+  maintenance: "بند صيانة", research: "بحثًا", pricing: "ورقة تسعير",
+  opportunities: "فرصة", tasks: "مهمة",
+};
+
+/* ─── مساعدات عرض ─── */
+const timeAgo = (iso: string) => {
+  const mins = Math.max(1, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (mins < 60) return `قبل ${mins} د`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `قبل ${hrs} س`;
+  return `قبل ${Math.round(hrs / 24)} يوم`;
+};
+const dayLabel = (d: string) => {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const dt = new Date(d + "T00:00:00");
+  const diff = Math.round((dt.getTime() - today.getTime()) / 86400000);
+  if (diff <= 0) return "اليوم";
+  if (diff === 1) return "غدًا";
+  return "هذا الأسبوع";
+};
+
+/* عنوان قسم موحّد */
+function SectionTitle({ icon: Icon, children, action }: { icon: any; children: ReactNode; action?: ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 4, height: 22, borderRadius: 2, background: `linear-gradient(180deg,${GL},${GD})` }} />
+        <Icon size={17} color={GD} />
+        <h2 style={{ fontSize: 16, fontWeight: 800, color: "#132a18", margin: 0 }}>{children}</h2>
+      </div>
+      {action}
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const { data: stats, isLoading: statsLoading } = useGetTenderStats();
@@ -63,32 +86,15 @@ export default function Dashboard() {
   const [, navigate] = useLocation();
   const isAdmin = user?.role === "admin";
 
-  // Company documents stats
-  const { data: docStats } = useQuery<any>({
-    queryKey: ["company-docs-stats-dash"],
-    queryFn: () => apiFetch("/api/company-documents/stats"),
-    refetchInterval: 5 * 60_000,
-    staleTime: 2 * 60_000,
+  /* ── طلب واحد: ملخص غرفة القيادة ── */
+  const { data: sum } = useQuery<any>({
+    queryKey: ["dashboard-summary"],
+    queryFn: () => apiFetch("/api/dashboard/summary"),
+    refetchInterval: 2 * 60_000,
+    staleTime: 60_000,
   });
 
-  // Government registrations stats
-  const { data: regStats } = useQuery<any>({
-    queryKey: ["gov-reg-stats-dash"],
-    queryFn: () => apiFetch("/api/government-registrations/stats"),
-    refetchInterval: 5 * 60_000,
-    staleTime: 2 * 60_000,
-  });
-
-  // Unread contract comments count — employees only
-  const { data: unreadData } = useQuery({
-    queryKey: ["unread-comments-count"],
-    queryFn: () => contractsApi.unreadCommentsCount(),
-    enabled: !isAdmin && !!user?.accessContracts,
-    refetchInterval: 30000,
-  });
-  const unreadCount = unreadData?.count ?? 0;
-
-  // My tasks — all authenticated users
+  /* ── مهامي (الودجت السفلية القائمة) ── */
   const { data: myTasks = [] } = useQuery<any[]>({
     queryKey: ["tasks"],
     queryFn: () => apiFetch("/api/tasks"),
@@ -98,125 +104,6 @@ export default function Dashboard() {
   const urgentTasks = activeTasks.filter(t => t.priority === "urgent" || t.priority === "high");
   const unreadNotes = isAdmin ? myTasks.filter(t => !t.notesReadByAdmin && t.employeeNotes) : [];
 
-  // ── Calendar data sources (gated by module access) ──
-  const { data: calContracts = [] } = useQuery<any[]>({
-    queryKey: ["cal-contracts"],
-    queryFn: () => apiFetch("/api/contracts"),
-    enabled: isAdmin || !!user?.accessContracts,
-    staleTime: 5 * 60_000,
-  });
-  const { data: calProjects = [] } = useQuery<any[]>({
-    queryKey: ["cal-projects"],
-    queryFn: () => apiFetch("/api/projects"),
-    enabled: isAdmin || !!user?.accessProjects,
-    staleTime: 5 * 60_000,
-  });
-  const { data: calGuarantees = [] } = useQuery<any[]>({
-    queryKey: ["cal-guarantees"],
-    queryFn: () => apiFetch("/api/bank-guarantees"),
-    enabled: isAdmin,
-    staleTime: 5 * 60_000,
-  });
-  const { data: calRfq = [] } = useQuery<any[]>({
-    queryKey: ["cal-rfq"],
-    queryFn: () => apiFetch("/api/rfq-requests"),
-    enabled: isAdmin,
-    staleTime: 5 * 60_000,
-  });
-  const { data: calPurchases = [] } = useQuery<any[]>({
-    queryKey: ["cal-purchases"],
-    queryFn: () => apiFetch("/api/direct-purchase-orders"),
-    enabled: isAdmin,
-    staleTime: 5 * 60_000,
-  });
-  const { data: calCorrespondence } = useQuery({
-    queryKey: ["cal-correspondence"],
-    queryFn: () => correspondenceApi.list({ limit: 100 }),
-    enabled: isAdmin || !!user?.accessCorrespondence,
-    staleTime: 5 * 60_000,
-  });
-  const { data: calPractices = [] } = useQuery<any[]>({
-    queryKey: ["cal-practices"],
-    queryFn: () => apiFetch("/api/practices"),
-    enabled: isAdmin || !!user?.accessTenders,
-    staleTime: 5 * 60_000,
-  });
-
-  // ── Build unified CalendarEvent[] ──
-  const calendarEvents = useMemo<CalendarEvent[]>(() => {
-    const evts: CalendarEvent[] = [];
-    const push = (
-      id: string, rawDate: string | null | undefined, type: CalendarEvent["type"],
-      title: string, subLabel: string,
-      extra?: Partial<CalendarEvent>
-    ) => {
-      if (!rawDate) return;
-      const d = new Date(rawDate);
-      if (isNaN(d.getTime())) return;
-      evts.push({ id, date: d, type, title, subLabel, ...extra });
-    };
-
-    // Tenders (admin or employee with access)
-    if (recentTenders) {
-      (recentTenders as any[]).forEach(t => {
-        push(`t-ann-${t.id}`, t.announcementDate, "tender", t.title, "تاريخ الإعلان", { status: t.status });
-        push(`t-dead-${t.id}`, t.deadline,        "tender", t.title, "الموعد النهائي", { status: t.status });
-      });
-    }
-
-    // Tasks
-    myTasks.forEach(t => {
-      push(`task-${t.id}`, t.dueDate, "task", t.title, "تاريخ الاستحقاق", {
-        priority: t.priority, status: t.status,
-        assigneeName: isAdmin ? t.assigneeName : undefined,
-      });
-    });
-
-    // Contracts
-    calContracts.forEach((c: any) => {
-      push(`c-sign-${c.id}`,  c.signDate,  "contract", c.title ?? c.contractNumber, "تاريخ التوقيع", { status: c.status });
-      push(`c-start-${c.id}`, c.startDate, "contract", c.title ?? c.contractNumber, "تاريخ البدء",   { status: c.status });
-      push(`c-end-${c.id}`,   c.endDate,   "contract", c.title ?? c.contractNumber, "تاريخ الانتهاء", { status: c.status });
-    });
-
-    // Projects
-    calProjects.forEach((p: any) => {
-      push(`p-start-${p.id}`, p.startDate, "project", p.name ?? p.title, "تاريخ البدء",   { status: p.status });
-      push(`p-end-${p.id}`,   p.endDate,   "project", p.name ?? p.title, "تاريخ الانتهاء", { status: p.status });
-    });
-
-    // Bank Guarantees (admin)
-    calGuarantees.forEach((g: any) => {
-      push(`g-issue-${g.id}`,  g.issueDate,  "guarantee", g.title ?? g.guaranteeNumber, "تاريخ الإصدار",  { status: g.status });
-      push(`g-expiry-${g.id}`, g.expiryDate, "guarantee", g.title ?? g.guaranteeNumber, "تاريخ الانتهاء", { status: g.status });
-    });
-
-    // RFQ Requests (admin)
-    calRfq.forEach((r: any) => {
-      push(`rfq-req-${r.id}`,  r.requestDate,      "rfq", r.title ?? r.subject, "تاريخ الطلب",       { status: r.status });
-      push(`rfq-dead-${r.id}`, r.responseDeadline, "rfq", r.title ?? r.subject, "الموعد النهائي للرد", { status: r.status });
-    });
-
-    // Direct Purchase Orders (admin)
-    calPurchases.forEach((o: any) => {
-      push(`po-ord-${o.id}`,  o.orderDate,    "purchase", o.title ?? o.orderNumber, "تاريخ الأمر",    { status: o.status });
-      push(`po-del-${o.id}`,  o.deliveryDate, "purchase", o.title ?? o.orderNumber, "تاريخ التسليم", { status: o.status });
-    });
-
-    // Correspondence deadlines
-    (calCorrespondence?.rows ?? []).forEach((letter: any) => {
-      push(`corr-${letter.id}`, letter.deadlineDate, "correspondence", letter.subject, "الموعد النهائي للرد", { status: letter.status });
-    });
-
-    // Practices — نفس دورة حياة المناقصات (نوع "tender" لأن CalendarWidget لا يعرف نوع "practice")
-    calPractices.forEach((p: any) => {
-      push(`pr-ann-${p.id}`,  p.announcementDate, "tender", p.projectName, "ممارسة — تاريخ الإعلان", { status: p.status });
-      push(`pr-dead-${p.id}`, p.deadline,         "tender", p.projectName, "ممارسة — الموعد النهائي", { status: p.status });
-    });
-
-    return evts;
-  }, [recentTenders, myTasks, calContracts, calProjects, calGuarantees, calRfq, calPurchases, calCorrespondence, calPractices, isAdmin]);
-
   const greeting = () => {
     const h = new Date().getHours();
     if (h < 12) return t("dash.morning");
@@ -224,283 +111,260 @@ export default function Dashboard() {
     return t("dash.evening");
   };
 
-  const statCards = [
-    {
-      title: t("dash.totalTenders"),
-      value: stats?.total ?? 0,
-      icon: FileText,
-      accent: G,
-      bg: "#fdf8ec",
-      sub: t("dash.totalTendersSub"),
-    },
-    {
-      title: t("dash.urgent"),
-      value: stats?.urgentCount ?? 0,
-      icon: AlertCircle,
-      accent: "#dc2626",
-      bg: "#fff1f2",
-      sub: t("dash.urgentSub"),
-    },
-    {
-      title: t("dash.won"),
-      value: stats?.wonCount ?? 0,
-      icon: Trophy,
-      accent: "#16a34a",
-      bg: "#f0fdf4",
-      sub: t("dash.wonSub"),
-    },
-    {
-      title: t("dash.offerValue"),
-      value: formatCurrency(stats?.totalOfferValue),
-      icon: Banknote,
-      accent: "#0891b2",
-      bg: "#ecfeff",
-      sub: t("dash.offerValueSub"),
-    },
-    {
-      title: t("dash.winRate"),
-      value: `${(stats?.winRate ?? 0).toFixed(1)}%`,
-      icon: Percent,
-      accent: "#7c3aed",
-      bg: "#f5f3ff",
-      sub: t("dash.winRateSub"),
-    },
-  ];
+  /* ── ① ينتظر قرارك: تجميع الأسطر ── */
+  const dec = sum?.decisions;
+  const decisionRows: { icon: any; color: string; bg: string; text: string; sub?: string; href: string }[] = [];
+  (dec?.pendingCaseFiles ?? []).forEach((cf: any) => decisionRows.push({
+    icon: FolderOpen, color: "#b45309", bg: "#fffbeb",
+    text: `ملف بانتظار اعتمادك: ${cf.title}`,
+    sub: cf.entityType === "tender" ? "مناقصة" : "ممارسة",
+    href: "/case-files",
+  }));
+  (dec?.bidsClosing ?? []).forEach((b: any) => decisionRows.push({
+    icon: Gavel, color: "#dc2626", bg: "#fff1f2",
+    text: `عطاء يغلق ${dayLabel(b.deadline)}: ${b.title ?? b.orderNumber}`,
+    sub: b.deadline,
+    href: "/purchase-orders",
+  }));
+  (dec?.resetRequests ?? []).forEach((r: any) => decisionRows.push({
+    icon: KeyRound, color: "#7c3aed", bg: "#f5f3ff",
+    text: `طلب إعادة تعيين كلمة مرور: ${r.username}`,
+    sub: r.at,
+    href: "/admin/users?tab=audit",
+  }));
+  if (dec?.expired) {
+    if (dec.expired.guarantees > 0) decisionRows.push({ icon: ShieldCheck, color: "#dc2626", bg: "#fff1f2", text: `${dec.expired.guarantees} كفالة منتهية فعلًا تحتاج معالجة`, href: "/guarantees" });
+    if (dec.expired.docs > 0) decisionRows.push({ icon: FileText, color: "#dc2626", bg: "#fff1f2", text: `${dec.expired.docs} وثيقة شركة منتهية`, href: "/company-docs" });
+    if (dec.expired.regs > 0) decisionRows.push({ icon: Landmark, color: "#dc2626", bg: "#fff1f2", text: `${dec.expired.regs} اشتراكًا حكوميًا منتهيًا`, href: "/gov-registrations" });
+  }
+
+  /* ── ② نبض الشركة ── */
+  const pulse = sum?.pulse;
+  const money = pulse?.money;
+  const budgetPct = money && money.monthBudget > 0
+    ? Math.min(100, Math.round((money.monthExpense / money.monthBudget) * 100)) : null;
+
+  /* ── ③ الأجندة مجمعة اليوم/غدًا/الأسبوع ── */
+  const agendaGroups: Record<string, any[]> = { "اليوم": [], "غدًا": [], "هذا الأسبوع": [] };
+  (sum?.agenda ?? []).forEach((a: any) => agendaGroups[dayLabel(a.d)].push(a));
+
+  const pulseNum = (v: any) => (v ?? 0) as number;
+  /* بطاقة رقم داخل مجموعة النبض */
+  const PulseRow = ({ label, value, href, danger }: { label: string; value: ReactNode; href: string; danger?: boolean }) => (
+    <a href={href} onClick={e => { e.preventDefault(); navigate(href); }}
+      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 10px", borderRadius: 10, textDecoration: "none", cursor: "pointer", transition: "background 0.1s" }}
+      onMouseEnter={e => (e.currentTarget.style.background = "#faf7ef")}
+      onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+      <span style={{ fontSize: 12.5, color: "#4b5563", fontWeight: 600 }}>{label}</span>
+      <span style={{ fontSize: 16, fontWeight: 800, color: danger ? "#dc2626" : "#0f172a" }}>{value}</span>
+    </a>
+  );
+  const PulseCard = ({ icon: Icon, accent, bg, title, children }: any) => (
+    <div style={{ background: "white", border: `1.5px solid ${bg}`, borderRadius: 16, padding: "14px 12px", boxShadow: "0 2px 12px rgba(0,0,0,0.05)", display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 10px", marginBottom: 6 }}>
+        <div style={{ width: 30, height: 30, borderRadius: 9, background: bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Icon size={15} color={accent} />
+        </div>
+        <span style={{ fontSize: 13.5, fontWeight: 800, color: "#132a18" }}>{title}</span>
+      </div>
+      {children}
+    </div>
+  );
 
   return (
-    <div dir={dir} style={{ fontFamily: "'Cairo', 'IBM Plex Sans Arabic', sans-serif", display: "flex", flexDirection: "column", gap: 28 }}>
+    <div dir={dir} style={{ fontFamily: "'Cairo', 'IBM Plex Sans Arabic', sans-serif", display: "flex", flexDirection: "column", gap: 26 }}>
 
       {/* ── Header ── */}
       <div style={{
         background: `linear-gradient(135deg, ${GR} 0%, #132a18 60%, #1e4028 100%)`,
-        borderRadius: 20,
-        padding: "28px 32px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        boxShadow: "0 8px 32px rgba(11,26,16,0.35)",
-        position: "relative",
-        overflow: "hidden",
+        borderRadius: 20, padding: "26px 32px",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        boxShadow: "0 8px 32px rgba(11,26,16,0.35)", position: "relative", overflow: "hidden",
       }}>
-        {/* decorative ring */}
-        <div style={{
-          position: "absolute", left: -60, top: -60,
-          width: 280, height: 280, borderRadius: "50%",
-          border: `1px solid rgba(212,165,52,0.15)`,
-          pointerEvents: "none",
-        }} />
-        <div style={{
-          position: "absolute", left: -20, top: -20,
-          width: 180, height: 180, borderRadius: "50%",
-          border: `1px solid rgba(212,165,52,0.1)`,
-          pointerEvents: "none",
-        }} />
+        <div style={{ position: "absolute", left: -60, top: -60, width: 280, height: 280, borderRadius: "50%", border: `1px solid rgba(212,165,52,0.15)`, pointerEvents: "none" }} />
+        <div style={{ position: "absolute", left: -20, top: -20, width: 180, height: 180, borderRadius: "50%", border: `1px solid rgba(212,165,52,0.1)`, pointerEvents: "none" }} />
         <div>
-          <p style={{ color: `rgba(212,165,52,0.6)`, fontSize: 13, margin: 0, marginBottom: 4 }}>
-            {greeting()} ،
-          </p>
-          <h1 style={{ color: "white", fontSize: 24, fontWeight: 800, margin: 0 }}>
-            {user?.fullName ?? t("dash.welcome")}
-          </h1>
-          <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13, margin: "6px 0 0" }}>
-            {t("dash.overview")}
-          </p>
+          <p style={{ color: `rgba(212,165,52,0.6)`, fontSize: 13, margin: 0, marginBottom: 4 }}>{greeting()} ،</p>
+          <h1 style={{ color: "white", fontSize: 24, fontWeight: 800, margin: 0 }}>{user?.fullName ?? t("dash.welcome")}</h1>
+          <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13, margin: "6px 0 0" }}>{t("dash.overview")}</p>
         </div>
-        <div style={{
-          background: "rgba(212,165,52,0.15)",
-          border: `1px solid rgba(212,165,52,0.3)`,
-          borderRadius: 14, padding: "10px 20px",
-          display: "flex", alignItems: "center", gap: 8,
-        }}>
-          <TrendingUp size={18} color={GL} />
-          <span style={{ color: GL, fontSize: 13, fontWeight: 700 }}>{t("dash.controlPanel")}</span>
+        {/* أزرار إنشاء سريعة */}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {[
+            { label: "مناقصة", href: "/tenders", icon: FileText },
+            { label: "أمر شراء", href: "/purchase-orders", icon: ShoppingCart },
+            { label: "مهمة", href: "/tasks", icon: ListChecks },
+            { label: "خطاب", href: "/correspondence", icon: Mail },
+          ].map(qa => (
+            <a key={qa.href} href={qa.href} onClick={e => { e.preventDefault(); navigate(qa.href); }}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 12, background: "rgba(212,165,52,0.15)", border: "1px solid rgba(212,165,52,0.3)", textDecoration: "none", cursor: "pointer" }}>
+              <Plus size={13} color={GL} />
+              <qa.icon size={14} color={GL} />
+              <span style={{ color: GL, fontSize: 12.5, fontWeight: 700 }}>{qa.label}</span>
+            </a>
+          ))}
         </div>
       </div>
 
-      {/* ── Calendar ── */}
-      <CalendarWidget events={calendarEvents} />
-
-      {/* ── Stat Cards ── */}
-      {statsLoading ? (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 16 }}>
-          {[...Array(5)].map((_, i) => (
-            <div key={i} style={{ height: 110, background: "#f1f5f9", borderRadius: 16, animation: "pulse 1.5s infinite" }} />
-          ))}
-        </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
-          {statCards.map((s, i) => (
-            <div key={i} style={{
-              background: "white",
-              border: `1.5px solid ${s.bg}`,
-              borderRadius: 18,
-              padding: "20px 22px",
-              boxShadow: "0 2px 16px rgba(0,0,0,0.06)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-              transition: "transform 0.15s, box-shadow 0.15s",
-              cursor: "default",
-            }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLElement).style.transform = "translateY(-3px)";
-                (e.currentTarget as HTMLElement).style.boxShadow = `0 8px 28px rgba(0,0,0,0.10)`;
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLElement).style.transform = "translateY(0)";
-                (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 16px rgba(0,0,0,0.06)";
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#6b7280" }}>{s.title}</span>
-                <div style={{
-                  width: 36, height: 36, borderRadius: 10,
-                  background: s.bg,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <s.icon size={18} color={s.accent} />
-                </div>
-              </div>
-              <div>
-                <div style={{ fontSize: 26, fontWeight: 800, color: "#0f172a", lineHeight: 1 }}>{s.value}</div>
-                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{s.sub}</div>
-              </div>
-              {/* bottom accent bar */}
-              <div style={{ height: 3, borderRadius: 2, background: `linear-gradient(90deg, ${s.accent}, transparent)` }} />
+      {/* ── ① ينتظر قرارك ── */}
+      {sum && (
+        decisionRows.length > 0 ? (
+          <div style={{ background: "white", border: "1.5px solid #fecaca", borderRadius: 18, boxShadow: "0 4px 20px rgba(220,38,38,0.07)", overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 20px", background: "#fff7f7", borderBottom: "1px solid #fee2e2" }}>
+              <AlertCircle size={17} color="#dc2626" />
+              <span style={{ fontSize: 15, fontWeight: 800, color: "#991b1b" }}>ينتظر قرارك</span>
+              <span style={{ background: "#dc2626", color: "white", fontSize: 11, fontWeight: 800, minWidth: 22, height: 22, borderRadius: 11, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>
+                {decisionRows.length}
+              </span>
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── Documents & Registrations Alert Strip ── */}
-      {((docStats?.expiring30 ?? 0) + (docStats?.expired ?? 0) + (regStats?.expiring30 ?? 0) + (regStats?.expired ?? 0)) > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          {/* Company docs */}
-          {((docStats?.expiring30 ?? 0) + (docStats?.expired ?? 0)) > 0 && (
-            <a href="/company-docs" onClick={e => { e.preventDefault(); navigate("/company-docs"); }}
-              style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderRadius: 14, background: "#fffbeb", border: "1.5px solid #fde68a", textDecoration: "none", cursor: "pointer", transition: "box-shadow 0.12s" }}
-              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 4px 16px rgba(217,119,6,0.15)")}
-              onMouseLeave={e => (e.currentTarget.style.boxShadow = "none")}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Bell size={20} color="#d97706" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#92400e" }}>{t("dash.companyDocs")}</div>
-                <div style={{ fontSize: 12, color: "#a16207", marginTop: 2 }}>
-                  {docStats?.expired > 0 && <span style={{ color: "#dc2626", fontWeight: 700 }}>{docStats.expired} {t("dash.expired")} • </span>}
-                  {docStats?.expiring30 > 0 && <span style={{ color: "#ea580c" }}>{docStats.expiring30} {t("dash.expiring30")}</span>}
-                </div>
-              </div>
-              <FileCheck size={16} color="#d97706" />
-            </a>
-          )}
-          {/* Gov registrations */}
-          {((regStats?.expiring30 ?? 0) + (regStats?.expired ?? 0)) > 0 && (
-            <a href="/gov-registrations" onClick={e => { e.preventDefault(); navigate("/gov-registrations"); }}
-              style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 18px", borderRadius: 14, background: "#fff7ed", border: "1.5px solid #fed7aa", textDecoration: "none", cursor: "pointer", transition: "box-shadow 0.12s" }}
-              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 4px 16px rgba(234,88,12,0.15)")}
-              onMouseLeave={e => (e.currentTarget.style.boxShadow = "none")}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: "#ffedd5", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Bell size={20} color="#ea580c" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "#9a3412" }}>{t("dash.govRegs")}</div>
-                <div style={{ fontSize: 12, color: "#c2410c", marginTop: 2 }}>
-                  {regStats?.expired > 0 && <span style={{ color: "#dc2626", fontWeight: 700 }}>{regStats.expired} {t("dash.expired")} • </span>}
-                  {regStats?.expiring30 > 0 && <span style={{ color: "#ea580c" }}>{regStats.expiring30} {t("dash.expiring30")}</span>}
-                </div>
-              </div>
-              <Landmark size={16} color="#ea580c" />
-            </a>
-          )}
-        </div>
-      )}
-
-      {/* ── Module Shortcuts ── */}
-      <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-          <div style={{ width: 4, height: 22, borderRadius: 2, background: `linear-gradient(180deg, ${GL}, ${GD})` }} />
-          <h2 style={{ fontSize: 17, fontWeight: 800, color: "#132a18", margin: 0 }}>{t("dash.mainModules")}</h2>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 14 }}>
-          {MODULES.map((m) => {
-            const hasAlert = !isAdmin && m.href === "/contracts" && unreadCount > 0;
-            return (
-              <a
-                key={m.href}
-                href={m.href}
-                onClick={e => { e.preventDefault(); navigate(m.href); }}
-                className="module-card"
-                data-accent={m.accent}
-                data-bg={m.bg}
-                style={{
-                  background: hasAlert ? "#fff5f5" : "white",
-                  border: hasAlert ? "1.5px solid #fca5a5" : `1.5px solid ${m.bg}`,
-                  borderRadius: 18,
-                  padding: "22px 16px",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 12,
-                  cursor: "pointer",
-                  textDecoration: "none",
-                  boxShadow: hasAlert ? "0 4px 20px rgba(220,38,38,0.12)" : "0 2px 12px rgba(0,0,0,0.05)",
-                  transition: "transform 0.15s, box-shadow 0.15s, border-color 0.15s",
-                  position: "relative",
-                }}
-              >
-                {/* Red badge for unread comments */}
-                {hasAlert && (
-                  <div style={{
-                    position: "absolute", top: 10, left: 10,
-                    background: "#dc2626", color: "white",
-                    fontSize: 10, fontWeight: 800,
-                    minWidth: 20, height: 20, borderRadius: 10,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    padding: "0 5px",
-                    boxShadow: "0 2px 8px rgba(220,38,38,0.5)",
-                    animation: "pulse-red 2s infinite",
-                  }}>
-                    {unreadCount}
+            <div>
+              {decisionRows.slice(0, 8).map((r, i) => (
+                <a key={i} href={r.href} onClick={e => { e.preventDefault(); navigate(r.href); }}
+                  style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 20px", textDecoration: "none", cursor: "pointer", borderBottom: i < Math.min(decisionRows.length, 8) - 1 ? "1px solid #faf5f5" : "none", transition: "background 0.1s" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "#fffbfb")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "white")}>
+                  <div style={{ width: 34, height: 34, borderRadius: 10, background: r.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <r.icon size={16} color={r.color} />
                   </div>
-                )}
-
-                {/* Icon circle */}
-                <div style={{
-                  width: 56, height: 56, borderRadius: 16,
-                  background: hasAlert ? "#fee2e2" : m.bg,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: `0 4px 12px ${hasAlert ? "rgba(220,38,38,0.2)" : `${m.accent}22`}`,
-                }}>
-                  {hasAlert
-                    ? <MessageSquare size={26} color="#dc2626" strokeWidth={1.8} />
-                    : <m.icon size={26} color={m.accent} strokeWidth={1.8} />
-                  }
-                </div>
-                <span style={{
-                  fontSize: 13, fontWeight: 700,
-                  color: hasAlert ? "#dc2626" : "#1e2a1e",
-                  textAlign: "center", lineHeight: 1.4,
-                }}>
-                  {t(m.label)}
-                  {hasAlert && (
-                    <div style={{ fontSize: 10, fontWeight: 600, color: "#dc2626", marginTop: 2 }}>
-                      {unreadCount} {t("dash.newComments")}
-                    </div>
-                  )}
-                </span>
-                <ArrowLeftCircle size={15} color={hasAlert ? "#dc262688" : `${m.accent}88`} />
-              </a>
-            );
-          })}
-        </div>
-      </div>
-
-      {(isAdmin || user?.accessCorrespondence) && (
-        <CorrespondenceDashboardWidget />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#1f2937", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.text}</div>
+                    {r.sub && <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 1 }}>{r.sub}</div>}
+                  </div>
+                  <ArrowLeftCircle size={16} color={`${r.color}99`} style={{ flexShrink: 0 }} />
+                </a>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "13px 20px", borderRadius: 14, background: "#f0fdf4", border: "1.5px solid #bbf7d0" }}>
+            <CheckCircle2 size={17} color="#16a34a" />
+            <span style={{ fontSize: 13.5, fontWeight: 700, color: "#166534" }}>لا شيء ينتظر قرارك اليوم</span>
+          </div>
+        )
       )}
 
-      {/* ── My Tasks Widget ── */}
+      {/* ── ② نبض الشركة ── */}
+      {sum && (
+        <div>
+          <SectionTitle icon={TrendingUp}>نبض الشركة</SectionTitle>
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(230px, 1fr))`, gap: 14 }}>
+            {/* الأعمال */}
+            <PulseCard icon={FileText} accent={G} bg="#fdf8ec" title="الأعمال">
+              <PulseRow label="مناقصات مسجلة" value={statsLoading ? "…" : stats?.total ?? 0} href="/tenders" />
+              <PulseRow label="عاجلة (اقترب موعدها)" value={stats?.urgentCount ?? 0} href="/tenders" danger={(stats?.urgentCount ?? 0) > 0} />
+              <PulseRow label="نسبة الفوز" value={`${(stats?.winRate ?? 0).toFixed(0)}%`} href="/tenders" />
+              <PulseRow label="عطاءات شراء مفتوحة" value={pulseNum(pulse?.openBids)} href="/purchase-orders" />
+              <PulseRow label="ملفات قيد العمل" value={pulseNum(pulse?.activeCaseFiles)} href="/case-files" />
+            </PulseCard>
+
+            {/* المال — للعام والمالي */}
+            {money && (
+              <PulseCard icon={Banknote} accent="#0891b2" bg="#ecfeff" title="المال">
+                <div style={{ padding: "4px 10px 8px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "#4b5563", fontWeight: 600, marginBottom: 5 }}>
+                    <span>مصروف الشهر</span>
+                    <span>{budgetPct !== null ? `${budgetPct}% من الموازنة` : "لا موازنة محددة"}</span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 5, background: "#e5e7eb", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${budgetPct ?? 5}%`, borderRadius: 5, background: budgetPct !== null && budgetPct >= 90 ? "#dc2626" : budgetPct !== null && budgetPct >= 70 ? "#d97706" : "#16a34a", transition: "width 0.4s" }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: "#6b7280", marginTop: 5 }}>
+                    {formatCurrency(money.monthExpense)}{money.monthBudget > 0 && <> من {formatCurrency(money.monthBudget)}</>}
+                  </div>
+                </div>
+                <PulseRow label="السيولة الحالية" value={formatCurrency(money.cash)} href="/financial-center" danger={money.cash < 0} />
+                <PulseRow label="مستحقات غير مدفوعة" value={formatCurrency(money.pendingExpenses)} href="/financial-center" danger={money.pendingExpenses > 0} />
+              </PulseCard>
+            )}
+
+            {/* الالتزامات */}
+            <PulseCard icon={ShieldCheck} accent="#dc2626" bg="#fff1f2" title="الالتزامات القادمة">
+              <PulseRow label="كفالات تنتهي ≤ ٦٠ يوم" value={pulseNum(pulse?.guarantees60)} href="/guarantees" danger={pulseNum(pulse?.guarantees60) > 0} />
+              <PulseRow label="عقود تنتهي ≤ ٦٠ يوم" value={pulseNum(pulse?.contracts60)} href="/contracts" danger={pulseNum(pulse?.contracts60) > 0} />
+              <PulseRow label="إقامات تنتهي ≤ ٦٠ يوم" value={pulseNum(pulse?.residency60)} href="/residency" danger={pulseNum(pulse?.residency60) > 0} />
+            </PulseCard>
+
+            {/* التشغيل */}
+            <PulseCard icon={Wrench} accent="#7c3aed" bg="#f5f3ff" title="التشغيل">
+              <PulseRow label="مهام متأخرة" value={pulseNum(pulse?.overdueTasks)} href="/tasks" danger={pulseNum(pulse?.overdueTasks) > 0} />
+              <PulseRow label="أوامر صيانة مفتوحة" value={pulseNum(pulse?.openWorkOrders)} href="/maintenance" />
+              <PulseRow label="لوحة الأحمال" value="←" href="/tasks?view=workload" />
+            </PulseCard>
+          </div>
+        </div>
+      )}
+
+      {/* ── ③ الأجندة + ④ آخر الحركة ── */}
+      {sum && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 18 }}>
+          {/* الأجندة */}
+          <div>
+            <SectionTitle icon={CalendarDays}
+              action={
+                <Link href="/calendar">
+                  <span style={{ fontSize: 12.5, color: G, fontWeight: 700, cursor: "pointer" }}>التقويم الكامل ←</span>
+                </Link>
+              }>
+              أجندة الأسبوع
+            </SectionTitle>
+            <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 16, boxShadow: "0 2px 12px rgba(0,0,0,0.05)", padding: "6px 0", minHeight: 120 }}>
+              {(sum.agenda ?? []).length === 0 ? (
+                <div style={{ padding: 28, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>لا مواعيد خلال الأيام السبعة القادمة</div>
+              ) : (
+                Object.entries(agendaGroups).filter(([, v]) => v.length > 0).map(([label, items]) => (
+                  <div key={label}>
+                    <div style={{ padding: "8px 18px 4px", fontSize: 11.5, fontWeight: 800, color: label === "اليوم" ? "#dc2626" : label === "غدًا" ? "#d97706" : "#6b7280" }}>{label}</div>
+                    {items.map((a: any, i: number) => (
+                      <a key={i} href={a.href} onClick={e => { e.preventDefault(); navigate(a.href); }}
+                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 18px", textDecoration: "none", cursor: "pointer", transition: "background 0.1s" }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "#fffdf5")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                        <span style={{ fontSize: 10.5, fontWeight: 800, color: GD, background: "#fdf8ec", borderRadius: 7, padding: "2px 8px", whiteSpace: "nowrap", flexShrink: 0 }}>{a.kind}</span>
+                        <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: "#1f2937", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.title}</span>
+                        <span style={{ fontSize: 11, color: "#9ca3af", flexShrink: 0 }}>{a.d.slice(5)}</span>
+                      </a>
+                    ))}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* آخر الحركة */}
+          <div>
+            <SectionTitle icon={Activity}
+              action={isAdmin ? (
+                <Link href="/admin/activity-log">
+                  <span style={{ fontSize: 12.5, color: G, fontWeight: 700, cursor: "pointer" }}>السجل الكامل ←</span>
+                </Link>
+              ) : undefined}>
+              آخر الحركة في الشركة
+            </SectionTitle>
+            <div style={{ background: "white", border: "1.5px solid #f0ead8", borderRadius: 16, boxShadow: "0 2px 12px rgba(0,0,0,0.05)", padding: "6px 0", minHeight: 120 }}>
+              {(sum.activity ?? []).length === 0 ? (
+                <div style={{ padding: 28, textAlign: "center", color: "#94a3b8", fontSize: 13 }}>لا حركة مسجلة بعد</div>
+              ) : (
+                (sum.activity ?? []).map((a: any, i: number) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 18px" }}>
+                    <div style={{ width: 7, height: 7, borderRadius: 4, background: a.src === "case" ? G : "#94a3b8", marginTop: 6, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, color: "#1f2937", lineHeight: 1.5 }}>
+                        <span style={{ fontWeight: 800 }}>{a.actor ?? "النظام"}</span>{" "}
+                        {a.src === "case"
+                          ? <>{a.action} — <span style={{ color: "#6b7280" }}>{a.subject}</span></>
+                          : <>{ACTION_AR[a.action] ?? a.action} {MODULE_AR[a.module] ?? a.module}</>}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: "#b0b7c3", marginTop: 1 }}>{timeAgo(a.at)}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── مهامي ── */}
       {myTasks.length > 0 && (
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
@@ -540,7 +404,6 @@ export default function Dashboard() {
                   style={{ display: "block", textDecoration: "none", background: "white", borderRadius: 14, border: `1.5px solid ${isOverdue ? "#fecaca" : hasUnreadNote ? "#fde68a" : "#f0ead8"}`, boxShadow: "0 2px 10px rgba(0,0,0,0.05)", overflow: "hidden", cursor: "pointer", transition: "transform 0.12s, box-shadow 0.12s" }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 24px rgba(0,0,0,0.1)"; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 10px rgba(0,0,0,0.05)"; }}>
-                  {/* Priority stripe */}
                   <div style={{ height: 3, background: `linear-gradient(90deg,${pri.color},${pri.color}44)` }} />
                   <div style={{ padding: "14px 16px" }}>
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
@@ -582,7 +445,11 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── Recent Tenders ── */}
+      {(isAdmin || user?.accessCorrespondence) && (
+        <CorrespondenceDashboardWidget />
+      )}
+
+      {/* ── آخر المناقصات ── */}
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -596,13 +463,7 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        <div style={{
-          background: "white",
-          borderRadius: 18,
-          border: "1.5px solid #f0ead8",
-          boxShadow: "0 2px 16px rgba(0,0,0,0.05)",
-          overflow: "hidden",
-        }}>
+        <div style={{ background: "white", borderRadius: 18, border: "1.5px solid #f0ead8", boxShadow: "0 2px 16px rgba(0,0,0,0.05)", overflow: "hidden" }}>
           {tendersLoading ? (
             <div style={{ padding: 32, textAlign: "center", color: "#94a3b8", fontSize: 14 }}>{t("common.loading")}</div>
           ) : !recentTenders?.length ? (
@@ -616,9 +477,7 @@ export default function Dashboard() {
                 <thead>
                   <tr style={{ background: "#f9f6ee", borderBottom: "1.5px solid #f0ead8" }}>
                     {[t("dash.col.tenderNo"), t("dash.col.project"), t("dash.col.entity"), t("dash.col.deadline"), t("dash.col.status")].map(h => (
-                      <th key={h} style={{ padding: "14px 18px", fontWeight: 700, color: "#4a3f1a", fontSize: 12, whiteSpace: "nowrap" }}>
-                        {h}
-                      </th>
+                      <th key={h} style={{ padding: "14px 18px", fontWeight: 700, color: "#4a3f1a", fontSize: 12, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -626,30 +485,19 @@ export default function Dashboard() {
                   {recentTenders.slice(0, 7).map((tender, idx) => {
                     const urgent = isUrgent(tender.deadline, tender.status);
                     return (
-                      <tr key={tender.id} style={{
-                        borderBottom: idx < 6 ? "1px solid #f5f0e6" : "none",
-                        background: "white",
-                        transition: "background 0.1s",
-                      }}
+                      <tr key={tender.id} style={{ borderBottom: idx < 6 ? "1px solid #f5f0e6" : "none", background: "white", transition: "background 0.1s" }}
                         onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#fffdf5"}
-                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "white"}
-                      >
+                        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "white"}>
                         <td style={{ padding: "13px 18px" }}>
                           <Link href={`/tenders/${tender.id}`}>
-                            <span style={{ color: GD, fontWeight: 700, fontSize: 12, fontFamily: "monospace", cursor: "pointer" }}>
-                              {tender.tenderNumber}
-                            </span>
+                            <span style={{ color: GD, fontWeight: 700, fontSize: 12, fontFamily: "monospace", cursor: "pointer" }}>{tender.tenderNumber}</span>
                           </Link>
                         </td>
                         <td style={{ padding: "13px 18px", fontWeight: 600, color: "#1e2a1e", maxWidth: 220 }}>
-                          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {tender.projectName}
-                          </div>
+                          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tender.projectName}</div>
                         </td>
                         <td style={{ padding: "13px 18px", color: "#6b7280", maxWidth: 160 }}>
-                          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {tender.governmentEntity || "—"}
-                          </div>
+                          <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tender.governmentEntity || "—"}</div>
                         </td>
                         <td style={{ padding: "13px 18px", whiteSpace: "nowrap" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 5, color: urgent ? "#dc2626" : "#374151", fontWeight: urgent ? 700 : 400 }}>
@@ -671,20 +519,6 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-
-      <style>{`
-        @keyframes pulse {
-          0%,100% { opacity:1 } 50% { opacity:0.4 }
-        }
-        @keyframes pulse-red {
-          0%,100% { box-shadow: 0 2px 8px rgba(220,38,38,0.5); }
-          50%      { box-shadow: 0 2px 16px rgba(220,38,38,0.9); }
-        }
-        .module-card:hover {
-          transform: translateY(-4px) !important;
-          box-shadow: 0 12px 32px rgba(0,0,0,0.12) !important;
-        }
-      `}</style>
     </div>
   );
 }
